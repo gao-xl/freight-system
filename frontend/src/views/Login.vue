@@ -3,7 +3,7 @@
     <div class="login-bg"></div>
     <div class="login-box">
       <div class="brand">
-        <div class="brand-icon">🚢</div>
+        <img src="/icons/icon-192.svg" class="brand-icon" alt="货代管理" />
         <h1>货运代理管理系统</h1>
         <p>Freight Forwarding Management System</p>
       </div>
@@ -79,7 +79,7 @@ async function submit() {
   box-shadow: 0 20px 60px rgba(0,0,0,0.25);
 }
 .brand { text-align: center; margin-bottom: 28px; }
-.brand-icon { font-size: 46px; }
+.brand-icon { width: 52px; height: 52px; }
 .brand h1 { font-size: 22px; margin: 10px 0 6px; color: var(--text-main); }
 .brand p { font-size: 12px; color: var(--text-sub); letter-spacing: 1px; }
 .login-btn { width: 100%; margin-top: 6px; }

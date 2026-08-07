@@ -2,7 +2,7 @@
   <div class="portal">
     <header class="portal-header">
       <div class="brand">
-        <span class="logo">⛴</span>
+        <img src="/icons/icon-192.svg" class="logo" alt="货代管理" />
         <div>
           <div class="brand-name">货代客户自助门户</div>
           <div class="brand-sub">{{ overview.customer?.name || '客户' }} · 您好</div>
@@ -147,7 +147,7 @@ onMounted(() => { loadOverview(); loadOrders(1); loadBills(1); });
 .portal { min-height: 100vh; background: #f5f7fa; }
 .portal-header { background: #1f2d3d; color: #fff; padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; }
 .brand { display: flex; align-items: center; gap: 12px; }
-.logo { font-size: 28px; }
+.logo { width: 30px; height: 30px; }
 .brand-name { font-size: 18px; font-weight: 700; }
 .brand-sub { font-size: 13px; opacity: .8; }
 .head-right a { color: #fff; }

@@ -2,7 +2,7 @@
   <el-container class="layout">
     <el-aside :width="collapsed ? '64px' : '220px'" class="sidebar">
       <div class="logo" @click="$router.push('/dashboard')">
-        <span class="logo-icon">🚢</span>
+        <img src="/icons/icon-192.svg" class="logo-icon" alt="货代管理" />
         <span v-show="!collapsed" class="logo-text">货代管理系统</span>
       </div>
       <el-menu
@@ -99,6 +99,11 @@ const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' });
 const alertCount = ref(0);
 let alertTimer = null;
 
+// 窄屏（<768px）自动收起侧边栏为图标栏
+function applyResponsive() {
+  if (window.innerWidth < 768) collapsed.value = true;
+}
+
 async function loadAlertCount() {
   if (!auth.hasPermission('alert:read')) return;
   try {
@@ -166,10 +171,15 @@ async function submitPwd() {
 }
 
 onMounted(() => {
+  applyResponsive();
+  window.addEventListener('resize', applyResponsive);
   loadAlertCount();
   alertTimer = setInterval(loadAlertCount, 60000);
 });
-onUnmounted(() => clearInterval(alertTimer));
+onUnmounted(() => {
+  window.removeEventListener('resize', applyResponsive);
+  clearInterval(alertTimer);
+});
 </script>
 
 <style scoped>
@@ -194,7 +204,7 @@ onUnmounted(() => clearInterval(alertTimer));
   white-space: nowrap;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
-.logo-icon { font-size: 22px; }
+.logo-icon { width: 22px; height: 22px; display: block; }
 .menu { border-right: none; flex: 1; }
 .menu :deep(.el-menu-item) { height: 46px; margin: 2px 8px; border-radius: 6px; }
 .menu :deep(.el-menu-item.is-active) { background: var(--sidebar-active) !important; }
@@ -221,4 +231,15 @@ onUnmounted(() => clearInterval(alertTimer));
 .content { padding: 20px; overflow: auto; background: #f4f6fa; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.15s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* 窄屏适配：侧边栏固定为图标栏，顶栏精简 */
+@media (max-width: 768px) {
+  .sidebar { width: 64px !important; }
+  .logo { padding: 0 10px; justify-content: center; }
+  .topbar { padding: 0 12px; }
+  .topbar :deep(.el-breadcrumb) { display: none; }
+  .right { gap: 8px; }
+  .uname, .role-tag { display: none; }
+  .content { padding: 12px; }
+}
 </style>

@@ -16,7 +16,7 @@
 
     <el-tabs v-model="tab" class="detail-tabs">
       <el-tab-pane label="订单信息" name="info">
-        <el-descriptions :column="3" border class="page-card">
+        <el-descriptions :column="desCol" border class="page-card">
           <el-descriptions-item label="订单号">{{ detail.order.orderNo }}</el-descriptions-item>
           <el-descriptions-item label="客户">{{ detail.order.customer?.name }}</el-descriptions-item>
           <el-descriptions-item label="订单类型">{{ dictText(ORDER_TYPE, detail.order.type) }}</el-descriptions-item>
@@ -305,7 +305,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { orderDetailAPI, orderTimelineAPI, orderFlowAPI, orderAdvanceAPI, orderNodesAPI, updateOrderNodeAPI, bookingAPI, customsAPI, documentAPI, trackAPI, financeAPI, supplierAPI, orderAPI, orderContainersAPI, saveOrderContainersAPI } from '@/api';
@@ -320,6 +320,11 @@ const detail = ref(null);
 const suppliers = ref([]);
 const tab = ref('info');
 const timeline = ref([]);
+
+// 窄屏（<768px）描述列表降为单列，避免挤压
+const isMobile = ref(false);
+const desCol = computed(() => (isMobile.value ? 1 : 3));
+let mql = null;
 
 const TIMELINE_TYPE = { order: '订单', booking: '订舱', customs: '报关', track: '运输', finance: '财务', release: '放单' };
 const tlType = (n) => ({ booking: 'primary', customs: 'warning', track: 'success', finance: 'danger', release: 'info', order: 'info' }[n.type] || 'info');
@@ -430,7 +435,18 @@ onMounted(async () => {
   load();
   const s = await supplierAPI.list({ page: 1, pageSize: 200 });
   suppliers.value = s.list;
+  mql = window.matchMedia('(max-width: 768px)');
+  isMobile.value = mql.matches;
+  mql.addEventListener('change', onMobileChange);
 });
+
+onUnmounted(() => {
+  mql?.removeEventListener('change', onMobileChange);
+});
+
+function onMobileChange(e) {
+  isMobile.value = e.matches;
+}
 </script>
 
 <style scoped>
@@ -454,4 +470,17 @@ onMounted(async () => {
 .page-card { margin-bottom: 16px; }
 .table-topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
 .left { display:flex; align-items:center; }
+
+/* 窄屏适配：头部堆叠、工具栏换行、弹窗占满宽度 */
+@media (max-width: 768px) {
+  .header-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .head-right { width: 100%; justify-content: space-between; }
+  .detail-tabs { padding: 8px 12px 12px; }
+  .table-topbar { flex-wrap: wrap; gap: 8px; }
+  .left { flex-wrap: wrap; }
+  .tl-hint { margin-left: 0; width: 100%; }
+  .fin-sum { margin-left: 0; }
+  :deep(.el-dialog) { width: 92vw !important; }
+  :deep(.el-dialog__body) { padding: 12px; }
+}
 </style>

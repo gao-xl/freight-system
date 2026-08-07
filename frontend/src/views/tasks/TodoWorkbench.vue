@@ -37,7 +37,7 @@
 
     <!-- 待办卡片列表 -->
     <div v-loading="loading" class="content">
-      <el-empty v-if="!filteredList.length" description="暂无待办，一切就绪 🎉" />
+      <el-empty v-if="!filteredList.length" description="暂无待办，一切就绪" />
       <div class="card-grid">
         <div v-for="(it, idx) in filteredList" :key="idx" class="todo-card" :class="'p-' + it.priority" @click="go(it)">
           <div class="card-head">
@@ -47,7 +47,7 @@
           <div class="card-title">{{ it.title }}</div>
           <div class="card-msg">{{ it.message }}</div>
           <div class="card-foot">
-            <span v-if="it.dueAt" class="due">⏰ {{ fmt(it.dueAt) }}</span>
+            <span v-if="it.dueAt" class="due"><el-icon class="due-icon"><Clock /></el-icon>{{ fmt(it.dueAt) }}</span>
             <el-link v-if="it.orderId && it.link" type="primary" :underline="false">
               查看详情 <el-icon><Right /></el-icon>
             </el-link>
@@ -134,5 +134,14 @@ onMounted(() => { document.title = (auth.displayName || '') + ' 的待办 - 货�
 .card-title { font-size: 15px; font-weight: 600; color: var(--text-main); }
 .card-msg { margin-top: 6px; font-size: 13px; color: var(--text-sub); min-height: 36px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-foot { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; }
-.due { font-size: 12px; color: #e6a23c; }
+.due { font-size: 12px; color: #e6a23c; display: inline-flex; align-items: center; gap: 4px; }
+.due-icon { font-size: 13px; }
+
+/* 窄屏适配：汇总卡自动换列 */
+@media (max-width: 768px) {
+  .summary-row { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .sum-num { font-size: 24px; }
+  .sum-role { font-size: 18px; }
+  .toolbar { flex-wrap: wrap; gap: 8px; }
+}
 </style>

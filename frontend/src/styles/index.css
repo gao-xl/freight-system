@@ -75,3 +75,9 @@ body {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* 窄屏通用：收紧卡片内边距，工具栏更紧凑 */
+@media (max-width: 768px) {
+  .page-card { padding: 14px; }
+  .page-toolbar { gap: 8px; }
+}

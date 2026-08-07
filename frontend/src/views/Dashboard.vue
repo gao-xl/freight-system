@@ -238,4 +238,11 @@ onBeforeUnmount(() => {
 .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-main); }
 .chart { height: 300px; }
 .chart-card.wide .chart-card-table { }
+
+/* 窄屏适配：图表与指标卡堆叠为单/双列 */
+@media (max-width: 768px) {
+  .chart-grid { grid-template-columns: 1fr; }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .metric-value { font-size: 22px; }
+}
 </style>

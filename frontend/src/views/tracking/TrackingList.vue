@@ -127,4 +127,11 @@ onMounted(() => { load(1); loadOptions(); });
 <style scoped>
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .left { display: flex; gap: 10px; align-items: center; }
+
+/* 窄屏适配：筛选区换行、搜索框占满、分页居中 */
+@media (max-width: 768px) {
+  .left { flex-wrap: wrap; width: 100%; }
+  .left :deep(.el-input) { width: 100% !important; }
+  .pager { justify-content: center; }
+}
 </style>
