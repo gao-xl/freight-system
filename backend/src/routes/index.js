@@ -35,6 +35,7 @@ const edi = require('../controllers/ediController');
 const payment = require('../controllers/paymentController');
 const company = require('../controllers/companyController');
 const automation = require('../controllers/automationController');
+const importCtrl = require('../controllers/importController');
 
 const router = express.Router();
 
@@ -177,6 +178,11 @@ router.get('/dashboard/recent-orders', guard('dashboard', 'read'), dashboard.rec
 router.get('/dashboard/metrics', guard('dashboard', 'read'), dashboard.metrics);
 router.get('/dashboard/aging', guard('dashboard', 'read'), dashboard.aging);
 router.get('/dashboard/sales-performance', guard('dashboard', 'read'), dashboard.salesPerformance);
+
+// P2.3 Excel 批量导入（客户/供应商/订单）
+// 模板下载用对应模块 read 权限，导入写入用 create 权限；复用上方 uploadMemory（内存 10MB）
+router.get('/import/templates/:biz', authRequired, importCtrl.importGuard('read'), importCtrl.template);
+router.post('/import/:biz', authRequired, importCtrl.importGuard('create'), uploadMemory.single('file'), importCtrl.importFile);
 
 // 客户
 router.get('/customers', guard('customer', 'read'), customer.list);
