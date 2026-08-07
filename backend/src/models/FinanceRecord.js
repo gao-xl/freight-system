@@ -11,6 +11,8 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
   amount: { type: DataTypes.DECIMAL(15, 2), allowNull: false, defaultValue: 0 },
   currency: { type: DataTypes.STRING(10), defaultValue: 'USD' },
   rate: { type: DataTypes.DECIMAL(10, 4), defaultValue: 1 }, // 汇率
+  exchangeRate: { type: DataTypes.FLOAT, allowNull: true },   // 本币折算汇率（P2.4）
+  localAmount: { type: DataTypes.DECIMAL(15, 2), allowNull: true }, // 本币折算金额（P2.4）
   status: { type: DataTypes.ENUM('unpaid', 'partial', 'paid', 'waived'), defaultValue: 'unpaid' },
   counterpartyId: { type: DataTypes.INTEGER }, // 客户或供应商
   invoiceNo: { type: DataTypes.STRING(50) },
@@ -22,5 +24,50 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
   ownerId: { type: DataTypes.INTEGER },     // 数据隔离：归属操作员（负责人）
   customFields: { type: DataTypes.TEXT },   // B4 自定义字段扩展（JSON 字符串）
 }, { timestamps: true });
+
+// P2.4 本币折算金额：localAmount = amount * exchangeRate
+// 规则：请求体显式带 exchangeRate 优先；否则按币种查汇率（ExchangeRate 表 → 适配器 → 兜底 7.2），
+//      查不到或币种为本币（CNY）时按 1:1 处理（默认本币为人民币）。
+// 放在模型钩子统一处理，保证 API / 自动化 / 报价转单等所有创建路径一致。
+async function resolveLocalAmount(instance) {
+  const amount = Number(instance.amount) || 0;
+  if (instance.exchangeRate != null && instance.exchangeRate !== '') {
+    instance.exchangeRate = Number(instance.exchangeRate);
+    instance.localAmount = Number((amount * instance.exchangeRate).toFixed(2));
+    return;
+  }
+  const currency = String(instance.currency || 'CNY').toUpperCase();
+  if (!currency || currency === 'CNY') {
+    instance.exchangeRate = 1;
+    instance.localAmount = amount;
+    return;
+  }
+  try {
+    // 延迟 require：避免模型加载阶段与 services/externalService 循环依赖
+    const { getRate } = require('../services/externalService');
+    const rate = await getRate(currency, 'CNY');
+    if (rate != null) {
+      instance.exchangeRate = Number(rate);
+      instance.localAmount = Number((amount * rate).toFixed(2));
+    } else {
+      instance.exchangeRate = 1;
+      instance.localAmount = amount;
+    }
+  } catch {
+    instance.exchangeRate = 1;
+    instance.localAmount = amount;
+  }
+}
+
+FinanceRecord.beforeCreate(async (instance) => {
+  await resolveLocalAmount(instance);
+});
+
+FinanceRecord.beforeUpdate(async (instance) => {
+  // 仅当金额/币种/汇率任一变化时重算，避免覆盖历史本币金额
+  if (instance.changed('amount') || instance.changed('currency') || instance.changed('exchangeRate')) {
+    await resolveLocalAmount(instance);
+  }
+});
 
 module.exports = FinanceRecord;

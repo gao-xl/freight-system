@@ -18,6 +18,7 @@ data/*.sqlite3
 **/data/*.txt
 **/data/*.json
 *.db
+*.db-journal
 *.sqlite
 *.sqlite3
 

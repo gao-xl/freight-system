@@ -13,6 +13,7 @@ const customs = require('../controllers/customsController');
 const document = require('../controllers/documentController');
 const track = require('../controllers/trackController');
 const finance = require('../controllers/financeController');
+const financeStatement = require('../controllers/financeStatementController');
 const integration = require('../controllers/integrationController');
 const dashboard = require('../controllers/dashboardController');
 const quotation = require('../controllers/quotationController');
@@ -288,6 +289,7 @@ router.get('/finance/currency-summary', guard('finance', 'read'), finance.curren
 router.get('/finance/customers/:customerId/credit', guard('finance', 'read'), finance.creditCheck); // B6 信用额度
 router.get('/finance/monthly-trend', guard('finance', 'read'), finance.monthlyTrend);
 router.get('/finance/reconcile', guard('finance', 'read'), finance.reconcile);
+router.get('/finance/statement', guard('finance', 'read'), financeStatement.statement); // P2.4 对账单
 router.get('/finance/invoices', guard('finance', 'read'), finance.invoiceList);
 router.post('/finance/invoices', guard('finance', 'create'), finance.createInvoice);
 router.post('/finance/invoices/:id/issue', guard('finance', 'update'), finance.issueInvoice);

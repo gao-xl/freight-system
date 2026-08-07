@@ -157,6 +157,7 @@ const financeBase = Joi.object({
   amount: dec,
   currency: str(10),
   rate: dec,
+  exchangeRate: dec, // P2.4 本币折算汇率（可空；不传时由服务端按币种查询）
   status: enumVal(['unpaid', 'partial', 'paid', 'waived']),
   counterpartyId: id,
   invoiceNo: str(50),
