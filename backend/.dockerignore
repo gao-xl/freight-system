@@ -1,0 +1,27 @@
+# 依赖与构建缓存：镜像内由 npm ci 重新安装，宿主机的产物平台可能不匹配
+node_modules
+npm-debug.log*
+
+# 运行期数据：由 docker-compose 以数据卷挂载，不进镜像
+data
+uploads
+logs
+backups
+*.db
+*.sqlite
+*.sqlite3
+
+# 密钥：绝不进镜像层
+.env
+.env.*
+!.env.example
+
+# 开发期文件
+tests
+coverage
+tmp
+.git
+.gitignore
+*.md
+Dockerfile
+.dockerignore

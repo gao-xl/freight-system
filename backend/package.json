@@ -9,6 +9,8 @@
     "dev": "node --watch src/server.js",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
     "test": "node --test tests/*.test.js"
   },
   "devDependencies": {

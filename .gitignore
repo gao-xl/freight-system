@@ -15,14 +15,18 @@ data/*.db
 data/*.db-journal
 data/*.sqlite
 data/*.sqlite3
-data/*.txt
-data/*.json
+**/data/*.txt
+**/data/*.json
 *.db
 *.sqlite
 *.sqlite3
 
 # 上传文件（含用户业务单证）
 uploads/
+
+# 备份归档（含完整数据库与单证，等同于全量数据泄露）
+backups/
+*.tar.gz
 
 # 日志
 logs/

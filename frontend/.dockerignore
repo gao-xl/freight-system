@@ -1,0 +1,18 @@
+# 依赖与构建产物：镜像内重新安装与构建，避免带入宿主机平台的二进制
+node_modules
+dist
+npm-debug.log*
+
+# 密钥
+.env
+.env.*
+!.env.example
+
+# 开发期文件
+.git
+.gitignore
+*.md
+Dockerfile
+.dockerignore
+coverage
+tmp

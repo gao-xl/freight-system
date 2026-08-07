@@ -1,0 +1,103 @@
+# 货运代理管理系统 - 一键部署编排
+#
+# 首次启动（三步）:
+#   1. cp .env.example .env        并在 .env 里填一个高强度 JWT_SECRET
+#   2. docker compose run --rm backend npm run seed    建表 + 演示数据（仅首次，会清库）
+#   3. docker compose up -d
+#   浏览器访问 http://localhost:8080
+#
+# 日常运维:
+#   docker compose logs -f backend            看日志
+#   docker compose exec backend npm run backup   立即备份
+#   docker compose down                       停服（数据在宿主机目录里，不会丢）
+#
+# 切 PostgreSQL: 在 .env 里设 DB_DIALECT=postgres 与 DB_HOST=pg，然后
+#   docker compose --profile pg up -d
+
+name: freight-system
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: freight-system-backend:latest
+    container_name: freight-backend
+    restart: unless-stopped
+
+    # .env 里的变量整体注入，二开新增的适配器密钥等自定义项无需改本文件
+    env_file: .env
+
+    # 下面几项固定为容器内取值，覆盖 .env 中面向本地开发的配置
+    environment:
+      # 生产模式：JWT_SECRET 缺失会拒绝启动，这是有意为之，不要为了跑通改成 development
+      NODE_ENV: production
+      # 容器内端口固定 3000，对外映射由下面的 ports 决定，改 .env 的 PORT 不影响
+      PORT: "3000"
+      # 相对于 WORKDIR /app，即 /app/data/freight.db，正好落在下面挂载的数据卷里
+      DB_STORAGE: ./data/freight.db
+      TZ: ${TZ:-Asia/Shanghai}
+
+    ports:
+      # 后端直连端口。只用浏览器访问的话可以整行注释掉，让后端只在内网可达
+      - "${BACKEND_PORT:-3000}:3000"
+
+    volumes:
+      # 数据落在宿主机目录里，容器重建/升级镜像都不会丢
+      - ./backend/data:/app/data
+      - ./backend/uploads:/app/uploads
+      - ./backend/logs:/app/logs
+      - ./backend/backups:/app/backups
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+  frontend:
+    build:
+      context: ./frontend
+    image: freight-system-frontend:latest
+    container_name: freight-frontend
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      # 等后端健康检查通过再起，避免 nginx 因解析不到 backend 上游而启动失败
+      backend:
+        condition: service_healthy
+
+  # 可选：多人并发场景改用 PostgreSQL。默认不启动，加 --profile pg 才拉起。
+  # 这里刻意不给 backend 加 depends_on: pg —— 带 profile 的服务被无 profile 的服务依赖时，
+  # 不启用该 profile 就会直接报编排校验错误，反而让默认的 SQLite 路径跑不起来。
+  # pg 起来前后端连不上会退出，由 restart: unless-stopped 自动重试，几秒内自愈。
+  pg:
+    profiles: ["pg"]
+    image: postgres:16-alpine
+    container_name: freight-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-freight}
+      POSTGRES_USER: ${DB_USER:-freight}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-freight}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 只绑本机回环，不暴露到公网；需要外部工具连库时再改
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-freight} -d ${DB_NAME:-freight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pg-data:
