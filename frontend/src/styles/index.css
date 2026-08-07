@@ -1,0 +1,77 @@
+:root {
+  --brand: #1f5fbf;
+  --brand-dark: #174a96;
+  --brand-light: #3b82d9;
+  --brand-bg: #eff4fb;
+  --sidebar-bg: #12233f;
+  --sidebar-bg-hover: #1b3457;
+  --sidebar-active: #1f5fbf;
+  --text-main: #1f2d3d;
+  --text-sub: #5b6b7b;
+  --border: #e3e8f0;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  color: var(--text-main);
+  background: #f4f6fa;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 通用页面容器 */
+.page-card {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.page-toolbar .left { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* 统计卡 */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+  border-left: 4px solid var(--brand);
+  position: relative;
+  overflow: hidden;
+}
+.stat-card .label { font-size: 13px; color: var(--text-sub); }
+.stat-card .value { font-size: 26px; font-weight: 700; margin-top: 6px; }
+.stat-card .sub { font-size: 12px; color: #98a2b3; margin-top: 4px; }
+.stat-card .icon { position: absolute; right: 16px; top: 16px; font-size: 28px; opacity: 0.12; }
+
+/* 表格工具栏 */
+.table-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+
+/* 状态标签色 */
+.el-tag { border-radius: 4px; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,107 @@
+// 打印字段变量库
+// 按单据类型（docType）提供可打印字段元数据，供设计器左侧字段库展示。
+// key 语法：`数据源.字段`，支持聚合嵌套（order.customer.name）。
+
+const FIELDS = {
+  bl: [ // 提单
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'order.originPort', label: '起运港', group: '订单', type: 'string' },
+    { key: 'order.destPort', label: '目的港', group: '订单', type: 'string' },
+    { key: 'order.cargoDesc', label: '货描', group: '订单', type: 'string' },
+    { key: 'order.packageCount', label: '件数', group: '订单', type: 'number' },
+    { key: 'order.cargoWeight', label: '重量(t)', group: '订单', type: 'number' },
+    { key: 'order.cargoVolume', label: '体积(m³)', group: '订单', type: 'number' },
+    { key: 'order.containerNo', label: '箱号', group: '订单', type: 'string' },
+    { key: 'order.etd', label: '预计发运', group: '订单', type: 'date' },
+    { key: 'order.eta', label: '预计到港', group: '订单', type: 'date' },
+    { key: 'booking.vesselName', label: '船名', group: '订舱', type: 'string' },
+    { key: 'booking.voyageNo', label: '航次', group: '订舱', type: 'string' },
+    { key: 'booking.containerType', label: '箱型', group: '订舱', type: 'string' },
+    { key: 'booking.containerQty', label: '箱量', group: '订舱', type: 'number' },
+    { key: 'booking.bookingNo', label: '订舱号', group: '订舱', type: 'string' },
+    { key: 'booking.supplier.name', label: '承运人', group: '订舱', type: 'string' },
+  ],
+  invoice: [ // 发票
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'order.cargoDesc', label: '货描', group: '订单', type: 'string' },
+    { key: 'order.totalAmount', label: '总金额', group: '订单', type: 'money' },
+    { key: 'order.currency', label: '币种', group: '订单', type: 'string' },
+    { key: 'quotation.quoteNo', label: '报价单号', group: '报价', type: 'string' },
+    { key: 'quotation.totalAmount', label: '报价金额', group: '报价', type: 'money' },
+    { key: 'quotation.items', label: '费用明细', group: '报价', type: 'table' },
+  ],
+  packing_list: [ // 装箱单
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'order.cargoDesc', label: '货描', group: '订单', type: 'string' },
+    { key: 'order.packageCount', label: '件数', group: '订单', type: 'number' },
+    { key: 'order.cargoWeight', label: '重量(t)', group: '订单', type: 'number' },
+    { key: 'order.cargoVolume', label: '体积(m³)', group: '订单', type: 'number' },
+    { key: 'order.containerNo', label: '箱号', group: '订单', type: 'string' },
+  ],
+  quotation: [ // 报价单
+    { key: 'quotation.quoteNo', label: '报价单号', group: '报价', type: 'string' },
+    { key: 'quotation.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'quotation.mode', label: '运输方式', group: '报价', type: 'string' },
+    { key: 'quotation.serviceType', label: '服务类型', group: '报价', type: 'string' },
+    { key: 'quotation.originPort', label: '起运港', group: '报价', type: 'string' },
+    { key: 'quotation.destPort', label: '目的港', group: '报价', type: 'string' },
+    { key: 'quotation.cargoDesc', label: '货描', group: '报价', type: 'string' },
+    { key: 'quotation.items', label: '费用明细', group: '报价', type: 'table' },
+    { key: 'quotation.totalAmount', label: '总额', group: '报价', type: 'money' },
+    { key: 'quotation.validUntil', label: '有效期', group: '报价', type: 'date' },
+  ],
+  customs: [ // 报关单
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'customs.declNo', label: '报关单号', group: '报关', type: 'string' },
+    { key: 'customs.type', label: '报关类型', group: '报关', type: 'string' },
+    { key: 'customs.hsCode', label: 'HS编码', group: '报关', type: 'string' },
+    { key: 'customs.customsValue', label: '报关货值', group: '报关', type: 'money' },
+    { key: 'customs.status', label: '报关状态', group: '报关', type: 'string' },
+    { key: 'customs.submitDate', label: '申报日期', group: '报关', type: 'date' },
+  ],
+  statement: [ // 对账单
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'finance', label: '财务明细', group: '财务', type: 'table' },
+  ],
+  order: [ // 订单操作单
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'order.type', label: '进出口', group: '订单', type: 'string' },
+    { key: 'order.mode', label: '运输方式', group: '订单', type: 'string' },
+    { key: 'order.originPort', label: '起运港', group: '订单', type: 'string' },
+    { key: 'order.destPort', label: '目的港', group: '订单', type: 'string' },
+    { key: 'order.cargoDesc', label: '货描', group: '订单', type: 'string' },
+    { key: 'order.packageCount', label: '件数', group: '订单', type: 'number' },
+    { key: 'order.cargoWeight', label: '重量(t)', group: '订单', type: 'number' },
+    { key: 'order.cargoVolume', label: '体积(m³)', group: '订单', type: 'number' },
+    { key: 'order.etd', label: '预计发运', group: '订单', type: 'date' },
+    { key: 'order.eta', label: '预计到港', group: '订单', type: 'date' },
+    { key: 'order.totalAmount', label: '总金额', group: '订单', type: 'money' },
+  ],
+  settlement: [ // 结算单
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'finance', label: '结算明细', group: '财务', type: 'table' },
+  ],
+};
+
+// 默认模板 content（区块化 JSON）
+function defaultContent(docType) {
+  const base = {
+    blocks: [
+      { type: 'header', title: '货运单据', align: 'center', fontSize: 18, bold: true },
+      { type: 'fields', label: '单据信息', columns: 2, fields: [] },
+      { type: 'footer', text: '本单由货代管理系统生成' },
+    ],
+  };
+  const fields = (FIELDS[docType] || []).slice(0, 8).map((f) => ({ key: f.key, label: f.label, show: true }));
+  base.blocks[1].fields = fields;
+  return base;
+}
+
+module.exports = { FIELDS, defaultContent };

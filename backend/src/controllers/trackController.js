@@ -1,0 +1,12 @@
+const { ShipmentTrack, Order } = require('../models');
+const { crudController } = require('./baseController');
+
+const base = crudController({
+  model: ShipmentTrack,
+  searchFields: ['location', 'description'],
+  includes: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],
+  order: [['eventTime', 'DESC']],
+  scoped: true,
+});
+
+module.exports = base;

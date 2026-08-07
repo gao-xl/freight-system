@@ -1,0 +1,40 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+build/
+
+# 环境变量（含密钥/数据库口令，严禁提交）
+.env
+.env.*
+!.env.example
+
+# 数据库文件（含用户/客户/订单及密码哈希）
+data/*.db
+data/*.db-journal
+data/*.sqlite
+data/*.sqlite3
+data/*.txt
+data/*.json
+*.db
+*.sqlite
+*.sqlite3
+
+# 上传文件（含用户业务单证）
+uploads/
+
+# 日志
+logs/
+*.log
+
+# 编辑器/系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 测试/临时
+coverage/
+tmp/
