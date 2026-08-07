@@ -115,6 +115,27 @@ const bookingBase = Joi.object({
 const bookingCreate = bookingBase.keys({ orderId: id.required() });
 const bookingUpdate = bookingBase;
 
+// 本地运价小库（P2.7）
+const freightRateBase = Joi.object({
+  route: str(100),
+  originPort: str(50),
+  destPort: str(50),
+  carrier: str(50),
+  containerType: enumVal(['20GP', '40GP', '40HQ']),
+  rate: Joi.number().min(0).allow(null),
+  currency: str(10),
+  validFrom: date,
+  validTo: date,
+  remark: str(255),
+});
+const freightRateCreate = freightRateBase.keys({
+  originPort: Joi.string().trim().max(50).required(),
+  destPort: Joi.string().trim().max(50).required(),
+  containerType: Joi.string().valid('20GP', '40GP', '40HQ').required(),
+  rate: Joi.number().min(0).required(),
+});
+const freightRateUpdate = freightRateBase;
+
 // 报关
 const customsBase = Joi.object({
   declNo: str(40),
@@ -218,6 +239,7 @@ module.exports = {
   supplierCreate, supplierUpdate,
   orderCreate, orderUpdate,
   bookingCreate, bookingUpdate,
+  freightRateCreate, freightRateUpdate,
   customsCreate, customsUpdate,
   documentCreate, documentUpdate,
   financeCreate, financeUpdate,

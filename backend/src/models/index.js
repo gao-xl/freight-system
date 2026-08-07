@@ -38,6 +38,7 @@ const Department = require('./Department');
 const CompanyAccount = require('./CompanyAccount');
 const InvoiceTitle = require('./InvoiceTitle');
 const ApiKey = require('./ApiKey');
+const FreightRate = require('./FreightRate');
 
 // 关联关系
 Order.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
@@ -169,4 +170,5 @@ module.exports = {
   CompanyAccount,
   InvoiceTitle,
   ApiKey,
+  FreightRate,
 };

@@ -37,6 +37,7 @@ const payment = require('../controllers/paymentController');
 const company = require('../controllers/companyController');
 const automation = require('../controllers/automationController');
 const importCtrl = require('../controllers/importController');
+const freightRate = require('../controllers/freightRateController');
 
 const router = express.Router();
 
@@ -322,6 +323,16 @@ router.delete('/quotations/:id', authRequired, requirePermission('quotation', 'd
 router.post('/quotations/:id/send', authRequired, requirePermission('quotation', 'update'), quotation.send);
 router.post('/quotations/:id/confirm', authRequired, requirePermission('quotation', 'update'), quotation.confirm);
 router.post('/quotations/:id/convert-order', authRequired, requirePermission('quotation', 'convert'), quotation.convertOrder);
+
+// P2.7 本地运价小库（服务报价；权限沿用 quotation 模块）
+router.get('/freight-rates/search', guard('quotation', 'read'), freightRate.search); // 检索需在 :id 之前
+router.get('/freight-rates', guard('quotation', 'read'), freightRate.list);
+router.get('/freight-rates/:id', guard('quotation', 'read'), freightRate.get);
+router.post('/freight-rates/batch-delete', guard('quotation', 'delete'), freightRate.batchRemove);
+router.post('/freight-rates/batch-update', guard('quotation', 'update'), freightRate.batchUpdate);
+router.post('/freight-rates', guard('quotation', 'create'), validate(S.freightRateCreate), freightRate.create);
+router.put('/freight-rates/:id', guard('quotation', 'update'), validate(S.freightRateUpdate), freightRate.update);
+router.delete('/freight-rates/:id', guard('quotation', 'delete'), freightRate.remove);
 
 // 青岛港专项
 router.get('/qingdao/nodes', guard('qingdao', 'read'), qingdao.nodes);
