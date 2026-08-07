@@ -8,6 +8,7 @@ const { sequelize } = require('../models');
 const { financeSummaryByCurrency, checkCustomerCredit } = require('../services/currencyService');
 
 const base = crudController({
+  name: 'finance',
   model: FinanceRecord,
   searchFields: ['description', 'invoiceNo'],
   includes: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],

@@ -145,4 +145,28 @@ module.exports = {
   autoAdvanceFromBooking,
   autoAdvanceFromCustoms,
   autoCreateReceivable,
+  subscribeEvents,
 };
+
+// P1.6 事件驱动：订舱装船→自动推进订单节点、报关完成→自动推进、订单创建→自动生成应收
+function subscribeEvents() {
+  const events = require('./eventBus');
+  const { logger } = require('../utils/logger');
+
+  events.onAsync('booking.shipped', async (env) => {
+    logger.info('[AUTOMATION] 事件触发 booking.shipped → 推进订单节点', env.payload);
+    await autoAdvanceFromBooking();
+  });
+
+  events.onAsync('customs.created', async (env) => {
+    logger.info('[AUTOMATION] 事件触发 customs.created → 推进报关节点', env.payload);
+    await autoAdvanceFromCustoms();
+  });
+
+  events.onAsync('order.created', async (env) => {
+    logger.info('[AUTOMATION] 事件触发 order.created → 自动生成应收', env.payload);
+    await autoCreateReceivable();
+  });
+
+  logger.info('[AUTOMATION] 事件驱动监听已注册：booking.shipped, customs.created, order.created');
+}

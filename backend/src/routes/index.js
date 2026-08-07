@@ -45,6 +45,50 @@ const uploadMemory = multer({ storage: multer.memoryStorage(), limits: { fileSiz
 router.post('/automation/run', guard('system', '*'), automation.run);
 
 // 认证（公开）
+/**
+ * @openapi
+ * /api/auth/login:
+ *   post:
+ *     tags: [认证]
+ *     summary: 用户登录
+ *     description: |
+ *       校验用户名密码，返回 JWT 与权限点清单。
+ *       密码错误与用户不存在返回同一文案，且服务端做恒定时间比较，避免通过响应时间枚举用户名。
+ *       该端点独立限流（默认 15 分钟内 20 次），超限返回 429。
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginRequest'
+ *     responses:
+ *       200:
+ *         description: 登录成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/LoginData'
+ *       400:
+ *         description: 用户名或密码为空
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: 用户名或密码错误，或账号已禁用
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       429:
+ *         description: 登录请求过于频繁
+ */
 router.post('/auth/login', validate(S.login), auth.login);
 router.get('/auth/me', authRequired, auth.me);
 router.post('/auth/change-password', authRequired, validate(S.changePassword), auth.changePassword);
@@ -66,6 +110,9 @@ router.put('/users/:id', authRequired, requirePermission('system', 'user'), vali
 router.delete('/users/:id', authRequired, requirePermission('system', 'user'), system.removeUser);
 router.put('/users/:id/roles', authRequired, requirePermission('system', 'user'), validate(S.assignRoles), system.assignRoles);
 router.get('/system/audit-logs', authRequired, requirePermission('system', 'audit'), system.auditLogs);
+
+// 接口密钥（脚本/第三方系统认证），路由细节见 src/routes/apiKey.js
+router.use('/api-keys', require('./apiKey'));
 
 // B2 小组管理（数据权限）
 router.get('/groups', authRequired, requirePermission('system', 'group'), group.list);
@@ -105,6 +152,22 @@ router.get('/custom-fields', authRequired, customField.list);
 router.post('/custom-fields', authRequired, requirePermission('system', 'custom'), customField.create);
 router.put('/custom-fields/:id', authRequired, requirePermission('system', 'custom'), customField.update);
 router.delete('/custom-fields/:id', authRequired, requirePermission('system', 'custom'), customField.remove);
+
+// B4 自定义字段值读写（按业务实体）
+const cf = customField.customFieldValues;
+const { Customer, Order, Booking, FinanceRecord } = require('../models');
+const cfOrder = cf('order', Order);
+const cfCustomer = cf('customer', Customer);
+const cfBooking = cf('booking', Booking);
+const cfFinance = cf('finance', FinanceRecord);
+router.get('/orders/:id/custom-fields', authRequired, cfOrder.getValues);
+router.put('/orders/:id/custom-fields', authRequired, cfOrder.updateValues);
+router.get('/customers/:id/custom-fields', authRequired, cfCustomer.getValues);
+router.put('/customers/:id/custom-fields', authRequired, cfCustomer.updateValues);
+router.get('/bookings/:id/custom-fields', authRequired, cfBooking.getValues);
+router.put('/bookings/:id/custom-fields', authRequired, cfBooking.updateValues);
+router.get('/finance/:id/custom-fields', authRequired, cfFinance.getValues);
+router.put('/finance/:id/custom-fields', authRequired, cfFinance.updateValues);
 
 // 看板
 router.get('/dashboard', guard('dashboard', 'read'), dashboard.dashboard);

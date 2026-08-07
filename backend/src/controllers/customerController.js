@@ -6,6 +6,7 @@ const { scopedWhere, scopedFindOne, attachOwnership } = require('../middleware/d
 const { parseExcel, buildTemplate, cleanStr } = require('../services/importService');
 
 const base = crudController({
+  name: 'customer',
   model: Customer,
   searchFields: ['code', 'name', 'shortName', 'contact', 'phone'],
   codePrefix: 'CUS',

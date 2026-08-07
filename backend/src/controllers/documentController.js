@@ -53,6 +53,7 @@ const upload = multer({
 });
 
 const base = crudController({
+  name: 'document',
   model: Document,
   searchFields: ['docNo', 'title'],
   includes: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],

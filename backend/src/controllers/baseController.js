@@ -1,18 +1,29 @@
 const { Op } = require('sequelize');
 const { ok, fail, getPagination, asyncHandler } = require('../utils/response');
 const { scopedWhere, scopedFindOne, attachOwnership, hasScopeColumns } = require('../middleware/dataScope');
+const events = require('../services/eventBus');
 
 // 通用 CRUD 控制器工厂
-// opts: { model, searchFields, includes, order, codePrefix, codeField, protectedFields, scoped }
+// opts: { model, name, searchFields, includes, order, codePrefix, codeField, protectedFields, scoped }
+// name：模块名（如 'customer'），用于自动发射 {name}.created/updated/deleted 事件
 // scoped：启用数据隔离（要求模型具备 groupId/ownerId 字段）。list/get 按范围过滤，单条写操作校验可见性，create 自动归属。
 // protectedFields：不允许用户通过 create/update/batch-update 写入的系统字段（防越权篡改存储路径等）
 function crudController(opts) {
-  const { model, searchFields = [], includes = [], order = [['id', 'DESC']], codePrefix, codeField, protectedFields = [], scoped = false } = opts;
+  const { model, name, searchFields = [], includes = [], order = [['id', 'DESC']], codePrefix, codeField, protectedFields = [], scoped = false } = opts;
 
   // 剔除受保护字段，防止用户通过请求体篡改存储路径/审计字段等
   function stripProtected(body) {
     const cleaned = { ...body };
     for (const k of protectedFields) delete cleaned[k];
+    return cleaned;
+  }
+
+  // 反序列化 customFields：对象 → JSON 字符串（所有支持自定义字段的模型统一处理）
+  function serializeCustomFields(body) {
+    const cleaned = stripProtected(body);
+    if (cleaned.customFields !== undefined && typeof cleaned.customFields === 'object') {
+      cleaned.customFields = JSON.stringify(cleaned.customFields);
+    }
     return cleaned;
   }
 
@@ -54,7 +65,7 @@ function crudController(opts) {
   });
 
   const create = asyncHandler(async (req, res) => {
-    const body = stripProtected({ ...req.body });
+    const body = serializeCustomFields({ ...req.body });
     delete body.id;
     if (codePrefix && codeField && !body[codeField]) {
       const { genCode } = require('../utils/response');
@@ -63,6 +74,7 @@ function crudController(opts) {
     // 数据隔离：创建时自动归属（未指定则取用户默认组/本人）
     if (scoped && hasScopeColumns(model)) await attachOwnership(req, body);
     const item = await model.create(body);
+    if (name) events.emit(`${name}.created`, { id: item.id, data: item.toJSON(), user: req.user });
     ok(res, item, '创建成功');
   });
 
@@ -71,9 +83,10 @@ function crudController(opts) {
       ? await scopedFindOne(req, model, { id: req.params.id }, includes)
       : await model.findByPk(req.params.id, { include: includes });
     if (!item) return fail(res, '记录不存在', 1, 404);
-    const body = stripProtected({ ...req.body });
+    const body = serializeCustomFields({ ...req.body });
     delete body.id;
     await item.update(body);
+    if (name) events.emit(`${name}.updated`, { id: item.id, data: item.toJSON(), user: req.user });
     ok(res, item, '更新成功');
   });
 
@@ -82,7 +95,10 @@ function crudController(opts) {
       ? await scopedFindOne(req, model, { id: req.params.id }, includes)
       : await model.findByPk(req.params.id, { include: includes });
     if (!item) return fail(res, '记录不存在', 1, 404);
+    const itemId = item.id;
+    const itemData = item.toJSON();
     await item.destroy();
+    if (name) events.emit(`${name}.deleted`, { id: itemId, data: itemData, user: req.user });
     ok(res, null, '删除成功');
   });
 

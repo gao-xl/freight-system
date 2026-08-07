@@ -5,6 +5,7 @@ const { scopedWhere, scopedFindOne, attachOwnership } = require('../middleware/d
 const svc = require('../services/quotationService');
 
 const base = crudController({
+  name: 'quotation',
   model: Quotation,
   searchFields: ['quoteNo', 'cargoDesc', 'originPort', 'destPort'],
   codePrefix: 'QT',

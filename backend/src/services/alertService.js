@@ -165,4 +165,25 @@ async function resolveAlert(id, action) {
   return rec;
 }
 
-module.exports = { runAllRules, getAlerts, resolveAlert, upsertAlert };
+module.exports = { runAllRules, getAlerts, resolveAlert, upsertAlert, subscribeEvents };
+
+// P1.6 事件驱动：订单/财务/订舱变更后即时触发相关规则
+function subscribeEvents() {
+  const events = require('./eventBus');
+
+  // 订单创建/更新 → 即时检查 ETA 临近、截港时间
+  events.onAsync('order.created', () => runAllRules());
+  events.onAsync('order.updated', () => runAllRules());
+
+  // 订单状态流转 → 即时检查青岛港卡点
+  events.onAsync('order.transitioned', () => ruleQingdaoBlocked());
+
+  // 财务记录创建/更新 → 即时检查超期应收
+  events.onAsync('finance.created', () => ruleOverdueReceivable());
+  events.onAsync('finance.updated', () => ruleOverdueReceivable());
+
+  // 订舱装船 → 即时检查 ETA + cut-off
+  events.onAsync('booking.shipped', () => Promise.all([ruleEtaSoon(), ruleCutoffTime()]));
+
+  logger.info('[ALERT] 事件驱动监听已注册：order.created/updated/transitioned, finance.created/updated, booking.shipped');
+}

@@ -39,4 +39,41 @@ const remove = asyncHandler(async (req, res) => {
   ok(res, null, '字段已删除');
 });
 
-module.exports = { list, create, update, remove };
+// B4 自定义字段值读写工厂 —— 返回 { getValues, updateValues }
+// 用法：const cf = customFieldValues('order', Order); router.get('/orders/:id/custom-fields', cf.getValues);
+// bizType 匹配 CustomField.bizType（order/customer/booking/finance）
+function customFieldValues(bizType, model) {
+  const getValues = asyncHandler(async (req, res) => {
+    const record = await model.findByPk(req.params.id);
+    if (!record) return fail(res, '记录不存在', 1, 404);
+    const defs = await CustomField.findAll({ where: { bizType, enabled: true }, order: [['sort', 'ASC']] });
+    let current = {};
+    try { current = record.customFields ? JSON.parse(record.customFields) : {}; } catch { /* ignore */ }
+    const fields = defs.map((d) => ({
+      ...d.toJSON(),
+      value: current[d.fieldKey] ?? '',
+      options: d.options ? (() => { try { return JSON.parse(d.options); } catch { return []; } })() : [],
+    }));
+    ok(res, fields);
+  });
+
+  const updateValues = asyncHandler(async (req, res) => {
+    const record = await model.findByPk(req.params.id);
+    if (!record) return fail(res, '记录不存在', 1, 404);
+    const defs = await CustomField.findAll({ where: { bizType, enabled: true } });
+    let current = {};
+    try { current = record.customFields ? JSON.parse(record.customFields) : {}; } catch { /* ignore */ }
+    const updates = req.body; // { fieldKey: value, ... }
+    // 仅保存已定义的字段
+    const validKeys = new Set(defs.map((d) => d.fieldKey));
+    for (const [k, v] of Object.entries(updates)) {
+      if (validKeys.has(k)) current[k] = v;
+    }
+    await record.update({ customFields: JSON.stringify(current) });
+    ok(res, record, '自定义字段已更新');
+  });
+
+  return { getValues, updateValues };
+}
+
+module.exports = { list, create, update, remove, customFieldValues };

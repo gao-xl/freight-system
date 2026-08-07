@@ -2,6 +2,7 @@ const { CustomsDeclaration, Order, Supplier } = require('../models');
 const { crudController } = require('./baseController');
 
 const base = crudController({
+  name: 'customs',
   model: CustomsDeclaration,
   searchFields: ['declNo', 'customsNo', 'hsCode'],
   codePrefix: 'DC',

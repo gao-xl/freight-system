@@ -116,19 +116,19 @@ npm run dev                       # 访问 http://localhost:5173 （已代理 /a
 
 ```
 定制诉求 ──►  配置级（Web UI 配置，零代码）
-              · 自定义字段 CustomField        [规划中]
-              · 业务规则 BusinessRule         [规划中]
-              · 流程配置 WorkflowConfig       [规划中]
+              · 自定义字段 CustomField        [已实现]
+              · 业务规则 BusinessRule         [已实现]
+              · 流程配置 WorkflowConfig       [已实现]
               · 打印模板 PrintTemplate        [已实现]
-            ─────────────────────────────
+             ─────────────────────────────
             文件级（加一个文件/函数）
               · CRUD 模块（crudController 工厂）   [已实现]
               · 对接适配器（send/query 协议）       [已实现]
               · 预警规则函数 / 自动化动作函数       [已实现]
-              · 事件监听 events.on(...)            [规划中]
-            ─────────────────────────────
+              · 事件监听 events.on(...)            [已实现]
+             ─────────────────────────────
             插件级（独立包，可启用/卸载）
-              · ModuleRegistry 协议               [规划中]
+              · ModuleRegistry 协议               [已实现]
 ```
 
 **最快上手**：新增一个对接只需在 `backend/src/integrations/adapters/` 放一个导出 `{code,name,send,query}` 的文件，即被工厂自动注册，无需改任何业务代码。
@@ -149,7 +149,7 @@ npm run dev                       # 访问 http://localhost:5173 （已代理 /a
 
 - **前端**：`cd frontend && npm run build`，产物在 `frontend/dist/`，交 Nginx 托管并代理 `/api`。
 - **后端**：`node src/server.js`，可用 `pm2` 守护；生产务必设 `NODE_ENV=production` 与 `JWT_SECRET`。
-- **Docker 一键部署**：规划中（见升级方案 Phase 2）。
+- **Docker 一键部署**：`docker-compose up`（默认 SQLite）或 `docker-compose -f docker-compose.pg.yml up`（PostgreSQL）。
 
 ---
 

@@ -37,6 +37,7 @@ const CompanyProfile = require('./CompanyProfile');
 const Department = require('./Department');
 const CompanyAccount = require('./CompanyAccount');
 const InvoiceTitle = require('./InvoiceTitle');
+const ApiKey = require('./ApiKey');
 
 // 关联关系
 Order.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
@@ -123,6 +124,10 @@ Order.hasMany(EdiMessage, { foreignKey: 'orderId' });
 PaymentTransaction.belongsTo(Order, { as: 'order', foreignKey: 'orderId' });
 Order.hasMany(PaymentTransaction, { foreignKey: 'orderId' });
 
+// 接口密钥关联：每把密钥绑定一个用户，权限与审计身份都取自该用户
+ApiKey.belongsTo(User, { as: 'user', foreignKey: 'userId' });
+User.hasMany(ApiKey, { as: 'apiKeys', foreignKey: 'userId' });
+
 module.exports = {
   sequelize,
   User,
@@ -163,4 +168,5 @@ module.exports = {
   Department,
   CompanyAccount,
   InvoiceTitle,
+  ApiKey,
 };

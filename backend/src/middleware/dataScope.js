@@ -34,11 +34,30 @@ async function resolveDataScope(userId) {
   return { scope, groupIds: [...groupIds] };
 }
 
+// 用接口密钥声明的归属把数据范围继续收窄（只能收紧，不能放宽）
+// - 密钥填了 groupId：范围降到该小组；若绑定用户本身就只能看部分小组，还要落在其可见集合内
+// - 密钥填了 ownerId：范围降到本人数据（创建密钥时已校验 ownerId 必须等于绑定用户）
+// 两者都没填时保持用户原有范围，密钥等价于该用户的一个非交互式会话
+function narrowScopeByApiKey(scope, apiKey) {
+  if (!apiKey) return scope;
+  let result = scope;
+  if (apiKey.groupId != null) {
+    const allowed = result.scope === 'all' || !result.groupIds || result.groupIds.includes(apiKey.groupId);
+    // 密钥指定的小组不在用户可见范围内时，给出空集合而不是放行
+    result = { scope: 'group', groupIds: allowed ? [apiKey.groupId] : [] };
+  }
+  if (apiKey.ownerId != null) {
+    result = { scope: 'self', groupIds: result.groupIds || [] };
+  }
+  return result;
+}
+
 // B2 数据权限中间件：注入 req.dataScope，供查询层过滤
 // usage: guard('order','read') 之后，或与 guard 组合
 async function dataScope(req, res, next) {
   try {
-    req.dataScope = await resolveDataScope(req.user.id);
+    const resolved = await resolveDataScope(req.user.id);
+    req.dataScope = narrowScopeByApiKey(resolved, req.apiKey);
     next();
   } catch (e) {
     next(e);
@@ -102,4 +121,4 @@ async function buildOrderScopeWhere(req, baseWhere = {}) {
 const scoped = (module, action) => [dataScope];
 // 注意：dataScope 需在 query 前运行，且 authRequired 在前
 
-module.exports = { resolveDataScope, dataScope, getScope, scopedWhere, scopedFindOne, attachOwnership, hasScopeColumns, buildOrderScopeWhere, scoped };
+module.exports = { resolveDataScope, narrowScopeByApiKey, dataScope, getScope, scopedWhere, scopedFindOne, attachOwnership, hasScopeColumns, buildOrderScopeWhere, scoped };

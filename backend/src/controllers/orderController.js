@@ -164,6 +164,7 @@ const batchStatus = asyncHandler(async (req, res) => {
 });
 
 const base = crudController({
+  name: 'order',
   model: Order,
   searchFields: ['orderNo', 'cargoDesc', 'containerNo', 'originPort', 'destPort'],
   codePrefix: 'SO',

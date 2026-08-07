@@ -4,6 +4,7 @@ const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { parseExcel, buildTemplate, cleanStr } = require('../services/importService');
 
 const base = crudController({
+  name: 'supplier',
   model: Supplier,
   searchFields: ['code', 'name', 'contact', 'phone', 'category'],
   codePrefix: 'SUP',

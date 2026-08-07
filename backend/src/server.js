@@ -1,13 +1,19 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const swaggerUi = require('swagger-ui-express');
 const config = require('./config');
 const routes = require('./routes');
 const { sequelize } = require('./models');
 const { audit } = require('./middleware/audit');
 const { logger } = require('./utils/logger');
+const { swaggerSpec } = require('./config/swagger');
+const { ModuleRegistry } = require('./core/moduleRegistry');
 const { startAlertScheduler } = require('./services/alertScheduler');
+const { subscribeEvents: subscribeAlertEvents } = require('./services/alertService');
+const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
 
 const app = express();
 
@@ -48,6 +54,14 @@ app.use(audit);
 // 健康检查
 app.get('/api/health', (req, res) => res.json({ status: 'up', time: new Date().toISOString(), env: config.env }));
 
+// 接口文档（Swagger UI + 原始 OpenAPI JSON）
+// 挂在 /api-docs 而非 /api/*，不占用业务命名空间，也不受 /api 全局限流影响
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: '货运代理管理系统 接口文档',
+  swaggerOptions: { persistAuthorization: true },
+}));
+app.get('/openapi.json', (req, res) => res.json(swaggerSpec));
+
 // 业务路由
 app.use('/api', routes);
 
@@ -64,8 +78,14 @@ app.use((err, req, res, next) => {
 async function start() {
   await sequelize.sync();
   logger.info('[DB] 数据库同步完成');
-  // 挂载预警定时任务
+  // 扫描 src/modules 下的模块目录，登记元信息（模型/菜单/事件）
+  // 只做发现与校验，不挂载路由：业务路由的唯一权威来源仍是 src/routes/index.js
+  ModuleRegistry.load(path.join(__dirname, 'modules'));
+  // 挂载预警定时任务 + 事件驱动监听
   startAlertScheduler();
+  subscribeAlertEvents();
+  subscribeAutomationEvents();
+  logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化）');
   app.listen(config.port, () => {
     logger.info(`[SERVER] 货运代理管理系统后端已启动: http://localhost:${config.port}`);
   });

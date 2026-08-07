@@ -2,6 +2,7 @@ const { Booking, Order, Supplier } = require('../models');
 const { crudController } = require('./baseController');
 
 const base = crudController({
+  name: 'booking',
   model: Booking,
   searchFields: ['bookingNo', 'vesselName', 'flightNo'],
   codePrefix: 'BK',
