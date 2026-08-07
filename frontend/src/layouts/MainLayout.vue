@@ -125,6 +125,8 @@ const allMenus = [
   { path: '/yards', title: '场站查询', icon: 'Van', permission: 'yard:read' },
   { path: '/external', title: '外部数据', icon: 'DataAnalysis', permission: 'track:read' },
   { path: '/finance', title: '财务管理', icon: 'Money', permission: 'finance:read' },
+  { path: '/finance/statement', title: '对账单', icon: 'Tickets', permission: 'finance:read' },
+  { path: '/import', title: '数据导入', icon: 'Upload', permission: undefined },
   { path: '/quotations', title: '报价询价', icon: 'PriceTag', permission: 'quotation:read' },
   { path: '/integrations', title: '外部对接', icon: 'Connection', permission: 'integration:read' },
   { path: '/alerts', title: '预警中心', icon: 'Bell', permission: 'alert:read' },

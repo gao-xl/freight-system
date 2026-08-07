@@ -205,6 +205,12 @@ export const invoiceAPI = {
 export const financeWriteoffAPI = (id, data) => request.post(`/finance/${id}/writeoff`, data);
 export const financeBatchWriteoffAPI = (ids, amount) => request.post('/finance/batch-writeoff', { ids, amount });
 
+// P2.3 Excel 批量导入（统一入口：customer/supplier/order）
+export const importTemplateAPI = (biz) => request.get(`/import/templates/${biz}`, { responseType: 'blob' });
+export const importFileAPI = (biz, formData) => request.post(`/import/${biz}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+// P2.4 对账单：GET /finance/statement?customerId=&month=YYYY-MM
+export const financeStatementAPI = (params) => request.get('/finance/statement', { params });
+
 // 单票毛利（B6）
 export const orderProfitAPI = (id) => request.get(`/orders/${id}/profit`);
 export const orderProfitSummaryAPI = (params) => request.get('/orders/profit-summary', { params });
