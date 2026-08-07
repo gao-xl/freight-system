@@ -107,8 +107,15 @@ const removeFollow = asyncHandler(async (req, res) => {
 // 待跟进客户（超期未跟进 / 到了下次跟进时间）
 const pendingFollows = asyncHandler(async (req, res) => {
   const now = new Date();
+  // B2 数据隔离：仅列出当前用户可见范围内的客户跟进（admin=all 不受限）
+  const custWhere = await scopedWhere(req, {});
+  const visible = await Customer.findAll({ where: custWhere, attributes: ['id'] });
+  const customerIds = visible.map((c) => c.id);
   const rows = await CustomerFollow.findAll({
-    where: { nextFollowAt: { [Op.ne]: null }, nextFollowAt: { [Op.lte]: now } },
+    where: {
+      customerId: { [Op.in]: customerIds },
+      nextFollowAt: { [Op.ne]: null, [Op.lte]: now },
+    },
     include: [
       { model: Customer, as: 'customer', attributes: ['id', 'code', 'name', 'level', 'contact'] },
       { model: User, as: 'operator', attributes: ['id', 'name', 'username'] },

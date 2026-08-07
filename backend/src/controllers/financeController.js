@@ -1,6 +1,6 @@
 const { FinanceRecord, Order, Customer, Supplier, Invoice } = require('../models');
 const { crudController } = require('./baseController');
-const { ok, asyncHandler } = require('../utils/response');
+const { ok, fail, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
 const { scopedWhere, scopedFindOne } = require('../middleware/dataScope');
 const { exportBuffer } = require('../services/exportService');
@@ -242,13 +242,18 @@ const batchWriteoff = asyncHandler(async (req, res) => {
 // B6 多币种汇总：按币种分组并换算为基准币种
 const currencySummary = asyncHandler(async (req, res) => {
   const base = (req.query.base || 'USD').toUpperCase();
-  const data = await financeSummaryByCurrency(base);
+  // B2 数据隔离：汇总仅统计当前用户可见范围的财务记录（admin=all 不受限）
+  const where = await scopedWhere(req, {});
+  const data = await financeSummaryByCurrency(base, where);
   ok(res, data);
 });
 
 // B6 客户信用额度校验
 const creditCheck = asyncHandler(async (req, res) => {
   const { customerId } = req.params;
+  // B2 数据隔离：仅允许查询当前用户可见范围内的客户（admin=all 不受限）
+  const customer = await scopedFindOne(req, Customer, { id: customerId });
+  if (!customer) return fail(res, '客户不存在', 1, 404);
   const base = (req.query.base || 'CNY').toUpperCase();
   const data = await checkCustomerCredit(customerId, base);
   ok(res, data);

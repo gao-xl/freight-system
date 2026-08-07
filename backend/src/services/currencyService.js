@@ -11,8 +11,9 @@ async function convertTo(amount, currency, baseCurrency = 'USD') {
 }
 
 // 财务汇总（按币种分组，再换算为基准币种）：应收/应付/已收/未收
-async function financeSummaryByCurrency(baseCurrency = 'USD') {
-  const rows = await FinanceRecord.findAll({ attributes: ['direction', 'currency', 'amount', 'paidAmount'] });
+// where：数据隔离范围约束（由调用方传入 scopedWhere 结果；不传则统计全部）
+async function financeSummaryByCurrency(baseCurrency = 'USD', where = {}) {
+  const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'currency', 'amount', 'paidAmount'] });
   const byCurrency = new Map();
   for (const r of rows) {
     const key = r.currency || baseCurrency;
