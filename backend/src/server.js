@@ -70,6 +70,10 @@ app.use((req, res) => res.status(404).json({ code: 404, message: '接口不存�
 
 // 错误处理
 app.use((err, req, res, next) => {
+  // 业务错误（带 status 的业务异常）：按业务状态码返回，不记 500
+  if (err && typeof err.status === 'number' && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ code: 1, message: err.message || '操作失败', data: null });
+  }
   logger.error('Unhandled error', { url: req.originalUrl, message: err.message, stack: err.stack });
   // 不向客户端泄露内部错误详情（SQL/路径/第三方接口信息），仅返回通用文案
   res.status(500).json({ code: 500, message: '服务器内部错误，请联系管理员' });

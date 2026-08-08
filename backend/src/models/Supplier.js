@@ -18,6 +18,7 @@ const Supplier = sequelize.define('Supplier', {
   status: { type: DataTypes.ENUM('active', 'inactive'), defaultValue: 'active' },
   groupId: { type: DataTypes.INTEGER },     // 数据隔离：归属小组
   ownerId: { type: DataTypes.INTEGER },     // 数据隔离：归属操作员（负责人）
-}, { timestamps: true });
+  version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
+}, { timestamps: true, paranoid: true });
 
 module.exports = Supplier;

@@ -86,6 +86,15 @@ function crudController(opts) {
     if (!item) return fail(res, '记录不存在', 1, 404);
     const body = serializeCustomFields({ ...req.body });
     delete body.id;
+    // P3.7 乐观锁：模型有 version 字段且请求携带 version 时校验；不带则保持兼容（跳过校验）
+    if (model.rawAttributes.version && body.version !== undefined) {
+      const clientVersion = Number(body.version);
+      const currentVersion = Number(item.version || 0);
+      if (clientVersion !== currentVersion) {
+        return fail(res, '数据已被他人修改，请刷新后重试', 409, 409);
+      }
+      body.version = currentVersion + 1; // 更新后版本自增
+    }
     if (beforeWrite) await beforeWrite(req, item, body);
     await item.update(body);
     if (name) events.emit(`${name}.updated`, { id: item.id, data: item.toJSON(), user: req.user });

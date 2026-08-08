@@ -249,6 +249,15 @@ const update = asyncHandler(async (req, res) => {
   const body = { ...req.body };
   delete body.id;
   if (body.customFields && typeof body.customFields !== 'string') body.customFields = JSON.stringify(body.customFields);
+  // P3.7 乐观锁：携带 version 时校验，冲突返回 409；不带则兼容旧前端
+  if (body.version !== undefined) {
+    const clientVersion = Number(body.version);
+    const currentVersion = Number(item.version || 0);
+    if (clientVersion !== currentVersion) {
+      return fail(res, '数据已被他人修改，请刷新后重试', 409, 409);
+    }
+    body.version = currentVersion + 1;
+  }
   await item.update(body);
   events.emit('order.updated', { orderId: item.id, orderNo: item.orderNo });
   ok(res, item, '更新成功');
@@ -380,7 +389,9 @@ const profit = asyncHandler(async (req, res) => {
   let receivable = 0, payable = 0, received = 0, paid = 0;
   const byCategory = {};
   for (const r of rows) {
-    const amt = Number(r.amount), paidAmt = Number(r.paidAmount);
+    // P3.7 本币口径：优先 localAmount（本币折算），缺省回退原币金额（历史数据兼容）
+    const amt = r.localAmount != null ? Number(r.localAmount) : Number(r.amount);
+    const paidAmt = r.localAmount != null ? Number((Number(r.paidAmount || 0) * (r.exchangeRate || 1)).toFixed(2)) : Number(r.paidAmount);
     if (r.direction === 'receivable') { receivable += amt; received += paidAmt; }
     else { payable += amt; paid += paidAmt; }
     const key = r.category;
@@ -406,13 +417,15 @@ const profitSummary = asyncHandler(async (req, res) => {
     include: [{ model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] }],
   });
   const orders = await Order.findAll(query);
-  const records = await FinanceRecord.findAll({ attributes: ['orderId', 'direction', 'amount'] });
+  const records = await FinanceRecord.findAll({ attributes: ['orderId', 'direction', 'amount', 'localAmount', 'exchangeRate'] });
   const byOrder = {};
   for (const r of records) {
     const oid = r.orderId;
     byOrder[oid] = byOrder[oid] || { receivable: 0, payable: 0 };
-    if (r.direction === 'receivable') byOrder[oid].receivable += Number(r.amount);
-    else byOrder[oid].payable += Number(r.amount);
+    // P3.7 本币口径：localAmount 优先
+    const amt = r.localAmount != null ? Number(r.localAmount) : Number(r.amount);
+    if (r.direction === 'receivable') byOrder[oid].receivable += amt;
+    else byOrder[oid].payable += amt;
   }
   const groups = {};
   for (const o of orders) {

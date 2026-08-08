@@ -20,6 +20,7 @@ const Invoice = sequelize.define('Invoice', {
   createdBy: { type: DataTypes.INTEGER },
   groupId: { type: DataTypes.INTEGER },     // 数据隔离：归属小组
   ownerId: { type: DataTypes.INTEGER },     // 数据隔离：归属操作员（负责人）
-}, { timestamps: true, indexes: [{ fields: ['orderId'] }, { fields: ['invoiceNo'] }] });
+  version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
+}, { timestamps: true, paranoid: true, indexes: [{ fields: ['orderId'] }, { fields: ['invoiceNo'] }] });
 
 module.exports = Invoice;

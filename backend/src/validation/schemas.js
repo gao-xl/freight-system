@@ -90,6 +90,7 @@ const orderBase = Joi.object({
   salesId: id,
   releaseStatus: enumVal(['none', 'pending', 'approved', 'delivered']),
   remark: text,
+  version: Joi.number().integer().min(0).optional(), // P3.7 乐观锁：携带则服务端校验版本
 });
 const orderCreate = orderBase.keys({ customerId: id.required() });
 const orderUpdate = orderBase;
@@ -185,6 +186,7 @@ const financeBase = Joi.object({
   paidAmount: dec,
   dueDate: dateOnly,
   remark: text,
+  settleMonth: dateOnly, // 账期：结算归属月份（可空，为空则按 createdAt 归属）
 });
 const financeCreate = financeBase.keys({ direction: Joi.string().valid('receivable', 'payable').required() });
 const financeUpdate = financeBase;

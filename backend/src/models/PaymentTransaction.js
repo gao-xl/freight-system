@@ -17,6 +17,7 @@ const PaymentTransaction = sequelize.define('PaymentTransaction', {
   externalRef: { type: DataTypes.STRING(50) },                            // 通道返回流水号
   error: { type: DataTypes.STRING(255) },
   paidAt: { type: DataTypes.DATE },
-}, { timestamps: true, indexes: [{ fields: ['txNo'] }, { fields: ['orderId'] }] });
+  version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
+}, { timestamps: true, paranoid: true, indexes: [{ fields: ['txNo'] }, { fields: ['orderId'] }] });
 
 module.exports = PaymentTransaction;

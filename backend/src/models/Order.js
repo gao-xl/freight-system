@@ -33,6 +33,7 @@ const Order = sequelize.define('Order', {
   ownerId: { type: DataTypes.INTEGER }, // B2 归属操作员（负责人）
   customFields: { type: DataTypes.TEXT }, // B4 自定义字段扩展（JSON 字符串）
   remark: { type: DataTypes.TEXT },
-}, { timestamps: true });
+  version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
+}, { timestamps: true, paranoid: true });
 
 module.exports = Order;
