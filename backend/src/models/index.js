@@ -41,6 +41,7 @@ const ApiKey = require('./ApiKey');
 const FreightRate = require('./FreightRate');
 const BusinessRule = require('./BusinessRule');
 const WorkflowConfig = require('./WorkflowConfig');
+const ReportDefinition = require('./ReportDefinition');
 const AccountingPeriod = require('./AccountingPeriod');
 
 // 关联关系
@@ -176,5 +177,6 @@ module.exports = {
   FreightRate,
   BusinessRule,
   WorkflowConfig,
+  ReportDefinition,
   AccountingPeriod,
 };

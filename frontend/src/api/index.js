@@ -156,6 +156,15 @@ export const workflowAPI = {
   remove: (id) => request.delete(`/workflow/configs/${id}`),
   transition: (data) => request.post('/workflow/transition', data),
 };
+// P3.3 自定义报表
+export const reportAPI = {
+  meta: () => request.get('/reports/meta'),
+  list: (params) => request.get('/reports', { params }),
+  create: (data) => request.post('/reports', data),
+  update: (id, data) => request.put(`/reports/${id}`, data),
+  remove: (id) => request.delete(`/reports/${id}`),
+  run: (id) => request.post(`/reports/${id}/run`),
+};
 // 系统审计日志
 export const auditLogAPI = (params) => request.get('/system/audit-logs', { params });
 // 公司设置（公司信息/部门/银行账号/开票抬头）

@@ -190,6 +190,7 @@ const menuGroups = [
       { path: '/alerts', title: '预警中心', icon: 'Bell', permission: 'alert:read' },
       { path: '/system/business-rules', title: '业务规则', icon: 'SetUp', permission: 'alert:read' },
       { path: '/system/workflow', title: '流程配置', icon: 'Share', permission: 'alert:read' },
+      { path: '/system/reports', title: '报表设计', icon: 'DataAnalysis', permission: 'dashboard:read' },
     ],
   },
   {

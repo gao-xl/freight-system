@@ -31,11 +31,18 @@ module.exports = {
     });
     await queryInterface.addIndex('AccountingPeriods', ['year', 'month']);
 
-    await queryInterface.addColumn('FinanceRecords', 'settleMonth', {
-      type: Sequelize.DATEONLY,
-      allowNull: true,
-    });
-    await queryInterface.addIndex('FinanceRecords', ['settleMonth']);
+    // 为财务流水增加结算归属月份字段（幂等，避免与 settle-month 迁移重复冲突）
+    const table = await queryInterface.describeTable('FinanceRecords');
+    if (!table.settleMonth) {
+      await queryInterface.addColumn('FinanceRecords', 'settleMonth', {
+        type: Sequelize.DATEONLY,
+        allowNull: true,
+      });
+    }
+    const indexes = await queryInterface.showIndex('FinanceRecords');
+    if (!indexes.some((i) => i.name === 'finance_records_settle_month')) {
+      await queryInterface.addIndex('FinanceRecords', ['settleMonth'], { name: 'finance_records_settle_month' });
+    }
   },
 
   async down(queryInterface) {

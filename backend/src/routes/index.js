@@ -40,6 +40,7 @@ const importCtrl = require('../controllers/importController');
 const freightRate = require('../controllers/freightRateController');
 const businessRule = require('../controllers/businessRuleController');
 const workflow = require('../controllers/workflowController');
+const report = require('../controllers/reportController');
 
 const router = express.Router();
 
@@ -371,6 +372,14 @@ router.post('/workflow/configs', guard('alert', 'update'), workflow.create);
 router.put('/workflow/configs/:id', guard('alert', 'update'), workflow.update);
 router.delete('/workflow/configs/:id', guard('alert', 'update'), workflow.remove);
 router.post('/workflow/transition', guard('order', 'update'), workflow.doTransition);
+
+// P3.3 自定义报表
+router.get('/reports/meta', guard('dashboard', 'read'), report.meta);
+router.get('/reports', guard('dashboard', 'read'), report.list);
+router.post('/reports', guard('dashboard', 'update'), report.create);
+router.put('/reports/:id', guard('dashboard', 'update'), report.update);
+router.delete('/reports/:id', guard('dashboard', 'update'), report.remove);
+router.post('/reports/:id/run', guard('dashboard', 'read'), report.run);
 
 // 免费第三方外部API
 router.get('/external/vessel/:mmsi', guard('track', 'read'), external.vessel);

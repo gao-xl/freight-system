@@ -36,6 +36,7 @@ const routes = [
       { path: 'system/custom-fields', name: 'customFields', component: () => import('@/views/system/CustomFieldManage.vue'), meta: { title: '自定义字段', hidden: true, permission: 'system:custom' } },
       { path: 'system/business-rules', name: 'businessRules', component: () => import('@/views/system/BusinessRuleManage.vue'), meta: { title: '业务规则', hidden: true, permission: 'alert:read' } },
       { path: 'system/workflow', name: 'workflow', component: () => import('@/views/system/WorkflowConfig.vue'), meta: { title: '流程配置', hidden: true, permission: 'alert:read' } },
+      { path: 'system/reports', name: 'reports', component: () => import('@/views/system/ReportDesigner.vue'), meta: { title: '报表设计', hidden: true, permission: 'dashboard:read' } },
       { path: 'system/print-templates', redirect: '/print-templates' },
       { path: 'print-templates', name: 'printTemplates', component: () => import('@/views/system/PrintTemplateDesigner.vue'), meta: { title: '单证模板', icon: 'Tickets', permission: 'print:read' } },
     ],
