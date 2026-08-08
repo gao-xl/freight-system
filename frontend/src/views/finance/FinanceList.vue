@@ -1,5 +1,11 @@
 <template>
   <div>
+    <!-- 页面标题 -->
+    <div class="page-heading">
+      <div class="title"><el-icon><Money /></el-icon>财务管理</div>
+      <span class="page-desc">应收应付流水 · 对账 · 毛利</span>
+    </div>
+
     <div class="stat-grid">
       <div class="stat-card">
         <div class="label">应收总额</div><div class="value" style="color:var(--danger)">{{ money(summary.receivable) }}</div>
@@ -291,11 +297,12 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart
 </script>
 
 <style scoped>
+.page-desc { font-size: 13px; color: var(--text-muted); }
 .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 .trend-chart { height: 280px; }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .left { display: flex; gap: 10px; align-items: center; }
 .right-btn { display: flex; gap: 8px; align-items: center; }
-.batch-tip { margin-bottom: 14px; font-size: 13px; color: var(--text-secondary); }
-.currency-total { margin-top: 10px; font-size: 13px; color: var(--text-secondary); border-top: 1px dashed var(--border); padding-top: 10px; }
+.batch-tip { margin-bottom: 14px; font-size: 13px; color: var(--text-muted); }
+.currency-total { margin-top: 10px; font-size: 13px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 10px; }
 </style>

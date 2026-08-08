@@ -1,5 +1,10 @@
 <template>
-  <div class="page-card">
+  <div>
+    <div class="page-heading">
+      <div class="title"><el-icon><Tickets /></el-icon>{{ pageTitle }}</div>
+      <span class="total-hint">共 {{ total }} 张订单</span>
+    </div>
+    <div class="page-card">
     <div class="table-topbar">
       <div class="left">
         <el-input v-model="query.keyword" placeholder="搜索订单号/货名/箱号" clearable style="width:240px" @keyup.enter="load(1)" @clear="load(1)">
@@ -151,11 +156,12 @@
         <el-button type="primary" :loading="updatingStatus" @click="batchStatus">执行修改</el-button>
       </template>
     </el-dialog>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue';
+import { reactive, ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { orderAPI, customerAPI, orderExportAPI, customFieldAPI, orderBatchAdvanceAPI, orderBatchStatusAPI } from '@/api';
@@ -179,6 +185,12 @@ const advancing = ref(false);
 const updatingStatus = ref(false);
 const advanceNode = ref('');
 const targetStatus = ref('');
+
+const pageTitle = computed(() => ({
+  export: '出口操作',
+  import: '进口操作',
+  transit: '中转操作',
+}[route.query.type] || '订单管理'));
 
 const ORDER_NODE_OPTIONS = {
   booked: '订舱', gate_in: '进港', customs: '报关', loaded: '装船',
@@ -296,8 +308,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.total-hint { font-size: 13px; color: var(--text-muted); }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .left { display: flex; gap: 10px; align-items: center; }
 .right-btn { display: flex; gap: 8px; align-items: center; }
-.batch-tip { margin-bottom: 14px; font-size: 13px; color: var(--muted); }
+.batch-tip { margin-bottom: 14px; font-size: 13px; color: var(--text-muted); }
 </style>

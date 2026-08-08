@@ -1,5 +1,11 @@
 <template>
   <div>
+    <!-- 页面标题 -->
+    <div class="page-heading">
+      <div class="title"><el-icon><Odometer /></el-icon>经营看板</div>
+      <span class="welcome">欢迎回来，{{ greeting() }}</span>
+    </div>
+
     <!-- 统计卡片 -->
     <div class="stat-grid">
       <div class="stat-card">
@@ -130,28 +136,41 @@ const statusText = (s) => statusMap[s]?.[0] || s;
 const statusType = (s) => statusMap[s]?.[1] || 'info';
 const money = (v) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const goDetail = (row) => router.push(`/orders/${row.id}`);
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 6) return '夜深了';
+  if (h < 12) return '早上好';
+  if (h < 18) return '下午好';
+  return '晚上好';
+}
+
+// 精致图表调色板
+const PALETTE = ['#1f5fbf', '#0d9488', '#d97706', '#7c3aed', '#dc2626', '#16a34a', '#f59e0b', '#64748b'];
 
 function renderCharts(statusData, modeData) {
   statusChart = echarts.init(statusRef.value);
   statusChart.setOption({
-    tooltip: { trigger: 'item' },
-    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    tooltip: { trigger: 'item', backgroundColor: '#fff', borderColor: 'var(--border)', textStyle: { color: 'var(--text-main)' }, boxShadow: '0 4px 12px rgba(16,24,40,0.1)' },
+    legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { fontSize: 12, color: 'var(--text-sub)' } },
+    color: PALETTE,
     series: [{
-      type: 'pie', radius: ['42%', '68%'], center: ['50%', '45%'],
+      type: 'pie', radius: ['44%', '68%'], center: ['50%', '44%'],
       itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-      label: { formatter: '{b}: {c}' },
+      label: { formatter: '{b}: {c}', color: 'var(--text-sub)', fontSize: 12 },
+      emphasis: { scaleSize: 6 },
       data: statusData.map((d) => ({ name: statusText(d.name) || d.name, value: d.value })),
     }],
   });
 
   modeChart = echarts.init(modeRef.value);
   modeChart.setOption({
-    tooltip: { trigger: 'item' },
-    legend: { bottom: 0, textStyle: { fontSize: 11 } },
+    tooltip: { trigger: 'item', backgroundColor: '#fff', borderColor: 'var(--border)', textStyle: { color: 'var(--text-main)' } },
+    legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { fontSize: 12, color: 'var(--text-sub)' } },
+    color: PALETTE,
     series: [{
-      type: 'pie', roseType: 'radius', radius: ['25%', '65%'], center: ['50%', '45%'],
+      type: 'pie', roseType: 'radius', radius: ['25%', '65%'], center: ['50%', '44%'],
       itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-      label: { formatter: '{b}: {c}' },
+      label: { formatter: '{b}: {c}', color: 'var(--text-sub)', fontSize: 12 },
       data: modeData.map((d) => ({ name: modeMap[d.name] || d.name, value: d.value })),
     }],
   });
@@ -160,19 +179,19 @@ function renderCharts(statusData, modeData) {
 function renderAging() {
   agingChart = echarts.init(agingRef.value);
   agingChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 60, right: 20, top: 30, bottom: 30 },
-    xAxis: { type: 'category', data: ['未到期', ...aging.value.bands.map((b) => b.label), '已结清'] },
-    yAxis: { type: 'value', name: 'USD' },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: '#fff', borderColor: 'var(--border)', textStyle: { color: 'var(--text-main)' } },
+    grid: { left: 64, right: 20, top: 30, bottom: 30 },
+    xAxis: { type: 'category', data: ['未到期', ...aging.value.bands.map((b) => b.label), '已结清'], axisLine: { lineStyle: { color: 'var(--border)' } }, axisLabel: { color: 'var(--text-sub)' } },
+    yAxis: { type: 'value', name: 'USD', nameTextStyle: { color: 'var(--text-muted)' }, axisLabel: { color: 'var(--text-sub)' }, splitLine: { lineStyle: { color: 'var(--border-lighter, #eef1f5)' } } },
     series: [{
-      type: 'bar', barWidth: 40,
+      type: 'bar', barWidth: 34,
       itemStyle: { borderRadius: [6, 6, 0, 0] },
       data: [
-        { value: aging.value.unbilled.amount, itemStyle: { color: '#059669' } },
+        { value: aging.value.unbilled.amount, itemStyle: { color: '#0d9488' } },
         ...aging.value.bands.map((b) => ({ value: b.amount, itemStyle: { color: b.key === 'd0_30' ? '#f59e0b' : b.key === 'd31_60' ? '#f97316' : '#dc2626' } })),
         { value: aging.value.settled.amount, itemStyle: { color: '#94a3b8' } },
       ],
-      label: { show: true, position: 'top', formatter: (p) => money(p.value) },
+      label: { show: true, position: 'top', formatter: (p) => money(p.value), color: 'var(--text-sub)', fontSize: 11 },
     }],
   });
 }
@@ -182,14 +201,14 @@ function renderSales() {
   const names = sales.value.map((s) => s.name);
   const margins = sales.value.map((s) => s.margin);
   salesChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 80, right: 30, top: 20, bottom: 30 },
-    xAxis: { type: 'value', name: '毛利(USD)' },
-    yAxis: { type: 'category', data: names },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: '#fff', borderColor: 'var(--border)', textStyle: { color: 'var(--text-main)' } },
+    grid: { left: 84, right: 34, top: 20, bottom: 30 },
+    xAxis: { type: 'value', name: '毛利(USD)', nameTextStyle: { color: 'var(--text-muted)' }, axisLabel: { color: 'var(--text-sub)' }, splitLine: { lineStyle: { color: 'var(--border-lighter, #eef1f5)' } } },
+    yAxis: { type: 'category', data: names, axisLine: { lineStyle: { color: 'var(--border)' } }, axisLabel: { color: 'var(--text-sub)' } },
     series: [{
       type: 'bar', barWidth: 16, data: margins,
-      itemStyle: { borderRadius: [0, 6, 6, 0], color: '#2563eb' },
-      label: { show: true, position: 'right', formatter: (p) => money(p.value) },
+      itemStyle: { borderRadius: [0, 6, 6, 0], color: '#1f5fbf' },
+      label: { show: true, position: 'right', formatter: (p) => money(p.value), color: 'var(--text-sub)', fontSize: 11 },
     }],
   });
 }
@@ -221,6 +240,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.welcome { font-size: 13px; color: var(--text-muted); }
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -233,11 +253,16 @@ onBeforeUnmount(() => {
   margin: 16px 0;
 }
 .metric-card { text-align: center; }
-.metric-value { font-size: 26px; font-weight: 700; margin: 6px 0; }
+.metric-value { font-size: 26px; font-weight: 700; margin: 6px 0; font-family: var(--font-num); }
 .chart-card.wide { grid-column: 1 / -1; }
 .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-main); }
 .chart { height: 300px; }
 .chart-card.wide .chart-card-table { }
+
+/* 卡片渐次浮现 */
+.stat-grid { animation: fadeUp .3s ease both; }
+.chart-grid { animation: fadeUp .38s ease both; }
+.metric-grid { animation: fadeUp .46s ease both; }
 
 /* 窄屏适配：图表与指标卡堆叠为单/双列 */
 @media (max-width: 768px) {

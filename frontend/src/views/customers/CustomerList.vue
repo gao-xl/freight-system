@@ -1,5 +1,11 @@
 <template>
   <div>
+    <!-- 页面标题 -->
+    <div class="page-heading">
+      <div class="title"><el-icon><User /></el-icon>客户管理</div>
+      <span class="page-desc">维护客户档案、等级与信用额度</span>
+    </div>
+
     <!-- 概览 -->
     <div class="stat-grid">
       <div v-for="(c, i) in topStats" :key="i" class="stat-card">
@@ -227,6 +233,7 @@ onMounted(() => { load(1); loadStats(); });
 </script>
 
 <style scoped>
+.page-desc { font-size: 13px; color: var(--text-muted); }
 .pager { display: flex; justify-content: flex-end; margin-top: 16px; }
 .left { display: flex; gap: 10px; align-items: center; }
 .right-btn { display: flex; gap: 8px; align-items: center; }
