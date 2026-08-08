@@ -259,3 +259,13 @@ export const releaseAPI = {
   apply: (orderId, data) => request.post(`/orders/${orderId}/release`, data),
   approve: (id, data) => request.post(`/release/${id}/approve`, data),
 };
+// ============ Onboarding 引导系统 ============
+export const initStatusAPI = () => request.get('/system/init-status');
+export const setupAdminAPI = (data) => request.post('/system/setup-admin', data);
+export const createDemoDataAPI = () => request.post('/system/demo-data');
+export const clearDemoDataAPI = () => request.delete('/system/demo-data');
+// 公司信息（引导 Wizard 复用现有接口）
+export const companyProfileAPI = {
+  get: () => request.get('/company/profile'),
+  save: (data) => request.put('/company/profile', data),
+};

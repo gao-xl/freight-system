@@ -4,6 +4,8 @@ node_modules/
 # 构建产物
 dist/
 build/
+# 开发文档构建产物（由 docs-site npm run build 生成，随后端一起输出）
+backend/public/docs/
 
 # 环境变量（含密钥/数据库口令，严禁提交）
 .env
@@ -43,3 +45,12 @@ Thumbs.db
 # 测试/临时
 coverage/
 tmp/
+
+# D1 依赖修复临时产物（npm 提取 bug 的修复脚本与残留目录）
+backend/.pa-x/
+backend/.fix-x/
+backend/.fix-extract/
+backend/.fix.tgz
+backend/fix-deps.js
+backend/d1-poc.js
+frontend/dist-e2*/

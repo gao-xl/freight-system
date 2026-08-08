@@ -1,0 +1,54 @@
+/* Driver.js 带跑气泡 · 主题适配（--tour-* Token 见 design-tokens.css 第十节） */
+.driver-popover.tour-bubble {
+  background: var(--tour-bubble-bg);
+  border: 1px solid var(--tour-bubble-border);
+  border-radius: var(--tour-bubble-radius);
+  box-shadow: var(--tour-bubble-shadow);
+  max-width: var(--tour-bubble-max-width);
+  color: var(--text-main);
+}
+.driver-popover.tour-bubble .driver-popover-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.driver-popover.tour-bubble .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-sub);
+}
+.driver-popover.tour-bubble .driver-popover-close-btn {
+  color: var(--text-muted);
+}
+.driver-popover.tour-bubble .driver-popover-next-btn,
+.driver-popover.tour-bubble .driver-popover-prev-btn {
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+.driver-popover.tour-bubble .driver-popover-next-btn {
+  background: var(--tour-highlight);
+  border-color: var(--tour-highlight);
+  color: #fff;
+}
+.driver-popover.tour-bubble .driver-popover-arrow-side-left.driver-popover-arrow {
+  border-left-color: var(--tour-bubble-border);
+}
+.driver-popover.tour-bubble .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-right-color: var(--tour-bubble-border);
+}
+.driver-popover.tour-bubble .driver-popover-arrow-side-top.driver-popover-arrow {
+  border-top-color: var(--tour-bubble-border);
+}
+.driver-popover.tour-bubble .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: var(--tour-bubble-border);
+}
+/* 高亮元素 */
+.driver-highlighted-element {
+  border: 2px solid var(--tour-highlight) !important;
+  box-shadow: 0 0 0 4px var(--tour-highlight-ring) !important;
+  border-radius: var(--radius-sm) !important;
+}
+/* 遮罩 */
+.driver-overlay {
+  background: var(--tour-overlay) !important;
+}

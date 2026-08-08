@@ -9,6 +9,10 @@ import App from './App.vue';
 import router from './router';
 import { useAuthStore } from './stores/auth';
 import './styles/index.css';
+// 引导体系 Design Tokens（Spec §8 扩展 Token：--onboard-* / --health-* / --help-* 等）
+import './styles/design-tokens.css';
+// Driver.js 带跑气泡主题适配
+import './styles/tour.css';
 
 const app = createApp(App);
 

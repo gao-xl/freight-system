@@ -1,0 +1,162 @@
+/* ============================================================
+   freight-system 引导体系 · Design Tokens（CSS 版）
+   依据：Spec v2.1 §8（现有品牌蓝体系 + 引导扩展 Token）
+   主题：浅色（现有），不新增暗色
+   说明：styles/index.css 已含 base tokens；本文件为权威 Token 源
+        （base + 扩展），Onboarding 模块组件引用扩展段即可，
+        与 index.css 同值不冲突。前端 import 以本文件为准。
+   ============================================================ */
+:root {
+  /* ==========================================================
+     一、品牌色（集装箱蓝）
+     ========================================================== */
+  --brand: #1f5fbf;
+  --brand-hover: #2a6fd6;
+  --brand-dark: #174a96;
+  --brand-light: #eaf1fb;
+  --brand-bg: #f4f8fe;
+
+  /* ==========================================================
+     二、语义色
+     ========================================================== */
+  --success: #16a34a;
+  --success-light: #e7f6ec;
+  --warning: #d97706;
+  --warning-light: #fdf3e3;
+  --danger: #dc2626;
+  --danger-light: #fdecec;
+  --info: #64748b;
+  --info-light: #eef1f5;
+
+  /* ==========================================================
+     三、中性色
+     ========================================================== */
+  --text-main: #1a2332;
+  --text-sub: #5b6b7b;
+  --text-muted: #98a2b3;
+  --border: #e6eaf0;
+  --border-strong: #d5dbe4;
+  --bg-page: #f4f6fa;
+  --bg-card: #ffffff;
+
+  /* ==========================================================
+     四、侧边栏（深蓝）
+     ========================================================== */
+  --sidebar-bg: #0f2647;
+  --sidebar-bg-2: #0b1e39;
+  --sidebar-bg-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-active: var(--brand);
+  --sidebar-text: #9fb0c8;
+  --sidebar-text-active: #ffffff;
+
+  /* ==========================================================
+     五、几何（圆角）
+     ========================================================== */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-pill: 9999px;
+
+  /* ==========================================================
+     六、阴影（分层）
+     ========================================================== */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12), 0 4px 8px rgba(16, 24, 40, 0.06);
+
+  /* ==========================================================
+     七、字体
+     ========================================================== */
+  --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  --font-num: 'SF Pro Display', 'Segoe UI', Inter, 'PingFang SC', sans-serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 22px;
+  --font-size-3xl: 26px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --leading-body: 1.6;
+  --leading-tight: 1.3;
+
+  /* ==========================================================
+     八、间距（4px 网格）
+     ========================================================== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ==========================================================
+     九、布局
+     ========================================================== */
+  --header-h: 60px;
+
+  /* ==========================================================
+     十、引导模块扩展 Token（Spec §8 锁定）
+     ========================================================== */
+
+  /* ---- Onboarding（向导 / Checklist / 空状态）---- */
+  --onboard-bg: var(--brand-bg);            /* #f4f8fe 引导卡片底色 */
+  --onboard-border: var(--brand-light);     /* #eaf1fb */
+  --onboard-step-done: var(--success);      /* 步骤已完成 */
+  --onboard-step-current: var(--brand);     /* 当前步骤 */
+  --onboard-step-todo: var(--text-muted);   /* 待做步骤 */
+  --onboard-progress-track: var(--border);  /* 进度条轨道 */
+
+  /* ---- Health（三态健康页）---- */
+  --health-ok: var(--success);              /* 绿：通过 */
+  --health-warn: var(--warning);            /* 黄：警告 */
+  --health-fail: var(--danger);             /* 红：失败 */
+
+  /* ---- Help（帮助抽屉）---- */
+  --help-panel-width: 640px;                /* 抽屉宽度（iframe 内容需宽） */
+  --help-bg: #fbfcfe;                        /* 抽屉内容底色 */
+
+  /* ---- Tour（Driver.js 带跑气泡，EP 主题适配）---- */
+  --tour-bubble-bg: var(--bg-card);         /* 白底 */
+  --tour-bubble-radius: var(--radius);      /* 10px 圆角 */
+  --tour-bubble-border: var(--border);      /* 1px 边框 */
+  --tour-bubble-shadow: var(--shadow-sm);   /* 轻阴影 */
+  --tour-bubble-max-width: 360px;
+  --tour-highlight: var(--brand);           /* 高亮边框 */
+  --tour-highlight-ring: rgba(31, 95, 191, 0.25); /* 高亮外发光 */
+  --tour-overlay: rgba(16, 24, 40, 0.45);   /* 遮罩 */
+
+  /* ---- 图标尺寸规范（全项目统一，禁 emoji）---- */
+  --icon-inline: 16px;      /* 行内图标（字段小问号等） */
+  --icon-button: 20px;      /* 按钮内图标 */
+  --icon-standalone: 24px;  /* 独立图标（浮标等） */
+
+  /* ---- 动效 ---- */
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --motion-slow: 300ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ==========================================================
+     十一、Element Plus 主题变量覆盖（引导相关，沿用现有）
+     ========================================================== */
+  --el-color-primary: #1f5fbf;
+  --el-color-success: #16a34a;
+  --el-color-warning: #d97706;
+  --el-color-danger: #dc2626;
+  --el-text-color-primary: #1a2332;
+  --el-text-color-regular: #374151;
+  --el-text-color-secondary: #5b6b7b;
+  --el-border-color: #e6eaf0;
+  --el-border-radius-base: 8px;
+  --el-box-shadow-light: 0 4px 12px rgba(16, 24, 40, 0.08);
+}
