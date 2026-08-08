@@ -45,7 +45,10 @@
           title="还没有订单"
           hint="订单是业务核心。可以从报价一键转换，也可以直接新建一笔订单。"
           action-text="新建第一笔订单"
+          :pre-step-hint="upstreamHint"
+          :pre-step-action-text="upstreamHint ? '去录报价' : ''"
           @action="openDialog()"
+          @pre-step="router.push('/quotations/edit')"
           @reset="resetFilters"
         />
       </template>
@@ -206,6 +209,7 @@ import { orderAPI, customerAPI, orderExportAPI, customFieldAPI, orderBatchAdvanc
 import { ORDER_STATUS, MODE, SERVICE_TYPE, dictText, statusOf, money } from '@/utils/dicts';
 import EmptyGuide from '@/components/EmptyGuide.vue';
 import { useOnboardingHint } from '@/composables/useOnboardingHint';
+import { getOnboardingStatus } from '@/api/onboarding';
 
 const { showHint } = useOnboardingHint();
 
@@ -228,6 +232,19 @@ function resetFilters() {
 }
 // learning by doing：Checklist 跳转 /orders?new=1 → 自动打开新建弹窗
 watch(() => route.query.new, (v) => { if (v === '1') openDialog(); }, { immediate: true });
+
+// AC-10 上游感知：报价为空时订单空态提示"先去录报价"
+const upstreamHint = ref('');
+async function loadUpstreamHint() {
+  try {
+    const status = await getOnboardingStatus();
+    if (status && Number(status.quotations || 0) === 0) {
+      upstreamHint.value = '还没有报价时，先录一份报价，报价可一键转订单。';
+    } else {
+      upstreamHint.value = '';
+    }
+  } catch { upstreamHint.value = ''; }
+}
 const form = ref({});
 const formRef = ref(null);
 const customFields = ref([]);
@@ -426,6 +443,7 @@ onMounted(async () => {
   if (route.query.type) query.type = route.query.type; // 进出口入口
   load(1);
   loadCustomFields();
+  loadUpstreamHint();
 });
 </script>
 
