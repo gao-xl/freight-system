@@ -10,8 +10,8 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
   description: { type: DataTypes.STRING(255) },
   amount: { type: DataTypes.DECIMAL(15, 2), allowNull: false, defaultValue: 0 },
   currency: { type: DataTypes.STRING(10), defaultValue: 'USD' },
-  rate: { type: DataTypes.DECIMAL(10, 4), defaultValue: 1 }, // 汇率
-  exchangeRate: { type: DataTypes.FLOAT, allowNull: true },   // 本币折算汇率（P2.4）
+  rate: { type: DataTypes.DECIMAL(10, 4), defaultValue: 1 }, // [DEPRECATED] 历史遗留汇率字段；统一使用 exchangeRate，本字段仅作兼容别名
+  exchangeRate: { type: DataTypes.FLOAT, allowNull: true },   // 本币折算汇率（P2.4，唯一汇率入口）
   localAmount: { type: DataTypes.DECIMAL(15, 2), allowNull: true }, // 本币折算金额（P2.4）
   status: { type: DataTypes.ENUM('unpaid', 'partial', 'paid', 'waived'), defaultValue: 'unpaid' },
   counterpartyId: { type: DataTypes.INTEGER }, // 客户或供应商
@@ -26,13 +26,16 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
 }, { timestamps: true });
 
 // P2.4 本币折算金额：localAmount = amount * exchangeRate
-// 规则：请求体显式带 exchangeRate 优先；否则按币种查汇率（ExchangeRate 表 → 适配器 → 兜底 7.2），
-//      查不到或币种为本币（CNY）时按 1:1 处理（默认本币为人民币）。
+// 规则：exchangeRate 优先（新 API 唯一入口）；兼容历史 API 传 rate（≠1 时降级为别名）；
+//      否则按币种查汇率（ExchangeRate 表 → 适配器 → 兜底 7.2），查不到或币种为本币（CNY）时按 1:1 处理（默认本币为人民币）。
 // 放在模型钩子统一处理，保证 API / 自动化 / 报价转单等所有创建路径一致。
 async function resolveLocalAmount(instance) {
   const amount = Number(instance.amount) || 0;
-  if (instance.exchangeRate != null && instance.exchangeRate !== '') {
-    instance.exchangeRate = Number(instance.exchangeRate);
+  // 兼容别名：rate 为历史遗留字段，仅当 exchangeRate 未提供且 rate ≠ 1 时兜底使用
+  const legacyRate = instance.rate != null && Number(instance.rate) !== 1 ? Number(instance.rate) : null;
+  const effRate = instance.exchangeRate != null && instance.exchangeRate !== '' ? instance.exchangeRate : legacyRate;
+  if (effRate != null && effRate !== '') {
+    instance.exchangeRate = Number(effRate);
     instance.localAmount = Number((amount * instance.exchangeRate).toFixed(2));
     return;
   }

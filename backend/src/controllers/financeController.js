@@ -159,7 +159,7 @@ const invoiceList = asyncHandler(async (req, res) => {
 // 创建开票记录（含税率计算）
 const createInvoice = asyncHandler(async (req, res) => {
   const { invoiceType, orderId, customerId, supplierId, amount, currency, taxRate, remark } = req.body;
-  if (!invoiceType) return ok(res, null, '请选择开票类型', 1, 400);
+  if (!invoiceType) return fail(res, '请选择开票类型', 1, 400);
   const amt = Number(amount || 0);
   const tax = taxRate ? (amt * Number(taxRate)) / 100 : 0;
   const now = Date.now();
@@ -183,8 +183,8 @@ const createInvoice = asyncHandler(async (req, res) => {
 // 开票（草稿 → 已开）
 const issueInvoice = asyncHandler(async (req, res) => {
   const inv = await scopedFindOne(req, Invoice, { id: req.params.id });
-  if (!inv) return ok(res, null, '发票不存在', 1, 404);
-  if (inv.status !== 'draft') return ok(res, null, '仅草稿状态可开票', 1, 400);
+  if (!inv) return fail(res, '发票不存在', 1, 404);
+  if (inv.status !== 'draft') return fail(res, '仅草稿状态可开票', 1, 400);
   await inv.update({ status: 'issued', issuedAt: new Date() });
   ok(res, inv, '已开票');
 });
@@ -192,8 +192,8 @@ const issueInvoice = asyncHandler(async (req, res) => {
 // 作废发票
 const cancelInvoice = asyncHandler(async (req, res) => {
   const inv = await scopedFindOne(req, Invoice, { id: req.params.id });
-  if (!inv) return ok(res, null, '发票不存在', 1, 404);
-  if (inv.status === 'paid') return ok(res, null, '已核销发票不可作废', 1, 400);
+  if (!inv) return fail(res, '发票不存在', 1, 404);
+  if (inv.status === 'paid') return fail(res, '已核销发票不可作废', 1, 400);
   await inv.update({ status: 'cancelled' });
   ok(res, inv, '已作废');
 });
@@ -202,11 +202,11 @@ const cancelInvoice = asyncHandler(async (req, res) => {
 const writeoff = asyncHandler(async (req, res) => {
   const { amount, remark } = req.body;
   const amt = Number(amount);
-  if (!amt || amt <= 0) return ok(res, null, '核销金额必须大于 0', 1, 400);
+  if (!amt || amt <= 0) return fail(res, '核销金额必须大于 0', 1, 400);
 
   const rec = await scopedFindOne(req, FinanceRecord, { id: req.params.id });
-  if (!rec) return ok(res, null, '费用记录不存在', 1, 404);
-  if (rec.status === 'paid' || rec.status === 'waived') return ok(res, null, '该记录已完成，无需核销', 1, 400);
+  if (!rec) return fail(res, '费用记录不存在', 1, 404);
+  if (rec.status === 'paid' || rec.status === 'waived') return fail(res, '该记录已完成，无需核销', 1, 400);
 
   const total = Number(rec.amount);
   const paidPrev = Number(rec.paidAmount);
@@ -222,7 +222,7 @@ const writeoff = asyncHandler(async (req, res) => {
 const batchWriteoff = asyncHandler(async (req, res) => {
   const { ids, amount } = req.body;
   const idList = (Array.isArray(ids) ? ids : String(ids || '').split(',')).map(Number).filter((n) => n > 0);
-  if (!idList.length) return ok(res, null, '请先选择要核销的费用记录', 1, 400);
+  if (!idList.length) return fail(res, '请先选择要核销的费用记录', 1, 400);
   const fixedAmt = amount ? Number(amount) : null;
   const fsWhere = await scopedWhere(req, { id: { [Op.in]: idList } });
   const recs = await FinanceRecord.findAll({ where: fsWhere });

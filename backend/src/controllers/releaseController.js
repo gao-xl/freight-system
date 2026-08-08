@@ -55,7 +55,7 @@ const approve = asyncHandler(async (req, res) => {
   const { approve = true, remark } = req.body;
   const rec = await ReleaseRecord.findByPk(req.params.id);
   if (!rec) return fail(res, '放单记录不存在', 1, 404);
-  if (rec.approvalStatus !== 'pending') return ok(res, null, '该记录已处理', 1, 400);
+  if (rec.approvalStatus !== 'pending') return fail(res, '该记录已处理', 1, 400);
 
   const finalStatus = approve ? 'approved' : 'rejected';
   await withTransaction(async (t) => {
