@@ -77,6 +77,40 @@
         </div>
         <el-alert type="info" :closable="false" show-icon title="自定义字段：公司可给订单/客户等业务加字段（如指定货代、付款条款），无需改代码。新增后在对应业务表单中动态渲染。" />
       </el-tab-pane>
+      <el-tab-pane label="审计日志" name="audit">        <div class="toolbar audit-filter">
+          <el-input v-model="auditQuery.username" placeholder="操作人" clearable style="width:140px" @keyup.enter="loadAudit" />
+          <el-select v-model="auditQuery.module" placeholder="模块" clearable style="width:160px" @change="loadAudit">
+            <el-option v-for="m in moduleNames" :key="m" :label="moduleName[m] || m" :value="m" />
+          </el-select>
+          <el-select v-model="auditQuery.action" placeholder="动作" clearable style="width:120px" @change="loadAudit">
+            <el-option label="创建" value="create" />
+            <el-option label="修改" value="update" />
+            <el-option label="删除" value="delete" />
+          </el-select>
+          <el-button type="primary" @click="loadAudit"><el-icon><Search /></el-icon>查询</el-button>
+        </div>
+        <el-table :data="audits" v-loading="loadingAudit" stripe size="small">
+          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="username" label="操作人" width="110" />
+          <el-table-column label="模块" width="110">
+            <template #default="{row}">{{ moduleName[row.module] || row.module }}</template>
+          </el-table-column>
+          <el-table-column label="动作" width="90">
+            <template #default="{row}"><el-tag :type="row.action==='delete'?'danger':(row.action==='create'?'success':'warning')" size="small">{{ {create:'创建',update:'修改',delete:'删除'}[row.action] || row.action }}</el-tag></template>
+          </el-table-column>
+          <el-table-column prop="summary" label="摘要" min-width="220" />
+          <el-table-column prop="ip" label="IP" width="130" />
+          <el-table-column prop="createdAt" label="时间" width="170">
+            <template #default="{row}">{{ String(row.createdAt||'').replace('T',' ').slice(0,19) }}</template>
+          </el-table-column>
+        </el-table>
+        <div class="pager">
+          <el-pagination layout="total, prev, pager, next" :total="auditTotal" :page-size="auditQuery.pageSize" :current-page="auditQuery.page" @current-change="(p)=>{auditQuery.page=p;loadAudit();}" />
+        </div>
+      </el-tab-pane>
+      <el-tab-pane label="示例数据" name="demo">
+        <DemoDataManager />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 用户表单 -->
@@ -149,7 +183,8 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { userAPI, roleAPI, permissionAPI } from '@/api';
+import { userAPI, roleAPI, permissionAPI, auditLogAPI } from '@/api';
+import DemoDataManager from '@/components/DemoDataManager.vue';
 
 const router = useRouter();
 const tab = ref('users');
@@ -171,6 +206,22 @@ const moduleName = {
   booking: '订舱', customs: '报关', document: '单证', track: '跟踪', finance: '财务',
   quotation: '报价', integration: '对接', system: '系统',
 };
+const moduleNames = Object.keys(moduleName);
+
+// 审计日志
+const auditQuery = ref({ page: 1, pageSize: 20, username: '', module: '', action: '' });
+const audits = ref([]);
+const auditTotal = ref(0);
+const loadingAudit = ref(false);
+async function loadAudit() {
+  loadingAudit.value = true;
+  try {
+    const data = await auditLogAPI({ ...auditQuery.value, page: auditQuery.value.page, pageSize: auditQuery.value.pageSize });
+    audits.value = data.list || [];
+    auditTotal.value = data.total || 0;
+  } catch (e) { /* 拦截器提示 */ }
+  finally { loadingAudit.value = false; }
+}
 
 // 用户
 const userDlg = ref(false);
@@ -276,11 +327,14 @@ onMounted(async () => {
   loadUsers();
   loadRoles();
   permissions.value = await permissionAPI();
+  loadAudit();
 });
 </script>
 
 <style scoped>
 .toolbar { margin-bottom: 14px; }
+.audit-filter { display: flex; gap: 8px; flex-wrap: wrap; }
+.pager { margin-top: 12px; display: flex; justify-content: flex-end; }
 .perm-group { width: 100%; }
 .perm-group-block { margin-bottom: 14px; }
 .perm-group-title { font-weight: 600; color: var(--text-main); margin-bottom: 6px; }

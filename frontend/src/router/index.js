@@ -1,8 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { useOnboardingStore } from '@/stores/onboarding';
+import { getOnboardingStatus } from '@/api/onboarding';
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('@/views/Login.vue'), meta: { public: true } },
+  // Onboarding：初始化创建首账号（公开，未初始化时入口）/ 强制改密 / 快速开始向导
+  { path: '/setup-admin', name: 'setupAdmin', component: () => import('@/views/onboarding/SetupAdmin.vue'), meta: { public: true, title: '初始化系统' } },
+  { path: '/setup-password', name: 'setupPassword', component: () => import('@/views/onboarding/SetupPassword.vue'), meta: { title: '设置新密码' } },
+  { path: '/onboarding', name: 'onboarding', component: () => import('@/views/onboarding/OnboardingWizard.vue'), meta: { title: '快速开始' } },
   {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
@@ -32,6 +38,7 @@ const routes = [
       { path: 'integrations', name: 'integrations', component: () => import('@/views/integrations/IntegrationList.vue'), meta: { title: '外部对接', icon: 'Connection', permission: 'integration:read' } },
       { path: 'alerts', name: 'alerts', component: () => import('@/views/alerts/AlertCenter.vue'), meta: { title: '预警中心', icon: 'Bell', permission: 'alert:read' } },
       { path: 'system', name: 'system', component: () => import('@/views/system/SystemManage.vue'), meta: { title: '系统管理', icon: 'Setting', permission: 'system:user' } },
+      { path: 'system/health', name: 'health', component: () => import('@/views/system/HealthCheck.vue'), meta: { title: '系统健康', icon: 'Monitor', permission: 'system:user' } },
       { path: 'system/groups', name: 'groups', component: () => import('@/views/system/GroupManage.vue'), meta: { title: '小组管理', hidden: true, permission: 'system:group' } },
       { path: 'system/company', name: 'company', component: () => import('@/views/system/CompanySetting.vue'), meta: { title: '公司设置', hidden: true, permission: 'system:company' } },
       { path: 'system/custom-fields', name: 'customFields', component: () => import('@/views/system/CustomFieldManage.vue'), meta: { title: '自定义字段', hidden: true, permission: 'system:custom' } },
@@ -60,7 +67,28 @@ function roleHome(role) {
   return '/tasks';
 }
 
-router.beforeEach((to) => {
+// AC-01：首次登录且系统未配置公司 → 重定向 /onboarding（可跳过；完成/跳过标记后不再出现）
+// 判定依赖 GET /onboarding/status（权威源）；接口未就绪时 fail-open，不打扰存量用户
+async function shouldRedirectOnboarding() {
+  const onboarding = useOnboardingStore();
+  if (onboarding.flags.wizardFinished) return false;
+  try {
+    const status = await getOnboardingStatus();
+    if (!status) return false;
+    const hasData = Number(status.customers || 0) > 0 || Number(status.quotations || 0) > 0 || Number(status.orders || 0) > 0;
+    const configured = !!status.companyConfigured || hasData;
+    if (configured) {
+      // 自愈：存量系统已有数据 → 补写完成标记，避免反复拦截
+      onboarding.setFlag('wizardFinished', true);
+      return false;
+    }
+    return true;
+  } catch {
+    return false; // 后端未就绪/网络异常 → 不拦截
+  }
+}
+
+router.beforeEach(async (to) => {
   const auth = useAuthStore();
   const token = localStorage.getItem('token');
   if (!to.meta.public && !token) {
@@ -69,6 +97,10 @@ router.beforeEach((to) => {
   if (to.path === '/login' && token) {
     return { path: auth.role === 'customer' ? '/portal' : roleHome(auth.role) };
   }
+  // Onboarding：默认账号首登强制改密（customer 门户账号除外），改密前拦在系统外
+  if (token && auth.user?.mustChangePassword && auth.role !== 'customer' && to.path !== '/setup-password') {
+    return { path: '/setup-password' };
+  }
   // 客户角色只能访问门户
   if (auth.role === 'customer' && to.path !== '/portal' && to.path !== '/403') {
     return { path: '/portal' };
@@ -76,6 +108,12 @@ router.beforeEach((to) => {
   // U11：非客户角色访问门户 → 重定向回主系统（避免空 customerId 白闪报错）
   if (to.path === '/portal' && auth.role && auth.role !== 'customer') {
     return { path: roleHome(auth.role) };
+  }
+  // AC-01：首次登录 → /onboarding（引导完成后不再出现；customer 门户不参与）
+  if (token && auth.role && auth.role !== 'customer'
+    && !['/onboarding', '/setup-password', '/setup-admin', '/login', '/portal', '/403'].includes(to.path)
+    && await shouldRedirectOnboarding()) {
+    return { path: '/onboarding' };
   }
   // 权限校验
   if (to.meta.permission && token && !auth.hasPermission(to.meta.permission)) {

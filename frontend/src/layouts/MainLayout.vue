@@ -125,6 +125,9 @@
       <el-button type="primary" @click="submitPwd">确认修改</el-button>
     </template>
   </el-dialog>
+
+  <!-- 帮助中心（全局：F1 / 问号浮标，AC-16/17/18/27） -->
+  <HelpCenterDrawer />
 </template>
 
 <script setup>
@@ -133,6 +136,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
 import { changePasswordAPI, alertAPI } from '@/api';
+import HelpCenterDrawer from '@/components/HelpCenterDrawer.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -199,6 +203,8 @@ const menuGroups = [
       { path: '/print-templates', title: '单证模板', icon: 'Printer', permission: 'print:read' },
       { path: '/system', title: '系统管理', icon: 'Setting', permission: 'system:user' },
       { path: '/system/company', title: '公司设置', icon: 'OfficeBuilding', permission: 'system:company' },
+      { path: '/system/health', title: '系统健康', icon: 'Monitor', permission: 'system:user' },
+      { path: '/docs', title: '开发文档', icon: 'Reading' },
     ],
   },
 ];
@@ -365,7 +371,12 @@ onUnmounted(() => {
 .foot-text { font-size: 11px; color: rgba(159,176,200,0.5); white-space: nowrap; }
 
 /* ============ 主区域 ============ */
-.main { min-width: 0; }
+/* el-container 默认横向排列；因顶栏/内容用原生标签而非 el-header/el-main，
+   需强制纵向堆叠，否则顶栏与内容会并排挤占 */
+.main {
+  min-width: 0;
+  flex-direction: column;
+}
 
 .topbar {
   height: var(--header-h);
