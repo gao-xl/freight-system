@@ -170,6 +170,7 @@ npm run dev                       # 访问 http://localhost:5173 （已代理 /a
 
 ## 文档
 
+- **文档站**（VitePress）：`cd docs-site && npm install && npm run dev`，构建产物 `docs-site/docs/.vitepress/dist`
 - [`docs/文档总览索引.md`](docs/文档总览索引.md) — 全部规划文档索引
 - [`docs/项目设计方案.md`](docs/项目设计方案.md) — 总体设计
 - [`docs/二开指南.md`](docs/二开指南.md) — 二次开发实战
