@@ -1,6 +1,7 @@
-const { User, Role, Permission, UserRole, AuditLog } = require('../models');
+const { User, Role, Permission, UserRole, AuditLog, CompanyProfile } = require('../models');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { invalidate } = require('../services/permissionService');
+const { collectHealth } = require('../services/healthCheck');
 
 // 权限点列表
 const permissionList = asyncHandler(async (req, res) => {
@@ -103,4 +104,127 @@ const auditLogs = asyncHandler(async (req, res) => {
   ok(res, { list: rows, total: count, page, pageSize });
 });
 
-module.exports = { permissionList, userList, createUser, updateUser, removeUser, assignRoles, auditLogs };
+// ---------- Onboarding 系统健康与默认设置（Spec §5） ----------
+
+/**
+ * @openapi
+ * /api/system/health:
+ *   get:
+ *     tags: [系统]
+ *     summary: 系统健康检查（三态）
+ *     description: |
+ *       聚合 Node 运行时 / 磁盘剩余 / 端口可达 / 数据目录可写 / 数据库可达 / 迁移状态。
+ *       每项返回 status: ok|warn|fail + detail + fix（可复制命令）。
+ *       detail 与 fix 不泄露敏感路径与密钥：数据目录以语义描述表示，不含真实路径。
+ *       summary 取最差状态：任一 fail 为 fail，否则任一 warn 为 warn，全部 ok 为 ok。
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: 健康检查结果
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         checks:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               item: { type: string }
+ *                               status: { type: string, enum: [ok, warn, fail] }
+ *                               detail: { type: string }
+ *                               fix: { type: string, nullable: true }
+ *                         summary: { type: string, enum: [ok, warn, fail] }
+ *       '401':
+ *         description: 未登录或凭证无效
+ *       '403':
+ *         description: 无 admin 权限
+ */
+const health = asyncHandler(async (req, res) => {
+  const data = await collectHealth();
+  ok(res, data);
+});
+
+/**
+ * @openapi
+ * /api/system/defaults:
+ *   get:
+ *     tags: [系统]
+ *     summary: 读取系统默认设置
+ *     description: MVP 仅返回 defaultCurrency（默认币种），数据源 CompanyProfile（单行 id=1）。
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: 默认设置
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         defaultCurrency: { type: string, example: CNY }
+ *       '401':
+ *         description: 未登录或凭证无效
+ *   put:
+ *     tags: [系统]
+ *     summary: 更新系统默认设置
+ *     description: 写入 CompanyProfile.defaultCurrency（ISO 4217 三位大写，如 CNY/USD/EUR）。
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [defaultCurrency]
+ *             properties:
+ *               defaultCurrency: { type: string, example: CNY }
+ *     responses:
+ *       '200':
+ *         description: 更新后的默认设置
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         defaultCurrency: { type: string, example: CNY }
+ *       '400':
+ *         description: 币种格式不合法
+ *       '401':
+ *         description: 未登录或凭证无效
+ */
+const getDefaults = asyncHandler(async (req, res) => {
+  const profile = await CompanyProfile.findOne();
+  ok(res, { defaultCurrency: (profile && profile.defaultCurrency) || 'CNY' });
+});
+
+const putDefaults = asyncHandler(async (req, res) => {
+  const { defaultCurrency } = req.body || {};
+  const cur = String(defaultCurrency || '').trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(cur)) return fail(res, '币种格式不合法（需为 ISO 4217 三位大写字母，如 CNY/USD/EUR）', 1, 400);
+  let profile = await CompanyProfile.findOne();
+  if (!profile) profile = await CompanyProfile.create({ companyName: '' });
+  profile.defaultCurrency = cur;
+  await profile.save();
+  ok(res, { defaultCurrency: profile.defaultCurrency }, '默认设置已更新');
+});
+
+module.exports = {
+  permissionList, userList, createUser, updateUser, removeUser, assignRoles, auditLogs,
+  health, getDefaults, putDefaults,
+};

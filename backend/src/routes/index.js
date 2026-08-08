@@ -23,6 +23,7 @@ const alert = require('../controllers/alertController');
 const yard = require('../controllers/yardController');
 const external = require('../controllers/externalController');
 const print = require('../controllers/printTemplateController');
+const feeTemplate = require('../controllers/feeTemplateController'); // N1 费用模板
 const release = require('../controllers/releaseController');
 const task = require('../controllers/taskController');
 const group = require('../controllers/groupController');
@@ -97,6 +98,25 @@ router.post('/automation/run', guard('system', '*'), automation.run);
 router.post('/auth/login', validate(S.login), auth.login);
 router.get('/auth/me', authRequired, auth.me);
 router.post('/auth/change-password', authRequired, validate(S.changePassword), auth.changePassword);
+
+// Onboarding 引导系统：初始化状态/创建首账号为公开端点（无管理员时前端引导创建）
+const onboarding = require('../controllers/onboardingController');
+router.get('/system/init-status', onboarding.initStatus);
+router.post('/system/setup-admin', onboarding.setupAdmin);
+// 旧路径兼容别名（存量脚本/旧前端缓存仍可调用；前端统一改用 /api/onboarding/* 正式契约）
+router.post('/system/demo-data', authRequired, requirePermission('system', '*'), onboarding.createDemoData);
+router.delete('/system/demo-data', authRequired, requirePermission('system', '*'), onboarding.removeDemoData);
+
+// Onboarding 正式契约路径（Spec §5）：status/wizard 需登录；示例数据需 admin；旧 /api/system/* 保留为兼容别名
+router.get('/onboarding/status', authRequired, onboarding.status);
+router.post('/onboarding/demo-data', authRequired, requirePermission('system', '*'), onboarding.createDemoData);
+router.delete('/onboarding/demo-data', authRequired, requirePermission('system', '*'), onboarding.removeDemoData);
+router.post('/onboarding/wizard/done', authRequired, onboarding.wizardDone);
+
+// 系统健康（admin）与默认设置（登录）；health 与公开 /api/health 并存，/api/health 保持原样
+router.get('/system/health', authRequired, requirePermission('system', '*'), system.health);
+router.get('/system/defaults', authRequired, system.getDefaults);
+router.put('/system/defaults', authRequired, system.putDefaults);
 
 // 数据隔离：所有业务路由统一注入 req.dataScope（范围：all/group/self）
 // 控制器通过 scopedWhere/scopedFindOne 等辅助函数消费该范围，实现行级数据隔离
@@ -198,6 +218,7 @@ router.post('/customers/batch-delete', guard('customer', 'delete'), customer.bat
 router.post('/customers/batch-update', guard('customer', 'update'), customer.batchUpdate);
 router.post('/customers/:id/restore', guard('customer', 'update'), customer.restore); // U5 回收站恢复
 router.get('/customers/:id', guard('customer', 'read'), customer.get);
+router.get('/customers/:id/overview', guard('customer', 'read'), customer.overview); // N4 客户360°
 router.get('/customers/:id/follows', guard('customer', 'read'), customer.listFollows);
 router.post('/customers/:id/follows', guard('customer', 'update'), validate(S.followCreate), customer.createFollow);
 router.put('/customers/follows/:followId', guard('customer', 'update'), validate(S.followUpdate), customer.updateFollow);
@@ -305,12 +326,17 @@ router.post('/finance/periods/:code/close', guard('finance', 'close'), finance.c
 router.post('/finance/periods/:code/lock', guard('finance', 'lock'), finance.lockPeriod);
 router.post('/finance/periods/:code/unlock', guard('finance', 'unlock'), finance.unlockPeriod);
 router.get('/finance/invoices', guard('finance', 'read'), finance.invoiceList);
+router.get('/finance/aging', guard('finance', 'read'), finance.aging); // N5 AR 账龄
 router.post('/finance/invoices', guard('finance', 'create'), finance.createInvoice);
+router.post('/finance/invoices/from-fees', guard('finance', 'create'), finance.createInvoiceFromFees); // N2 从费用生成发票
 router.post('/finance/invoices/:id/issue', guard('finance', 'update'), finance.issueInvoice);
 router.post('/finance/invoices/:id/cancel', guard('finance', 'update'), finance.cancelInvoice);
 router.post('/finance/batch-delete', guard('finance', 'delete'), finance.batchRemove);
 router.post('/finance/batch-update', guard('finance', 'update'), finance.batchUpdate);
 router.post('/finance/batch-writeoff', guard('finance', 'update'), finance.batchWriteoff);
+router.post('/finance/batch', guard('finance', 'create'), finance.batchCreate); // N1 批量建费（多行快录）
+router.get('/finance/payments', guard('finance', 'read'), finance.paymentList); // N3 收款/付款单
+router.post('/finance/payments', guard('finance', 'create'), finance.createPayment); // N3 收款核销
 router.post('/finance/:id/writeoff', guard('finance', 'update'), finance.writeoff);
 router.post('/finance/:id/restore', guard('finance', 'update'), finance.restore); // U5 回收站恢复
 router.get('/finance/:id', guard('finance', 'read'), finance.get);
@@ -417,8 +443,7 @@ router.put('/yards/:id', guard('yard', 'update'), yard.update);       // 人工�
 router.delete('/yards/:id', guard('yard', 'update'), yard.remove);
 
 // 打印模板
-router.get('/print-templates', guard('print', 'read'), print.list);
-router.get('/print-templates/fields/:docType', guard('print', 'read'), print.fields);
+router.get('/print-templates', guard('print', 'read'), print.list);router.get('/print-templates/fields/:docType', guard('print', 'read'), print.fields);
 router.post('/print-templates', guard('print', 'write'), print.create);
 router.post('/print-templates/:id/copy', guard('print', 'write'), print.copy);
 router.put('/print-templates/:id/default', guard('print', 'write'), print.setDefault);
@@ -428,6 +453,13 @@ router.put('/print-templates/:id', guard('print', 'write'), print.update);
 router.delete('/print-templates/:id', guard('print', 'write'), print.remove);
 // 打印渲染（PDF/HTML）
 router.get('/print/:docType/:bizId', guard('print', 'read'), print.print);
+
+// N1 费用模板
+router.get('/fee-templates', guard('finance', 'read'), feeTemplate.list);
+router.get('/fee-templates/:id', guard('finance', 'read'), feeTemplate.get);
+router.post('/fee-templates', guard('finance', 'create'), feeTemplate.create);
+router.put('/fee-templates/:id', guard('finance', 'update'), feeTemplate.update);
+router.delete('/fee-templates/:id', guard('finance', 'delete'), feeTemplate.remove);
 
 // C5 客户自助门户（只读，customer 角色）
 router.get('/portal/overview', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portal.overview);

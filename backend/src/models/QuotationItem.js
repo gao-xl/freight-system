@@ -16,6 +16,7 @@ const QuotationItem = sequelize.define('QuotationItem', {
   costPrice: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 }, // 成本价
   supplierId: { type: DataTypes.INTEGER },      // 关联成本来源供应商
   sortOrder: { type: DataTypes.INTEGER, defaultValue: 0 },
+  isDemo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding 演示数据标记（可一键清空）
 }, { timestamps: true });
 
 module.exports = QuotationItem;

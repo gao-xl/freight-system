@@ -43,6 +43,9 @@ const BusinessRule = require('./BusinessRule');
 const WorkflowConfig = require('./WorkflowConfig');
 const ReportDefinition = require('./ReportDefinition');
 const AccountingPeriod = require('./AccountingPeriod');
+const FeeTemplate = require('./FeeTemplate'); // N1 费用模板
+const PaymentRecord = require('./PaymentRecord'); // N3 收款/付款单
+const DemoDataLog = require('./DemoDataLog'); // Onboarding 示例数据批次
 
 // 关联关系
 Order.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
@@ -102,6 +105,10 @@ Invoice.belongsTo(Order, { as: 'order', foreignKey: 'orderId' });
 Invoice.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
 Invoice.belongsTo(Supplier, { as: 'supplier', foreignKey: 'supplierId' });
 Order.hasMany(Invoice, { foreignKey: 'orderId' });
+
+// N3 收款单关联
+PaymentRecord.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
+PaymentRecord.belongsTo(Supplier, { as: 'supplier', foreignKey: 'supplierId' });
 
 // 放单关联
 ReleaseRecord.belongsTo(Order, { as: 'order', foreignKey: 'orderId' });
@@ -179,4 +186,7 @@ module.exports = {
   WorkflowConfig,
   ReportDefinition,
   AccountingPeriod,
+  FeeTemplate,
+  PaymentRecord,
+  DemoDataLog,
 };

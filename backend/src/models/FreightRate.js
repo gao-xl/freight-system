@@ -17,6 +17,7 @@ const FreightRate = sequelize.define('FreightRate', {
   remark: { type: DataTypes.STRING(255) },
   groupId: { type: DataTypes.INTEGER },            // 数据隔离：归属小组
   ownerId: { type: DataTypes.INTEGER },            // 数据隔离：归属操作员（负责人）
+  isDemo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding 演示数据标记（可一键清空）
 }, {
   timestamps: true,
   indexes: [{ fields: ['originPort', 'destPort', 'containerType'] }], // 检索热路径

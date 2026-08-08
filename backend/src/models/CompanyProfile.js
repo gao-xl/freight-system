@@ -15,6 +15,7 @@ const CompanyProfile = sequelize.define('CompanyProfile', {
   email: { type: DataTypes.STRING(100), defaultValue: '' },                          // 邮箱
   website: { type: DataTypes.STRING(100), defaultValue: '' },                        // 官网
   description: { type: DataTypes.TEXT },                                              // 公司简介
+  defaultCurrency: { type: DataTypes.STRING(10), allowNull: false, defaultValue: 'CNY' }, // 默认币种（ISO 4217，向导第 3 步数据源）
 }, { timestamps: true });
 
 module.exports = CompanyProfile;
