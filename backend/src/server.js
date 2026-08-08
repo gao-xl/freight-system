@@ -85,6 +85,9 @@ async function start() {
   // 扫描 src/modules 下的模块目录，登记元信息（模型/菜单/事件）
   // 只做发现与校验，不挂载路由：业务路由的唯一权威来源仍是 src/routes/index.js
   ModuleRegistry.load(path.join(__dirname, 'modules'));
+  // 挂载「目录式插件」路由（模块注册协议）：autoMount !== false 的插件自动挂载。
+  // 存量模块（order/customer 等）autoMount=false，不会被重复挂载。
+  ModuleRegistry.mountRoutes(routes, { guard: require('./middleware/auth').guard });
   // 挂载预警定时任务 + 事件驱动监听
   startAlertScheduler();
   subscribeAlertEvents();

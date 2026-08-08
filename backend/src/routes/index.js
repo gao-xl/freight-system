@@ -19,7 +19,6 @@ const dashboard = require('../controllers/dashboardController');
 const quotation = require('../controllers/quotationController');
 const role = require('../controllers/roleController');
 const system = require('../controllers/systemController');
-const qingdao = require('../controllers/qingdaoController');
 const alert = require('../controllers/alertController');
 const yard = require('../controllers/yardController');
 const external = require('../controllers/externalController');
@@ -344,12 +343,8 @@ router.post('/freight-rates', guard('quotation', 'create'), validate(S.freightRa
 router.put('/freight-rates/:id', guard('quotation', 'update'), validate(S.freightRateUpdate), freightRate.update);
 router.delete('/freight-rates/:id', guard('quotation', 'delete'), freightRate.remove);
 
-// 青岛港专项
-router.get('/qingdao/nodes', guard('qingdao', 'read'), qingdao.nodes);
-router.post('/qingdao/nodes', guard('qingdao', 'update'), qingdao.updateNode);
-router.get('/qingdao/checklist', guard('qingdao', 'read'), qingdao.checklist);
-router.get('/qingdao/alerts', guard('qingdao', 'read'), qingdao.alerts);
-router.get('/qingdao/manifest/check', guard('qingdao', 'read'), qingdao.manifestCheck);
+// 青岛港专项（P3.5 已迁为官方示例插件 src/modules/qingdao-port，由 mountRoutes 挂载）
+// 端点：GET /qingdao/nodes、POST /qingdao/nodes、GET /qingdao/checklist、GET /qingdao/alerts、GET /qingdao/manifest/check
 
 // 预警中心
 router.get('/alerts', guard('alert', 'read'), alert.list);
