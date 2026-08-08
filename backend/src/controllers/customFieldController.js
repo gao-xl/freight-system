@@ -1,5 +1,6 @@
 const { CustomField } = require('../models');
 const { ok, fail, asyncHandler } = require('../utils/response');
+const { scopedFindOne } = require('../middleware/dataScope');
 
 // B4 自定义字段管理
 const list = asyncHandler(async (req, res) => {
@@ -42,9 +43,10 @@ const remove = asyncHandler(async (req, res) => {
 // B4 自定义字段值读写工厂 —— 返回 { getValues, updateValues }
 // 用法：const cf = customFieldValues('order', Order); router.get('/orders/:id/custom-fields', cf.getValues);
 // bizType 匹配 CustomField.bizType（order/customer/booking/finance）
+// B2 数据隔离：读写均按用户可见范围校验目标记录（admin=all 不受限）
 function customFieldValues(bizType, model) {
   const getValues = asyncHandler(async (req, res) => {
-    const record = await model.findByPk(req.params.id);
+    const record = await scopedFindOne(req, model, { id: req.params.id });
     if (!record) return fail(res, '记录不存在', 1, 404);
     const defs = await CustomField.findAll({ where: { bizType, enabled: true }, order: [['sort', 'ASC']] });
     let current = {};
@@ -58,7 +60,7 @@ function customFieldValues(bizType, model) {
   });
 
   const updateValues = asyncHandler(async (req, res) => {
-    const record = await model.findByPk(req.params.id);
+    const record = await scopedFindOne(req, model, { id: req.params.id });
     if (!record) return fail(res, '记录不存在', 1, 404);
     const defs = await CustomField.findAll({ where: { bizType, enabled: true } });
     let current = {};

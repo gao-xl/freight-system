@@ -52,6 +52,10 @@ const updateUser = asyncHandler(async (req, res) => {
   const patch = { name, role, email, phone, status, customerId };
   if (password) patch.password = bcrypt.hashSync(password, 10);
   await user.update(patch);
+  // D8：管理员改密或禁用用户 → 递增 tokenVersion，作废该用户所有旧 token
+  if (password || status === 'disabled') {
+    await user.update({ tokenVersion: (user.tokenVersion || 0) + 1 });
+  }
   if (roleIds) {
     await UserRole.destroy({ where: { userId: user.id } });
     if (roleIds.length) await UserRole.bulkCreate(roleIds.map((roleId) => ({ userId: user.id, roleId })));

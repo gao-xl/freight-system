@@ -12,8 +12,16 @@ try { pdfParse = require('pdf-parse'); } catch (e) { /* optional */ }
 try { xlsxLib = require('xlsx'); } catch (e) { /* optional */ }
 
 // 按扩展名提取文本
+// D9 修复：提取上限 20MB，超出直接抛错（err.code='EXTRACT_TOO_LARGE'），避免大文件整读入内存导致 OOM
+const MAX_EXTRACT_BYTES = 20 * 1024 * 1024;
 async function extractFile(filePath, originalName = '') {
   const ext = path.extname(originalName || filePath).toLowerCase();
+  const size = fs.statSync(filePath).size;
+  if (size > MAX_EXTRACT_BYTES) {
+    const e = new Error(`文件超过提取上限 ${MAX_EXTRACT_BYTES / 1024 / 1024}MB，跳过文本提取`);
+    e.code = 'EXTRACT_TOO_LARGE';
+    throw e;
+  }
   const buf = fs.readFileSync(filePath);
   switch (ext) {
     case '.docx':
@@ -63,6 +71,11 @@ async function extractAndSave(document) {
     await document.update({ extractionStatus: 'done', extractedText: text });
     logger.info('[EXTRACT] 文件文本提取完成', { id: document.id, chars: text.length });
   } catch (e) {
+    if (e.code === 'EXTRACT_TOO_LARGE') {
+      // D9：超限文件不提取也不报失败，标记 skipped 供前端展示
+      await document.update({ extractionStatus: 'skipped', extractedText: '' });
+      return;
+    }
     logger.error('[EXTRACT] 文件文本提取失败', { id: document.id, message: e.message });
     await document.update({ extractionStatus: 'failed', extractedText: '' });
   }

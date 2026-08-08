@@ -36,6 +36,7 @@ module.exports = {
       module: { type: Sequelize.STRING(50), allowNull: false },
       action: { type: Sequelize.STRING(50), allowNull: false },
       name: { type: Sequelize.STRING(100) },
+      code: { type: Sequelize.STRING(60), allowNull: false, unique: true }, // 权限点编码 module:action（与模型一致）
       createdAt: { type: Sequelize.DATE, allowNull: false },
       updatedAt: { type: Sequelize.DATE, allowNull: false },
     });

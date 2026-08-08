@@ -1,20 +1,21 @@
 const { Order, Customer, Supplier, Booking, CustomsDeclaration, FinanceRecord, User } = require('../models');
 const { ok, asyncHandler } = require('../utils/response');
 const { Op, fn, col } = require('sequelize');
+const { scopedWhere } = require('../middleware/dataScope');
 
-// 看板统计数据
+// 看板统计数据（B2 数据隔离：所有业务统计均限制在当前用户可见范围，admin=all 不受限）
 const dashboard = asyncHandler(async (req, res) => {
   const [orderTotal, orderInProgress, orderCompleted, customerTotal, supplierTotal,
     bookingWait, customsPending, receivableBalance, payableBalance, userTotal] = await Promise.all([
-    Order.count(),
-    Order.count({ where: { status: { [Op.in]: ['confirmed', 'in_progress'] } } }),
-    Order.count({ where: { status: 'completed' } }),
-    Customer.count({ where: { status: 'active' } }),
-    Supplier.count({ where: { status: 'active' } }),
-    Booking.count({ where: { status: { [Op.in]: ['new', 'confirmed'] } } }),
-    CustomsDeclaration.count({ where: { status: { [Op.in]: ['prepared', 'submitted', 'inspecting'] } } }),
-    FinanceRecord.findAll({ where: { direction: 'receivable' }, attributes: ['amount', 'paidAmount'] }),
-    FinanceRecord.findAll({ where: { direction: 'payable' }, attributes: ['amount', 'paidAmount'] }),
+    Order.count({ where: await scopedWhere(req, {}) }),
+    Order.count({ where: await scopedWhere(req, { status: { [Op.in]: ['confirmed', 'in_progress'] } }) }),
+    Order.count({ where: await scopedWhere(req, { status: 'completed' }) }),
+    Customer.count({ where: await scopedWhere(req, { status: 'active' }) }),
+    Supplier.count({ where: await scopedWhere(req, { status: 'active' }) }),
+    Booking.count({ where: await scopedWhere(req, { status: { [Op.in]: ['new', 'confirmed'] } }) }),
+    CustomsDeclaration.count({ where: await scopedWhere(req, { status: { [Op.in]: ['prepared', 'submitted', 'inspecting'] } }) }),
+    FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'receivable' }), attributes: ['amount', 'paidAmount'] }),
+    FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'payable' }), attributes: ['amount', 'paidAmount'] }),
     User.count({ where: { status: 'active' } }),
   ]);
   const recv = receivableBalance.reduce((s, r) => s + (Number(r.amount) - Number(r.paidAmount)), 0);
@@ -29,7 +30,8 @@ const dashboard = asyncHandler(async (req, res) => {
 
 // 订单状态分布（可按 ?type=import|export 过滤）
 const orderStatusDist = asyncHandler(async (req, res) => {
-  const where = req.query.type ? { type: req.query.type } : {};
+  const baseWhere = req.query.type ? { type: req.query.type } : {};
+  const where = await scopedWhere(req, baseWhere);
   const rows = await Order.findAll({
     attributes: ['status', [fn('COUNT', col('id')), 'count']],
     where,
@@ -41,7 +43,8 @@ const orderStatusDist = asyncHandler(async (req, res) => {
 
 // 运输模式分布（可按 ?type=import|export 过滤）
 const modeDist = asyncHandler(async (req, res) => {
-  const where = req.query.type ? { type: req.query.type } : {};
+  const baseWhere = req.query.type ? { type: req.query.type } : {};
+  const where = await scopedWhere(req, baseWhere);
   const rows = await Order.findAll({
     attributes: ['mode', [fn('COUNT', col('id')), 'count']],
     where,
@@ -54,7 +57,9 @@ const modeDist = asyncHandler(async (req, res) => {
 // 最近订单
 const recentOrders = asyncHandler(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit) || 8, 1), 200);
+  const where = await scopedWhere(req, {});
   const rows = await Order.findAll({
+    where,
     include: [{ model: Customer, as: 'customer', attributes: ['id', 'name'] }],
     order: [['updatedAt', 'DESC']],
     limit,
@@ -64,7 +69,8 @@ const recentOrders = asyncHandler(async (req, res) => {
 
 // B1 经营指标：回款率、毛利率、应收/应付、利润
 const metrics = asyncHandler(async (req, res) => {
-  const rows = await FinanceRecord.findAll({ attributes: ['direction', 'amount', 'paidAmount'] });
+  const where = await scopedWhere(req, {});
+  const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'paidAmount'] });
   let receivable = 0, received = 0, payable = 0, paid = 0;
   for (const r of rows) {
     const amt = Number(r.amount), paidAmt = Number(r.paidAmount);
@@ -92,8 +98,9 @@ const aging = asyncHandler(async (req, res) => {
     { key: 'd61', label: '61天以上', min: 61, max: Infinity, amount: 0, count: 0 },
   ];
   const settled = { amount: 0, count: 0 };           // 已结清
+  const where = await scopedWhere(req, { direction: 'receivable' });
   const rows = await FinanceRecord.findAll({
-    where: { direction: 'receivable' },
+    where,
     attributes: ['amount', 'paidAmount', 'dueDate', 'status'],
   });
   for (const r of rows) {
@@ -116,8 +123,14 @@ const aging = asyncHandler(async (req, res) => {
 
 // B1 业务员业绩排行（按订单毛利+订单数，salesId 关联用户）
 const salesPerformance = asyncHandler(async (req, res) => {
-  const orders = await Order.findAll({ attributes: ['id', 'salesId'] });
-  const finances = await FinanceRecord.findAll({ attributes: ['orderId', 'direction', 'amount', 'paidAmount'] });
+  // B2 数据隔离：订单先按可见范围过滤，财务仅统计这些订单（杜绝跨范围泄漏）
+  const orderWhere = await scopedWhere(req, {});
+  const orders = await Order.findAll({ where: orderWhere, attributes: ['id', 'salesId'] });
+  const orderIds = orders.map((o) => o.id);
+  const finances = await FinanceRecord.findAll({
+    where: { orderId: { [Op.in]: orderIds } },
+    attributes: ['orderId', 'direction', 'amount', 'paidAmount'],
+  });
   const profitByOrder = {};
   for (const f of finances) {
     const oid = f.orderId;

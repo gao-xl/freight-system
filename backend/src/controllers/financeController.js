@@ -1,6 +1,6 @@
 const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod } = require('../models');
 const { crudController } = require('./baseController');
-const { ok, fail, asyncHandler } = require('../utils/response');
+const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const { scopedWhere, scopedFindOne } = require('../middleware/dataScope');
 const { exportBuffer } = require('../services/exportService');
@@ -187,27 +187,38 @@ const invoiceList = asyncHandler(async (req, res) => {
 });
 
 // 创建开票记录（含税率计算）
+// B2 数据隔离：订单须在用户可见范围内；D13 发票号并发冲突自动重试
 const createInvoice = asyncHandler(async (req, res) => {
   const { invoiceType, orderId, customerId, supplierId, amount, currency, taxRate, remark } = req.body;
   if (!invoiceType) return fail(res, '请选择开票类型', 1, 400);
   const amt = Number(amount || 0);
   const tax = taxRate ? (amt * Number(taxRate)) / 100 : 0;
-  const now = Date.now();
-  const invoiceNo = `${invoiceType === 'receivable' ? 'AR' : 'AP'}-${now.toString().slice(-10)}`;
-  // 有订单时自动填充收付对象
+  const prefix = invoiceType === 'receivable' ? 'AR' : 'AP';
+  // 有订单时自动填充收付对象（不可见订单视为不存在）
   let cid = customerId, sid = supplierId;
   if (orderId && !cid && !sid) {
-    const order = await Order.findByPk(orderId);
-    if (order) cid = order.customerId;
+    const order = await scopedFindOne(req, Order, { id: orderId });
+    if (!order) return fail(res, '订单不存在或无权访问', 1, 404);
+    cid = order.customerId;
   }
   await assertOrderEditable(orderId);
   const me = await require('../models').User.findByPk(req.user.id);
-  const inv = await Invoice.create({
-    invoiceNo, invoiceType, orderId, customerId: cid, supplierId: sid,
-    amount: amt, currency: currency || 'USD', taxRate: taxRate || 0, taxAmount: tax, totalAmount: amt + tax,
-    status: 'draft', remark, createdBy: req.user?.id,
-    groupId: me?.groupId || null, ownerId: req.user.id,
-  });
+  // D13：发票号唯一约束冲突时重试生成新号（最多 3 次）
+  let inv = null;
+  for (let attempt = 0; attempt < 3 && !inv; attempt++) {
+    const invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
+    try {
+      inv = await Invoice.create({
+        invoiceNo, invoiceType, orderId, customerId: cid, supplierId: sid,
+        amount: amt, currency: currency || 'USD', taxRate: taxRate || 0, taxAmount: tax, totalAmount: amt + tax,
+        status: 'draft', remark, createdBy: req.user?.id,
+        groupId: me?.groupId || null, ownerId: req.user.id,
+      });
+    } catch (e) {
+      if (e.name === 'SequelizeUniqueConstraintError' && attempt < 2) continue;
+      throw e;
+    }
+  }
   ok(res, inv, '开票记录已创建');
 });
 

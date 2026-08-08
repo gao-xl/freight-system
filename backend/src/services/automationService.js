@@ -52,7 +52,8 @@ async function autoAdvanceFromBooking() {
     if (!order || order.status === 'cancelled') continue;
     const reached = await reachedOf(order);
     if (reached.has('loaded')) continue; // 已到达则跳过（幂等）
-    const r = await advanceOne(order, 'loaded', OPERATOR);
+    // strict:false —— 自动化由业务证据驱动（装船即隐含进港已完成），不执行手动防呆的顺序校验
+    const r = await advanceOne(order, 'loaded', OPERATOR, { strict: false });
     if (r.ok) {
       count += 1;
       await logAudit('auto_advance', order.id, `订舱${b.bookingNo}已装船/发船，自动推进至「装船」节点`);
@@ -72,7 +73,8 @@ async function autoAdvanceFromCustoms() {
     if (!order || order.status === 'cancelled') continue;
     const reached = await reachedOf(order);
     if (reached.has('cleared')) continue; // 已到达则跳过（幂等）
-    const r = await advanceOne(order, 'cleared', OPERATOR);
+    // strict:false —— 报关放行视同清关完成，跳过中间节点属正常业务（见 computeReached）
+    const r = await advanceOne(order, 'cleared', OPERATOR, { strict: false });
     if (r.ok) {
       count += 1;
       await logAudit('auto_advance', order.id, `报关${c.customsNo || c.id}已放行，自动推进至「清关」节点`);

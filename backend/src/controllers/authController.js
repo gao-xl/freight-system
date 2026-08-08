@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { User } = require('../models');
 const config = require('../config');
 const { ok, fail, asyncHandler } = require('../utils/response');
@@ -19,8 +20,9 @@ const login = asyncHandler(async (req, res) => {
     return fail(res, '用户名或密码错误', 1, 401);
   }
   await user.update({ lastLoginAt: new Date() });
+  // D8：签发带 ver（tokenVersion）与 jti 的 token；改密/禁用后 tokenVersion 递增，旧 token 即刻失效
   const token = jwt.sign(
-    { id: user.id, username: user.username, name: user.name, role: user.role },
+    { id: user.id, username: user.username, name: user.name, role: user.role, ver: user.tokenVersion || 0, jti: crypto.randomUUID() },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn }
   );
@@ -44,8 +46,10 @@ const changePassword = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.user.id);
   if (!await bcrypt.compare(oldPassword, user.password)) return fail(res, '原密码错误');
   user.password = await bcrypt.hash(newPassword, 10);
+  // D8：改密后递增版本号，使该用户此前签发的所有 token 失效
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
   await user.save();
-  ok(res, null, '密码修改成功');
+  ok(res, null, '密码修改成功，其他设备需重新登录');
 });
 
 module.exports = { login, me, changePassword };

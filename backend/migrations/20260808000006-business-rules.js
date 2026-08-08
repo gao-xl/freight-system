@@ -18,8 +18,8 @@ module.exports = {
       enabled: { type: Sequelize.BOOLEAN, defaultValue: true },
       sortOrder: { type: Sequelize.INTEGER, defaultValue: 0 },
       remark: { type: Sequelize.STRING(255) },
-      createdAt: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW') },
-      updatedAt: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.fn('NOW') },
+      createdAt: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
+      updatedAt: { type: Sequelize.DATE, allowNull: false, defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') },
     });
     await queryInterface.addIndex('BusinessRules', ['bizType']);
     await queryInterface.addIndex('BusinessRules', ['enabled']);

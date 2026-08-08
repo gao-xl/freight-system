@@ -39,7 +39,10 @@ module.exports = {
     logging: false,
   },
   // CORS 白名单（逗号分隔），生产必填
-  corsOrigins: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  // D5 修复：过滤空串/纯空格项，避免 CORS_ORIGIN="" 时白名单混入空字符串
+  corsOrigins: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+    : ['http://localhost:5173', 'http://127.0.0.1:5173'],
   // 限流参数
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 分钟

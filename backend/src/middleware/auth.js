@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config');
+const { User } = require('../models');
 const { getPermissions, getEffectivePermissions } = require('../services/permissionService');
 const { verifyPlainKey, touchLastUsed } = require('../services/apiKeyService');
 const { logger } = require('../utils/logger');
@@ -15,7 +16,14 @@ async function authRequired(req, res, next) {
 
   if (token) {
     try {
-      req.user = jwt.verify(token, config.jwtSecret);
+      const decoded = jwt.verify(token, config.jwtSecret);
+      // D8：每次请求校验用户存在/启用 + tokenVersion 匹配（改密/禁用后旧 token 即刻失效）
+      const user = await User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion'] });
+      // 旧 token 无 ver 按 0 处理，与 tokenVersion 默认 0 兼容，存量会话平滑过渡
+      if (!user || user.status !== 'active' || (decoded.ver || 0) !== Number(user.tokenVersion || 0)) {
+        return res.status(401).json({ code: 401, message: '凭证无效，请重新登录' });
+      }
+      req.user = decoded;
       req.authType = 'jwt';
       return next();
     } catch (e) {

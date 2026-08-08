@@ -14,6 +14,7 @@ const User = sequelize.define('User', {
   lastLoginAt: { type: DataTypes.DATE },
   groupId: { type: DataTypes.INTEGER }, // B2 默认所属组（简化：用户主要归属组）
   customerId: { type: DataTypes.INTEGER }, // C5 客户自助门户：关联客户档案（仅 customer 角色）
+  tokenVersion: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }, // D8 JWT 吊销版本号：改密/禁用时 +1，旧 token 即刻失效
 }, { timestamps: true });
 
 module.exports = User;
