@@ -111,6 +111,9 @@
       <el-tab-pane label="示例数据" name="demo">
         <DemoDataManager />
       </el-tab-pane>
+      <el-tab-pane label="备份与恢复" name="backup">
+        <BackupRestore />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 用户表单 -->
@@ -185,6 +188,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { userAPI, roleAPI, permissionAPI, auditLogAPI } from '@/api';
 import DemoDataManager from '@/components/DemoDataManager.vue';
+import BackupRestore from '@/components/BackupRestore.vue';
 
 const router = useRouter();
 const tab = ref('users');
