@@ -25,6 +25,8 @@ const crud = (resource) => ({
   batchRemove: (ids) => request.post(`/${resource}/batch-delete`, { ids }),
   // 批量更新：POST /:resource/batch-update { ids, data }
   batchUpdate: (ids, data) => request.post(`/${resource}/batch-update`, { ids, data }),
+  // U5 回收站：恢复软删除记录
+  restore: (id) => request.post(`/${resource}/${id}/restore`),
 });
 
 export const customerAPI = crud('customers');
@@ -214,8 +216,8 @@ export const printTemplateAPI = {
   preview: (id, data) => request.post(`/print-templates/${id}/preview`, data),
 };
 export const printAPI = (docType, bizId, params) => request.get(`/print/${docType}/${bizId}`, { params, responseType: 'blob' });
-// 导出
-export const orderExportAPI = () => request.get('/orders/export', { responseType: 'blob' });
+// 导出（U2：订单导出携带当前筛选条件，导出=所见）
+export const orderExportAPI = (params) => request.get('/orders/export', { params, responseType: 'blob' });
 export const financeExportAPI = () => request.get('/finance/export', { responseType: 'blob' });
 
 // 待办任务中心（A4）

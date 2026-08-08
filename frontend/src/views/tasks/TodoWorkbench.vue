@@ -69,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { todoAPI } from '@/api';
@@ -123,7 +123,20 @@ function go(it) {
 
 function applyFilter() { /* 由 computed 驱动 */ }
 
-onMounted(() => { document.title = (auth.displayName || '') + ' 的待办 - 货运代理管理系统'; load(); });
+// U9：SSE 落地前，60s 轮询保持待办新鲜（页面隐藏时暂停）
+let pollTimer = null;
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(() => {
+    if (!document.hidden) load();
+  }, 60000);
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+onMounted(() => { document.title = (auth.displayName || '') + ' 的待办 - 货运代理管理系统'; load(); startPolling(); });
+onUnmounted(() => stopPolling());
 </script>
 
 <style scoped>

@@ -18,12 +18,13 @@ async function authRequired(req, res, next) {
     try {
       const decoded = jwt.verify(token, config.jwtSecret);
       // D8：每次请求校验用户存在/启用 + tokenVersion 匹配（改密/禁用后旧 token 即刻失效）
-      const user = await User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion'] });
+      const user = await User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion', 'customerId'] });
       // 旧 token 无 ver 按 0 处理，与 tokenVersion 默认 0 兼容，存量会话平滑过渡
       if (!user || user.status !== 'active' || (decoded.ver || 0) !== Number(user.tokenVersion || 0)) {
         return res.status(401).json({ code: 401, message: '凭证无效，请重新登录' });
       }
-      req.user = decoded;
+      // U1 深挖修复：JWT 不含 customerId，需以 DB 为准合并进 req.user，否则门户接口永远拿不到客户档案
+      req.user = { ...decoded, customerId: user.customerId ?? decoded.customerId ?? null };
       req.authType = 'jwt';
       return next();
     } catch (e) {

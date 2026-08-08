@@ -196,6 +196,7 @@ router.get('/customers/import-template', guard('customer', 'read'), customer.imp
 router.post('/customers/import', guard('customer', 'create'), uploadMemory.single('file'), customer.importExcel);
 router.post('/customers/batch-delete', guard('customer', 'delete'), customer.batchRemove);
 router.post('/customers/batch-update', guard('customer', 'update'), customer.batchUpdate);
+router.post('/customers/:id/restore', guard('customer', 'update'), customer.restore); // U5 回收站恢复
 router.get('/customers/:id', guard('customer', 'read'), customer.get);
 router.get('/customers/:id/follows', guard('customer', 'read'), customer.listFollows);
 router.post('/customers/:id/follows', guard('customer', 'update'), validate(S.followCreate), customer.createFollow);
@@ -211,6 +212,7 @@ router.get('/suppliers/import-template', guard('supplier', 'read'), supplier.imp
 router.post('/suppliers/import', guard('supplier', 'create'), uploadMemory.single('file'), supplier.importExcel);
 router.post('/suppliers/batch-delete', guard('supplier', 'delete'), supplier.batchRemove);
 router.post('/suppliers/batch-update', guard('supplier', 'update'), supplier.batchUpdate);
+router.post('/suppliers/:id/restore', guard('supplier', 'update'), supplier.restore); // U5 回收站恢复
 router.get('/suppliers/:id', guard('supplier', 'read'), supplier.get);
 router.post('/suppliers', guard('supplier', 'create'), validate(S.supplierCreate), supplier.create);
 router.put('/suppliers/:id', guard('supplier', 'update'), validate(S.supplierUpdate), supplier.update);
@@ -224,6 +226,7 @@ router.post('/orders/batch-delete', guard('order', 'delete'), order.batchRemove)
 router.post('/orders/batch-update', guard('order', 'update'), order.batchUpdate);
 router.post('/orders/batch-advance', guard('order', 'update'), order.batchAdvance);
 router.post('/orders/batch-status', guard('order', 'update'), order.batchStatus);
+router.post('/orders/:id/restore', guard('order', 'update'), order.restore); // U5 回收站恢复
 router.get('/orders/:id/detail', guard('order', 'read'), order.detail);
 router.get('/orders/:id/timeline', guard('order', 'read'), order.timeline);
 router.get('/orders/:id/flow', guard('order', 'read'), order.flow);       // A6 业务节点流转
@@ -255,6 +258,7 @@ router.get('/bookings', guard('booking', 'read'), booking.list);
 router.get('/bookings/:id', guard('booking', 'read'), booking.get);
 router.post('/bookings', guard('booking', 'create'), validate(S.bookingCreate), booking.create);
 router.put('/bookings/:id', guard('booking', 'update'), validate(S.bookingUpdate), booking.update);
+router.post('/bookings/:id/restore', guard('booking', 'update'), booking.restore); // U5 回收站恢复
 router.delete('/bookings/:id', guard('booking', 'delete'), booking.remove);
 
 // 报关
@@ -308,6 +312,7 @@ router.post('/finance/batch-delete', guard('finance', 'delete'), finance.batchRe
 router.post('/finance/batch-update', guard('finance', 'update'), finance.batchUpdate);
 router.post('/finance/batch-writeoff', guard('finance', 'update'), finance.batchWriteoff);
 router.post('/finance/:id/writeoff', guard('finance', 'update'), finance.writeoff);
+router.post('/finance/:id/restore', guard('finance', 'update'), finance.restore); // U5 回收站恢复
 router.get('/finance/:id', guard('finance', 'read'), finance.get);
 router.post('/finance', guard('finance', 'create'), validate(S.financeCreate), finance.create);
 router.put('/finance/:id', guard('finance', 'update'), validate(S.financeUpdate), finance.update);
@@ -339,6 +344,7 @@ router.get('/freight-rates', guard('quotation', 'read'), freightRate.list);
 router.get('/freight-rates/:id', guard('quotation', 'read'), freightRate.get);
 router.post('/freight-rates/batch-delete', guard('quotation', 'delete'), freightRate.batchRemove);
 router.post('/freight-rates/batch-update', guard('quotation', 'update'), freightRate.batchUpdate);
+router.post('/freight-rates/:id/restore', guard('quotation', 'update'), freightRate.restore); // U5 回收站恢复
 router.post('/freight-rates', guard('quotation', 'create'), validate(S.freightRateCreate), freightRate.create);
 router.put('/freight-rates/:id', guard('quotation', 'update'), validate(S.freightRateUpdate), freightRate.update);
 router.delete('/freight-rates/:id', guard('quotation', 'delete'), freightRate.remove);

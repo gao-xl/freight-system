@@ -6,7 +6,8 @@ const routes = [
   {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
-    redirect: '/tasks',
+    // U12：角色化首页——admin/manager 进经营看板、finance 进财务、其余进待办
+    redirect: () => roleHome(useAuthStore().role),
     children: [
       { path: 'tasks', name: 'tasks', component: () => import('@/views/tasks/TodoWorkbench.vue'), meta: { title: '待办工作台', icon: 'Memo', permission: undefined } },
       { path: 'dashboard', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '经营看板', icon: 'Odometer', permission: 'dashboard:read' } },
@@ -39,17 +40,25 @@ const routes = [
       { path: 'system/reports', name: 'reports', component: () => import('@/views/system/ReportDesigner.vue'), meta: { title: '报表设计', hidden: true, permission: 'dashboard:read' } },
       { path: 'system/print-templates', redirect: '/print-templates' },
       { path: 'print-templates', name: 'printTemplates', component: () => import('@/views/system/PrintTemplateDesigner.vue'), meta: { title: '单证模板', icon: 'Tickets', permission: 'print:read' } },
+      { path: 'docs', name: 'docs', component: () => import('@/views/DocsView.vue'), meta: { title: '开发文档', icon: 'Reading' } },
     ],
   },
   { path: '/portal', name: 'portal', component: () => import('@/views/portal/Portal.vue'), meta: { title: '客户自助门户' } },
   { path: '/403', name: 'forbidden', component: () => import('@/views/Forbidden.vue'), meta: { title: '无权限' } },
-  { path: '/:pathMatch(.*)*', redirect: '/tasks' },
+  { path: '/:pathMatch(.*)*', redirect: () => roleHome(useAuthStore().role) },
 ];
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
 });
+
+// U12：按角色返回默认首页
+function roleHome(role) {
+  if (role === 'admin' || role === 'manager') return '/dashboard';
+  if (role === 'finance') return '/finance';
+  return '/tasks';
+}
 
 router.beforeEach((to) => {
   const auth = useAuthStore();
@@ -58,11 +67,15 @@ router.beforeEach((to) => {
     return { path: '/login', query: { redirect: to.fullPath } };
   }
   if (to.path === '/login' && token) {
-    return { path: auth.role === 'customer' ? '/portal' : '/tasks' };
+    return { path: auth.role === 'customer' ? '/portal' : roleHome(auth.role) };
   }
   // 客户角色只能访问门户
   if (auth.role === 'customer' && to.path !== '/portal' && to.path !== '/403') {
     return { path: '/portal' };
+  }
+  // U11：非客户角色访问门户 → 重定向回主系统（避免空 customerId 白闪报错）
+  if (to.path === '/portal' && auth.role && auth.role !== 'customer') {
+    return { path: roleHome(auth.role) };
   }
   // 权限校验
   if (to.meta.permission && token && !auth.hasPermission(to.meta.permission)) {

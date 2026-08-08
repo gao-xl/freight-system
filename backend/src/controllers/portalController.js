@@ -31,6 +31,7 @@ const myOrders = asyncHandler(async (req, res) => {
   const customerId = req.user.customerId;
   if (!customerId) return fail(res, '当前账号未关联客户档案', 1, 400);
   const { page, pageSize, offset, limit } = getPagination(req.query);
+  const { status, keyword } = req.query; // U1 修复：解构筛选参数，未解构导致一筛选必 500
   const where = { customerId };
   if (status) where.status = status;
   if (keyword) where[Op.or] = ['orderNo', 'containerNo', 'cargoDesc'].map((f) => ({ [f]: { [Op.like]: `%${keyword}%` } }));
@@ -61,6 +62,7 @@ const myBills = asyncHandler(async (req, res) => {
   const customerId = req.user.customerId;
   if (!customerId) return fail(res, '当前账号未关联客户档案', 1, 400);
   const { page, pageSize, offset, limit } = getPagination(req.query);
+  const { status } = req.query; // U1 修复：解构筛选参数
   const where = { direction: 'receivable' };
   if (status) where.status = status;
   const { rows, count } = await FinanceRecord.findAndCountAll({

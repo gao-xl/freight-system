@@ -140,7 +140,7 @@ async function batchStatus(status) {
 }
 
 async function batchRemove() {
-  await ElMessageBox.confirm(`确认删除选中的 ${selectedIds().length} 家供应商？删除后不可恢复。`, '批量删除', { type: 'warning' });
+  await ElMessageBox.confirm(`确认删除选中的 ${selectedIds().length} 家供应商？删除后可在回收站中恢复。`, '批量删除', { type: 'warning' });
   await supplierAPI.batchRemove(selectedIds());
   ElMessage.success('已批量删除');
   multiple.value = [];

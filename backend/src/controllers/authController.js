@@ -35,7 +35,7 @@ const login = asyncHandler(async (req, res) => {
 
 const me = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.user.id, {
-    attributes: ['id', 'username', 'name', 'role', 'email', 'phone', 'lastLoginAt'],
+    attributes: ['id', 'username', 'name', 'role', 'email', 'phone', 'lastLoginAt', 'customerId'],
   });
   const permissions = await getPermissions(user.id);
   ok(res, { ...user.toJSON(), permissions });

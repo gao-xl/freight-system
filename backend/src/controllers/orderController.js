@@ -178,23 +178,62 @@ const batchAdvance = asyncHandler(async (req, res) => {
   const okList = [], failedList = [];
   for (const o of orders) {
     const r = await advanceOne(o, node, req.user?.name || '');
-    if (r.ok) okList.push(r.order.id); else failedList.push({ id: o.id, message: r.message });
+    if (r.ok) okList.push(r.order.id); else failedList.push({ id: o.id, orderNo: o.orderNo, message: r.message });
   }
   ok(res, { ok: okList.length, failed: failedList.length, failedList, node }, `已推进 ${okList.length} 张订单${failedList.length ? `，失败 ${failedList.length} 张` : ''}`);
 });
 
 // 批量修改订单状态：POST /orders/batch-status { ids: [], status }
+// U3+U8 修复：订单状态是派生的（computeReached/deriveOrderStatus），不允许无脑覆盖。
+// 收敛为两条语义：
+//  - completed：要求所有业务节点已到达，否则逐单给出未到达节点（与 advanceOne 校验一致）
+//  - cancelled：允许直接设置（业务取消，无"取消"节点可推进）
+//  - draft/confirmed/in_progress：派生状态，拒绝直接覆盖，提示走"推进节点"
 const batchStatus = asyncHandler(async (req, res) => {
   const { status, ids } = req.body;
   const valid = ['draft', 'confirmed', 'in_progress', 'completed', 'cancelled'];
   if (!valid.includes(status)) return fail(res, `无效状态：${status}`, 1, 400);
+  if (status !== 'completed' && status !== 'cancelled') {
+    return fail(res, `「${statusMapText(status)}」为系统派生的流转状态，请使用"推进节点"操作推进业务节点`, 1, 400);
+  }
   const idList = (Array.isArray(ids) ? ids : String(ids || '').split(',')).map(Number).filter((n) => n > 0);
   if (!idList.length) return fail(res, '请先选择要批量更新的订单', 1, 400);
   const batchWhere = await buildOrderScopeWhere(req, { id: { [Op.in]: idList } });
-  const result = await Order.update({ status }, { where: batchWhere });
-  const updated = Array.isArray(result) ? result[0] : result;
-  ok(res, { updated, status }, `已更新 ${updated} 张订单状态`);
+  const orders = await Order.findAll({ where: batchWhere });
+  const okList = [], failedList = [];
+
+  for (const o of orders) {
+    if (status === 'cancelled') {
+      if (o.status === 'cancelled') { failedList.push({ id: o.id, orderNo: o.orderNo, message: '订单已是取消状态' }); continue; }
+      await o.update({ status: 'cancelled' });
+      okList.push(o.id);
+      continue;
+    }
+    // completed：校验所有业务节点已到达（复用状态机判定，与 advanceOne 同源）
+    const nodes = ORDER_NODES[o.type] || ORDER_NODES.export;
+    const [bookings, customs, tracks] = await Promise.all([
+      Booking.findAll({ where: { orderId: o.id } }),
+      CustomsDeclaration.findAll({ where: { orderId: o.id } }),
+      ShipmentTrack.findAll({ where: { orderId: o.id } }),
+    ]);
+    const reached = computeReached(o, bookings, customs, tracks);
+    const missing = nodes.filter((n) => !reached.has(n.key)).map((n) => n.label);
+    if (missing.length) {
+      failedList.push({ id: o.id, orderNo: o.orderNo, message: `业务节点未到齐，缺少：${missing.join('、')}` });
+      continue;
+    }
+    if (o.status === 'completed') { failedList.push({ id: o.id, orderNo: o.orderNo, message: '订单已是完成状态' }); continue; }
+    await o.update({ status: 'completed' });
+    okList.push(o.id);
+  }
+
+  ok(res, { ok: okList.length, failed: failedList.length, failedList, status },
+    `已更新 ${okList.length} 张订单${failedList.length ? `，失败 ${failedList.length} 张` : ''}`);
 });
+
+function statusMapText(s) {
+  return { draft: '草稿', confirmed: '已确认', in_progress: '进行中', completed: '已完成', cancelled: '已取消' }[s] || s;
+}
 
 const base = crudController({
   name: 'order',
@@ -226,24 +265,34 @@ const get = asyncHandler(async (req, res) => {
   ok(res, order);
 });
 
-// B2 数据权限：订单列表按 dataScope 过滤 + 创建时自动归属
-const list = asyncHandler(async (req, res) => {
-  const { Op } = require('sequelize');
-  const { getPagination } = require('../utils/response');
-  const { page, pageSize, offset, limit } = getPagination(req.query);
+// 构造列表筛选条件（U2 修复：list 与 exportExcel 共用，保证导出=所见）
+// 支持：keyword（模糊搜索）、status/mode/type 等模型字段精确过滤（跳过空值）
+// U5 修复：deleted=1 时查看回收站（仅已删除订单）
+function buildListWhere(req) {
   const baseWhere = {};
   for (const key of Object.keys(req.query)) {
-    if (['page', 'pageSize', 'keyword'].includes(key)) continue;
+    if (['page', 'pageSize', 'keyword', 'deleted'].includes(key)) continue;
     const val = req.query[key];
     if (val === '' || val === undefined || val === null) continue;
     if (Order.rawAttributes[key]) baseWhere[key] = val;
+  }
+  if (req.query.deleted === '1' && Order.rawAttributes.deletedAt) {
+    baseWhere.deletedAt = { [Op.ne]: null };
   }
   if (req.query.keyword) {
     baseWhere[Op.or] = ['orderNo', 'cargoDesc', 'containerNo', 'originPort', 'destPort'].map((f) => ({
       [f]: { [Op.like]: `%${req.query.keyword}%` },
     }));
   }
-  const where = await buildOrderScopeWhere(req, baseWhere);
+  return baseWhere;
+}
+
+// B2 数据权限：订单列表按 dataScope 过滤 + 创建时自动归属
+const list = asyncHandler(async (req, res) => {
+  const { getPagination } = require('../utils/response');
+  const { page, pageSize, offset, limit } = getPagination(req.query);
+  const trashView = req.query.deleted === '1' && Order.rawAttributes.deletedAt;
+  const where = await buildOrderScopeWhere(req, buildListWhere(req));
   const { rows, count } = await Order.findAndCountAll({
     where,
     include: [{ model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] }],
@@ -251,6 +300,7 @@ const list = asyncHandler(async (req, res) => {
     offset,
     limit,
     distinct: true,
+    paranoid: trashView ? false : undefined, // U5：回收站视图需越过软删过滤
   });
   ok(res, { list: rows, total: count, page, pageSize });
 });
@@ -360,13 +410,15 @@ function dict(stage) {
   return { booked: '已订舱', picked_up: '已提货', received: '已收货', loaded: '已装船', in_transit: '运输中', arrived: '已到港', cleared: '已清关', delivered: '已送达' }[stage] || stage;
 }
 
-// Excel 导出订单列表
+// Excel 导出订单列表（U2 修复：复用 list 的筛选条件，导出=所见，不再全量导出）
 const exportExcel = asyncHandler(async (req, res) => {
-  const finalWhere = await buildOrderScopeWhere(req, {});
+  const trashView = req.query.deleted === '1' && Order.rawAttributes.deletedAt;
+  const finalWhere = await buildOrderScopeWhere(req, buildListWhere(req));
   const rows = await Order.findAll({
     where: finalWhere,
     include: [{ model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] }],
     order: [['id', 'DESC']],
+    paranoid: trashView ? false : undefined,
   });
   const statusMap = { draft: '草稿', confirmed: '已确认', in_progress: '进行中', completed: '已完成', cancelled: '已取消' };
   const data = rows.map((r) => ({

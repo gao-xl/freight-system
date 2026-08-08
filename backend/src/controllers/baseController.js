@@ -43,6 +43,10 @@ function crudController(opts) {
     if (req.query.keyword && searchFields.length) {
       where[Op.or] = searchFields.map((f) => ({ [f]: { [Op.like]: `%${req.query.keyword}%` } }));
     }
+    // U5 修复：软删除模块支持 deleted=1 查看回收站（仅已删除记录）；默认仍只查未删除
+    const isParanoid = !!model.rawAttributes.deletedAt;
+    const trashView = isParanoid && req.query.deleted === '1';
+    if (trashView) where.deletedAt = { [Op.ne]: null };
     // 数据隔离：列表仅返回用户可见范围
     const finalWhere = scoped ? await scopedWhere(req, where) : where;
     const { rows, count } = await model.findAndCountAll({
@@ -52,6 +56,7 @@ function crudController(opts) {
       offset,
       limit,
       distinct: true,
+      paranoid: trashView ? false : undefined,
     });
     ok(res, { list: rows, total: count, page, pageSize });
   });
@@ -144,7 +149,18 @@ function crudController(opts) {
     ok(res, { updated }, `已更新 ${updated} 条记录`);
   });
 
-  return { list, get, create, update, remove, batchRemove, batchUpdate };
+  // 恢复软删除记录：POST /:resource/:id/restore（U5 修复：软删除有 UI 恢复入口）
+  const restore = asyncHandler(async (req, res) => {
+    if (!model.rawAttributes.deletedAt) return fail(res, '该模块不支持恢复', 1, 400);
+    const item = await model.findOne({ where: { id: req.params.id }, paranoid: false });
+    if (!item) return fail(res, '记录不存在', 1, 404);
+    if (!item.deletedAt) return fail(res, '记录未删除，无需恢复', 1, 400);
+    await model.restore({ where: { id: item.id } });
+    if (name) events.emit(`${name}.restored`, { id: item.id, data: item.toJSON(), user: req.user });
+    ok(res, null, '已恢复');
+  });
+
+  return { list, get, create, update, remove, batchRemove, batchUpdate, restore };
 }
 
 // 解析请求中的 id 数组（兼容字符串/数组/逗号分隔）

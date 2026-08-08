@@ -21,12 +21,13 @@
           <el-option label="进口" value="import" />
           <el-option label="中转" value="transit" />
         </el-select>
+        <el-checkbox v-model="query.deleted" @change="load(1)">包含已删除</el-checkbox>
         <el-button type="primary" @click="load(1)"><el-icon><Search /></el-icon>查询</el-button>
       </div>
       <div class="right-btn">
-        <template v-if="multiple.length">
+        <template v-if="multiple.length && !trashView">
           <el-button type="success" plain @click="advanceDialog = true">批量推进</el-button>
-          <el-button type="primary" plain @click="statusDialog = true">批量改状态</el-button>
+          <el-button type="primary" plain @click="statusDialog = true">批量完成/取消</el-button>
           <el-button type="danger" plain @click="batchRemove">批量删除</el-button>
           <el-divider direction="vertical" />
         </template>
@@ -60,13 +61,19 @@
         <template #default="{ row }">{{ money(row.totalAmount) }}</template>
       </el-table-column>
       <el-table-column label="状态" width="100">
-        <template #default="{ row }"><el-tag :type="statusOf(ORDER_STATUS, row.status).type" size="small">{{ statusOf(ORDER_STATUS, row.status).text }}</el-tag></template>
-      </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="goDetail(row)">详情</el-button>
-          <el-button v-if="row.status === 'draft'" link type="warning" @click="confirmOrder(row)">确认</el-button>
-          <el-button link type="danger" @click="remove(row)">删除</el-button>
+          <el-tag v-if="row.deletedAt" type="info" size="small">已删除</el-tag>
+          <el-tag v-else :type="statusOf(ORDER_STATUS, row.status).type" size="small">{{ statusOf(ORDER_STATUS, row.status).text }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150" fixed="right">
+        <template #default="{ row }">
+          <el-button v-if="row.deletedAt" link type="primary" @click="restoreOrder(row)">恢复</el-button>
+          <template v-else>
+            <el-button link type="primary" @click="goDetail(row)">详情</el-button>
+            <el-button v-if="row.status === 'draft'" link type="warning" @click="confirmOrder(row)">确认</el-button>
+            <el-button link type="danger" @click="remove(row)">删除</el-button>
+          </template>
         </template>
       </el-table-column>
     </el-table>
@@ -78,20 +85,21 @@
     </div>
 
     <el-dialog v-model="dialogVisible" title="新建订单" width="720px" destroy-on-close>
-      <el-form :model="form" label-width="90px">
+      <el-form ref="formRef" :model="form" :rules="formRules" label-width="90px">
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="客户" required>
-              <el-select v-model="form.customerId" filterable style="width:100%" placeholder="选择客户">
+            <el-form-item label="客户" prop="customerId" required>
+              <el-select v-model="form.customerId" filterable remote :remote-method="searchCustomer" :loading="customerLoading"
+                :reserve-keyword="false" clearable style="width:100%" placeholder="输入名称/编码搜索客户">
                 <el-option v-for="c in customers" :key="c.id" :label="`${c.name} (${c.code})`" :value="c.id" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12"><el-form-item label="订单类型"><el-select v-model="form.type" style="width:100%"><el-option label="出口" value="export" /><el-option label="进口" value="import" /><el-option label="中转" value="transit" /></el-select></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="运输方式"><el-select v-model="form.mode" style="width:100%"><el-option v-for="(t,k) in MODE" :key="k" :label="t" :value="k" /></el-select></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="订单类型" prop="type"><el-select v-model="form.type" style="width:100%"><el-option label="出口" value="export" /><el-option label="进口" value="import" /><el-option label="中转" value="transit" /></el-select></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="运输方式" prop="mode"><el-select v-model="form.mode" style="width:100%"><el-option v-for="(t,k) in MODE" :key="k" :label="t" :value="k" /></el-select></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="服务类型"><el-select v-model="form.serviceType" style="width:100%"><el-option v-for="(t,k) in SERVICE_TYPE" :key="k" :label="t" :value="k" /></el-select></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="起运港"><el-input v-model="form.originPort" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="目的港"><el-input v-model="form.destPort" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="起运港" prop="originPort"><el-input v-model="form.originPort" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="目的港" prop="destPort"><el-input v-model="form.destPort" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="起运地"><el-input v-model="form.originPlace" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="目的地"><el-input v-model="form.destPlace" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="货物描述"><el-input v-model="form.cargoDesc" /></el-form-item></el-col>
@@ -141,19 +149,37 @@
       </template>
     </el-dialog>
 
-    <!-- 批量修改状态 -->
-    <el-dialog v-model="statusDialog" title="批量修改订单状态" width="440px">
-      <div class="batch-tip">已选 <b>{{ multiple.length }}</b> 张订单，将统一改为所选状态。</div>
+    <!-- 批量完成/取消（U3+U8：状态是派生的，仅提供业务终态操作；中间态走节点推进） -->
+    <el-dialog v-model="statusDialog" title="批量完成/取消订单" width="460px">
+      <div class="batch-tip">已选 <b>{{ multiple.length }}</b> 张订单。订单状态由业务节点派生，中间状态请使用「批量推进」操作。</div>
       <el-form label-width="90px">
-        <el-form-item label="目标状态" required>
+        <el-form-item label="操作" required>
           <el-select v-model="targetStatus" style="width:100%">
-            <el-option v-for="(v,k) in ORDER_STATUS" :key="k" :label="v.text" :value="k" />
+            <el-option label="标记完成（要求业务节点到齐）" value="completed" />
+            <el-option label="取消订单（业务取消）" value="cancelled" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="statusDialog = false">取消</el-button>
-        <el-button type="primary" :loading="updatingStatus" @click="batchStatus">执行修改</el-button>
+        <el-button type="primary" :loading="updatingStatus" @click="batchStatus">执行</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量操作结果明细（U4：部分失败时列出订单号与原因） -->
+    <el-dialog v-model="resultDialog" title="批量操作结果" width="560px">
+      <el-alert v-if="!batchResult.failed" type="success" :closable="false" show-icon title="全部成功" class="result-alert" />
+      <template v-else>
+        <el-alert type="warning" :closable="false" show-icon
+          :title="`成功 ${batchResult.ok} 张，失败 ${batchResult.failed} 张`" class="result-alert" />
+        <el-table :data="batchResult.failedList" size="small" max-height="320" border>
+          <el-table-column label="订单号" width="170">
+            <template #default="{ row }">
+              <el-link type="primary" @click="goDetailById(row.id)">{{ row.orderNo || orderNoOf(row.id) }}</el-link>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" label="失败原因" min-width="220" />
+        </el-table>
       </template>
     </el-dialog>
     </div>
@@ -174,9 +200,11 @@ const saving = ref(false);
 const list = ref([]);
 const total = ref(0);
 const customers = ref([]);
-const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', mode: '', type: '' });
+const customerLoading = ref(false);
+const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', mode: '', type: '', deleted: '' });
 const dialogVisible = ref(false);
 const form = ref({});
+const formRef = ref(null);
 const customFields = ref([]);
 const multiple = ref([]);
 const advanceDialog = ref(false);
@@ -185,6 +213,21 @@ const advancing = ref(false);
 const updatingStatus = ref(false);
 const advanceNode = ref('');
 const targetStatus = ref('');
+const resultDialog = ref(false);
+const batchResult = ref({ ok: 0, failed: 0, failedList: [] });
+const orderNoMap = ref({});
+
+// U6：新建订单表单校验（镜像后端必填）
+const formRules = {
+  customerId: [{ required: true, message: '请选择客户', trigger: 'change' }],
+  type: [{ required: true, message: '请选择订单类型', trigger: 'change' }],
+  mode: [{ required: true, message: '请选择运输方式', trigger: 'change' }],
+  originPort: [{ required: true, message: '请输入起运港', trigger: 'blur' }],
+  destPort: [{ required: true, message: '请输入目的港', trigger: 'blur' }],
+};
+
+// 回收站视图（U5：包含已删除）
+const trashView = computed(() => query.deleted === '1');
 
 const pageTitle = computed(() => ({
   export: '出口操作',
@@ -199,6 +242,7 @@ const ORDER_NODE_OPTIONS = {
 
 function onSelect(rows) { multiple.value = rows; }
 const selectedIds = () => multiple.value.map((r) => r.id);
+const orderNoOf = (id) => orderNoMap.value[id] || `#${id}`;
 
 async function batchAdvance() {
   if (!advanceNode.value) return ElMessage.warning('请选择要推进到的节点');
@@ -206,7 +250,13 @@ async function batchAdvance() {
   advancing.value = true;
   try {
     const data = await orderBatchAdvanceAPI(selectedIds(), advanceNode.value);
-    ElMessage.success(data.msg || '批量推进完成');
+    // U4：部分失败时弹出明细，列出失败订单与原因
+    if (data.failed > 0) {
+      batchResult.value = { ok: data.ok, failed: data.failed, failedList: data.failedList || [] };
+      resultDialog.value = true;
+    } else {
+      ElMessage.success(data.msg || '批量推进完成');
+    }
     advanceDialog.value = false;
     advanceNode.value = '';
     multiple.value = [];
@@ -215,13 +265,26 @@ async function batchAdvance() {
 }
 
 async function batchStatus() {
-  if (!targetStatus.value) return ElMessage.warning('请选择目标状态');
+  if (!targetStatus.value) return ElMessage.warning('请选择操作类型');
   if (!selectedIds().length) return ElMessage.warning('请先选择订单');
-  await ElMessageBox.confirm(`确认将选中的 ${selectedIds().length} 张订单统一改为「${statusOf(ORDER_STATUS, targetStatus.value).text}」？`, '批量改状态', { type: 'warning' });
+  const opText = targetStatus.value === 'completed' ? '标记完成' : '取消';
+  await ElMessageBox.confirm(
+    targetStatus.value === 'completed'
+      ? `确认将选中的 ${selectedIds().length} 张订单标记为完成？系统将校验业务节点是否到齐。`
+      : `确认取消选中的 ${selectedIds().length} 张订单？取消后订单停止流转。`,
+    `批量${opText}`,
+    { type: 'warning' }
+  );
   updatingStatus.value = true;
   try {
     const data = await orderBatchStatusAPI(selectedIds(), targetStatus.value);
-    ElMessage.success(data.msg || '批量改状态完成');
+    // U4：部分失败时弹出明细
+    if (data.failed > 0) {
+      batchResult.value = { ok: data.ok, failed: data.failed, failedList: data.failedList || [] };
+      resultDialog.value = true;
+    } else {
+      ElMessage.success(data.msg || `批量${opText}完成`);
+    }
     statusDialog.value = false;
     targetStatus.value = '';
     multiple.value = [];
@@ -230,9 +293,9 @@ async function batchStatus() {
 }
 
 async function batchRemove() {
-  await ElMessageBox.confirm(`确认删除选中的 ${selectedIds().length} 张订单？删除后不可恢复。`, '批量删除', { type: 'warning' });
+  await ElMessageBox.confirm(`确认删除选中的 ${selectedIds().length} 张订单？删除后可在「包含已删除」中恢复。`, '批量删除', { type: 'warning' });
   await orderAPI.batchRemove(selectedIds());
-  ElMessage.success('已批量删除');
+  ElMessage.success('已批量删除（可恢复）');
   multiple.value = [];
   load();
 }
@@ -245,7 +308,9 @@ async function loadCustomFields() {
 }
 
 async function exportExcel() {
-  const resp = await orderExportAPI();
+  // U2：导出带当前筛选条件，导出=所见
+  const params = { keyword: query.keyword, status: query.status, mode: query.mode, type: query.type };
+  const resp = await orderExportAPI(params);
   const blob = new Blob([resp.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -259,9 +324,15 @@ async function load(page) {
   if (page) query.page = page;
   loading.value = true;
   try {
-    const data = await orderAPI.list(query);
+    const params = { ...query };
+    if (!params.deleted) delete params.deleted; // 空筛选不传
+    const data = await orderAPI.list(params);
     list.value = data.list;
     total.value = data.total;
+    // 记录订单号映射，供批量失败明细展示（U4）
+    const map = {};
+    for (const r of data.list) map[r.id] = r.orderNo;
+    orderNoMap.value = { ...orderNoMap.value, ...map };
   } finally { loading.value = false; }
 }
 
@@ -270,10 +341,14 @@ function openDialog() {
   customFields.value.forEach((f) => { cf[f.fieldKey] = f.fieldType === 'bool' ? false : (f.fieldType === 'number' ? undefined : ''); });
   form.value = { type: 'export', mode: 'sea', serviceType: 'fcl', status: 'draft', currency: 'USD', totalAmount: 0, customFields: cf };
   dialogVisible.value = true;
+  // U7：打开弹窗时预加载客户候选
+  searchCustomer('');
 }
 
 async function save() {
-  if (!form.value.customerId) return ElMessage.warning('请选择客户');
+  try {
+    await formRef.value.validate(); // U6：前端表单校验，早于后端报错
+  } catch { return; }
   saving.value = true;
   try {
     await orderAPI.create(form.value);
@@ -283,27 +358,47 @@ async function save() {
   } finally { saving.value = false; }
 }
 
+// U7：客户远程搜索（替代一次性加载 200 条）
+async function searchCustomer(keyword) {
+  customerLoading.value = true;
+  try {
+    const c = await customerAPI.list({ page: 1, pageSize: 20, status: 'active', keyword: keyword || undefined });
+    customers.value = c.list;
+  } catch { /* 静默：保留现有候选 */ }
+  finally { customerLoading.value = false; }
+}
+
+// U10：确认订单只回传 status，避免整行对象（含嵌套 customer）回写
 async function confirmOrder(row) {
-  await orderAPI.update(row.id, { ...row, status: 'confirmed' });
+  await orderAPI.update(row.id, { status: 'confirmed' });
   ElMessage.success('订单已确认');
   load();
 }
 
 async function remove(row) {
-  await ElMessageBox.confirm(`确认删除订单「${row.orderNo}」？`, '提示', { type: 'warning' });
+  // U5：提示与事实一致——软删除，可恢复
+  await ElMessageBox.confirm(`确认删除订单「${row.orderNo}」？删除后可在「包含已删除」中恢复。`, '提示', { type: 'warning' });
   await orderAPI.remove(row.id);
-  ElMessage.success('已删除');
+  ElMessage.success('已删除（可恢复）');
+  load();
+}
+
+async function restoreOrder(row) {
+  await orderAPI.restore(row.id);
+  ElMessage.success('订单已恢复');
   load();
 }
 
 function goDetail(row) { router.push(`/orders/${row.id}`); }
+function goDetailById(id) {
+  const row = list.value.find((r) => r.id === id);
+  if (row) router.push(`/orders/${row.id}`);
+}
 
 onMounted(async () => {
   if (route.query.type) query.type = route.query.type; // 进出口入口
   load(1);
   loadCustomFields();
-  const c = await customerAPI.list({ page: 1, pageSize: 200, status: 'active' });
-  customers.value = c.list;
 });
 </script>
 
@@ -313,4 +408,5 @@ onMounted(async () => {
 .left { display: flex; gap: 10px; align-items: center; }
 .right-btn { display: flex; gap: 8px; align-items: center; }
 .batch-tip { margin-bottom: 14px; font-size: 13px; color: var(--text-muted); }
+.result-alert { margin-bottom: 12px; }
 </style>
