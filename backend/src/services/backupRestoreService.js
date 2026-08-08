@@ -85,7 +85,13 @@ async function restoreApiArchive(archivePath, opts = {}) {
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'freight-restore-api-'));
   try {
     // --- 1. 预检：解到临时目录，确认归档完整 + manifest 合法 ---
-    const entries = await extractGzip(archivePath, stage);
+    // 非 gzip/损坏归档会抛 zlib 解压错误，捕获后按业务错误（400）返回，避免 500
+    let entries;
+    try {
+      entries = await extractGzip(archivePath, stage);
+    } catch (e) {
+      return { ok: false, message: '归档不是有效的 tar.gz，拒绝恢复' };
+    }
     const manifestPath = path.join(stage, 'manifest.json');
     let manifest = null;
     if (fs.existsSync(manifestPath)) {
