@@ -38,11 +38,23 @@
           </template>
           <el-button @click="importer.open()"><el-icon><Upload /></el-icon>批量导入</el-button>
           <el-button @click="load(1)"><el-icon><Refresh /></el-icon>刷新</el-button>
-          <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增客户</el-button>
+          <el-button type="primary" data-highlight-step="customer" @click="openDialog()"><el-icon><Plus /></el-icon>新增客户</el-button>
         </div>
       </div>
 
       <el-table :data="list" v-loading="loading" stripe @selection-change="onSelect">
+        <template #empty>
+          <!-- Onboarding 空状态：资源为空 → 引导卡；筛选无结果 → 仅提示重置（AC-09） -->
+          <EmptyGuide
+            v-if="!loading"
+            :mode="isFiltered ? 'filtered' : 'guide'"
+            title="还没有客户"
+            hint="客户是业务链路的起点。添加第一个客户后，可以继续录入报价、创建订单。"
+            action-text="添加第一个客户"
+            @action="openDialog()"
+            @reset="resetFilters"
+          />
+        </template>
         <el-table-column type="selection" width="46" />
         <el-table-column prop="code" label="客户编码" width="150" />
         <el-table-column prop="name" label="客户名称" min-width="220" show-overflow-tooltip />
@@ -131,11 +143,26 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue';
+import { reactive, ref, computed, watch, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { customerAPI, customerStatsAPI, customerImportAPI, customerImportTemplateAPI } from '@/api';
 import { CUSTOMER_TYPE, dictText, money } from '@/utils/dicts';
 import { useImport } from '@/composables/useImport';
+import EmptyGuide from '@/components/EmptyGuide.vue';
+import { useOnboardingHint } from '@/composables/useOnboardingHint';
+
+const { showHint } = useOnboardingHint();
+const route = useRoute();
+
+// 筛选无结果 vs 资源为空（AC-09）：有筛选条件且无数据 → 显示"重置筛选"，不用引导卡
+const isFiltered = computed(() => !!(query.keyword || query.type || query.status));
+function resetFilters() {
+  query.keyword = ''; query.type = ''; query.status = '';
+  load(1);
+}
+// learning by doing：Checklist 跳转 /customers?new=1 → 自动打开新建弹窗
+watch(() => route.query.new, (v) => { if (v === '1') openDialog(); }, { immediate: true });
 
 const loading = ref(false);
 const saving = ref(false);
@@ -211,6 +238,8 @@ async function save() {
     if (form.value.id) await customerAPI.update(form.value.id, form.value);
     else await customerAPI.create(form.value);
     ElMessage.success('保存成功');
+    // Onboarding 上下文提醒：下一步录报价
+    if (!form.value.id) showHint('customer_created');
     dialogVisible.value = false;
     load(); loadStats();
   } finally { saving.value = false; }

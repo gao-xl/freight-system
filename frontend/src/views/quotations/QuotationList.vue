@@ -14,13 +14,25 @@
     </div>
 
     <el-row :gutter="12" class="stat-bar">
-      <el-col :span="6"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ stats?.total ?? '-' }}</div><div class="stat-label">报价总数</div></el-card></el-col>
-      <el-col :span="6"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ money(stats?.totalAmount) }}</div><div class="stat-label">报价总额</div></el-card></el-col>
-      <el-col :span="6"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ money(stats?.costAmount) }}</div><div class="stat-label">预估成本</div></el-card></el-col>
-      <el-col :span="6"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ stats?.conversionRate ?? '-' }}%</div><div class="stat-label">转化率</div></el-card></el-col>
+      <el-col :span="6" :xs="12"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ stats?.total ?? '-' }}</div><div class="stat-label">报价总数</div></el-card></el-col>
+      <el-col :span="6" :xs="12"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ money(stats?.totalAmount) }}</div><div class="stat-label">报价总额</div></el-card></el-col>
+      <el-col :span="6" :xs="12"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ money(stats?.costAmount) }}</div><div class="stat-label">预估成本</div></el-card></el-col>
+      <el-col :span="6" :xs="12"><el-card shadow="never" class="stat-card"><div class="stat-num">{{ stats?.conversionRate ?? '-' }}%</div><div class="stat-label">转化率</div></el-card></el-col>
     </el-row>
 
     <el-table :data="list" v-loading="loading" stripe>
+      <template #empty>
+        <!-- Onboarding 空状态：资源为空 → 引导卡；筛选无结果 → 仅提示重置（AC-09） -->
+        <EmptyGuide
+          v-if="!loading"
+          :mode="isFiltered ? 'filtered' : 'guide'"
+          title="还没有报价"
+          hint="报价是业务链路的第二步。录入一份报价，客户确认后可一键转为订单。"
+          action-text="录入第一份报价"
+          @action="router.push('/quotations/edit')"
+          @reset="resetFilters"
+        />
+      </template>
       <el-table-column prop="quoteNo" label="报价单号" width="150" />
       <el-table-column label="客户" min-width="170">
         <template #default="{ row }">{{ row.customer?.name || '-' }}</template>
@@ -57,11 +69,12 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue';
+import { reactive, ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useQuotationStore } from '@/stores/quotation';
 import { QUOTATION_STATUS, MODE, SERVICE_TYPE, statusOf, money } from '@/utils/dicts';
+import EmptyGuide from '@/components/EmptyGuide.vue';
 
 const router = useRouter();
 const store = useQuotationStore();
@@ -70,6 +83,13 @@ const list = ref([]);
 const total = ref(0);
 const stats = ref(null);
 const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '' });
+
+// 筛选无结果 vs 资源为空（AC-09）
+const isFiltered = computed(() => !!(query.keyword || query.status));
+function resetFilters() {
+  query.keyword = ''; query.status = '';
+  load(1);
+}
 
 async function load(page) {
   if (page) query.page = page;

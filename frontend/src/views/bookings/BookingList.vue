@@ -14,6 +14,18 @@
     </div>
 
     <el-table :data="list" v-loading="loading" stripe>
+      <template #empty>
+        <!-- Onboarding 空状态：资源为空 → 引导卡；筛选无结果 → 仅提示重置（AC-09） -->
+        <EmptyGuide
+          v-if="!loading"
+          :mode="isFiltered ? 'filtered' : 'guide'"
+          title="还没有订舱"
+          hint="订舱是运输环节的起点。为订单发起订舱，安排船期与箱型。"
+          action-text="发起订舱"
+          @action="openDialog()"
+          @reset="resetFilters"
+        />
+      </template>
       <el-table-column prop="bookingNo" label="订舱号" width="150" />
       <el-table-column label="订单" min-width="150">
         <template #default="{ row }"><el-link type="primary" @click="goOrder(row)">{{ row.order?.orderNo }}</el-link></template>
@@ -74,11 +86,15 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue';
+import { reactive, ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { bookingAPI, orderAPI, supplierAPI } from '@/api';
 import { BOOKING_STATUS, statusOf } from '@/utils/dicts';
+import EmptyGuide from '@/components/EmptyGuide.vue';
+import { useOnboardingHint } from '@/composables/useOnboardingHint';
+
+const { showHint } = useOnboardingHint();
 
 const router = useRouter();
 const loading = ref(false);
@@ -90,6 +106,13 @@ const suppliers = ref([]);
 const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '' });
 const dialogVisible = ref(false);
 const form = ref({});
+
+// 筛选无结果 vs 资源为空（AC-09）
+const isFiltered = computed(() => !!(query.keyword || query.status));
+function resetFilters() {
+  query.keyword = ''; query.status = '';
+  load(1);
+}
 
 async function load(page) {
   if (page) query.page = page;
@@ -122,6 +145,8 @@ async function save() {
     if (form.value.id) await bookingAPI.update(form.value.id, form.value);
     else await bookingAPI.create(form.value);
     ElMessage.success('保存成功');
+    // Onboarding 上下文提醒：下一步安排报关
+    if (!form.value.id) showHint('booking_created');
     dialogVisible.value = false;
     load();
   } finally { saving.value = false; }

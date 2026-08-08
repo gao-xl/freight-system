@@ -32,11 +32,23 @@
           <el-divider direction="vertical" />
         </template>
         <el-button @click="exportExcel"><el-icon><Download /></el-icon>导出Excel</el-button>
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新建订单</el-button>
+        <el-button type="primary" data-highlight-step="order" @click="openDialog()"><el-icon><Plus /></el-icon>新建订单</el-button>
       </div>
     </div>
 
     <el-table :data="list" v-loading="loading" stripe @selection-change="onSelect">
+      <template #empty>
+        <!-- Onboarding 空状态：资源为空 → 引导卡（含上游感知）；筛选无结果 → 仅提示重置（AC-09/10） -->
+        <EmptyGuide
+          v-if="!loading"
+          :mode="isFiltered ? 'filtered' : 'guide'"
+          title="还没有订单"
+          hint="订单是业务核心。可以从报价一键转换，也可以直接新建一笔订单。"
+          action-text="新建第一笔订单"
+          @action="openDialog()"
+          @reset="resetFilters"
+        />
+      </template>
       <el-table-column type="selection" width="46" />
       <el-table-column prop="orderNo" label="订单号" width="150">
         <template #default="{ row }"><el-link type="primary" @click="goDetail(row)">{{ row.orderNo }}</el-link></template>
@@ -187,11 +199,15 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue';
+import { reactive, ref, computed, watch, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { orderAPI, customerAPI, orderExportAPI, customFieldAPI, orderBatchAdvanceAPI, orderBatchStatusAPI } from '@/api';
 import { ORDER_STATUS, MODE, SERVICE_TYPE, dictText, statusOf, money } from '@/utils/dicts';
+import EmptyGuide from '@/components/EmptyGuide.vue';
+import { useOnboardingHint } from '@/composables/useOnboardingHint';
+
+const { showHint } = useOnboardingHint();
 
 const router = useRouter();
 const route = useRoute();
@@ -203,6 +219,15 @@ const customers = ref([]);
 const customerLoading = ref(false);
 const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', mode: '', type: '', deleted: '' });
 const dialogVisible = ref(false);
+
+// 筛选无结果 vs 资源为空（AC-09）
+const isFiltered = computed(() => !!(query.keyword || query.status || query.mode || query.type));
+function resetFilters() {
+  query.keyword = ''; query.status = ''; query.mode = ''; query.type = ''; query.deleted = '';
+  load(1);
+}
+// learning by doing：Checklist 跳转 /orders?new=1 → 自动打开新建弹窗
+watch(() => route.query.new, (v) => { if (v === '1') openDialog(); }, { immediate: true });
 const form = ref({});
 const formRef = ref(null);
 const customFields = ref([]);
@@ -353,6 +378,8 @@ async function save() {
   try {
     await orderAPI.create(form.value);
     ElMessage.success('订单创建成功');
+    // Onboarding 上下文提醒：下一步发起订舱
+    showHint('order_created');
     dialogVisible.value = false;
     load();
   } finally { saving.value = false; }

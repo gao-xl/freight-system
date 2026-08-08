@@ -78,6 +78,9 @@ import { ElMessage } from 'element-plus';
 import { useQuotationStore } from '@/stores/quotation';
 import { customerAPI } from '@/api';
 import { MODE, SERVICE_TYPE, ORDER_TYPE, QUO_ITEM_CATEGORY, QUO_ITEM_DIRECTION, money } from '@/utils/dicts';
+import { useOnboardingHint } from '@/composables/useOnboardingHint';
+
+const { showHint } = useOnboardingHint();
 
 const route = useRoute();
 const router = useRouter();
@@ -130,6 +133,8 @@ async function save(andSend) {
       if (andSend) await store.send(r.id);
     }
     ElMessage.success(andSend ? '已保存并发送' : '已保存');
+    // Onboarding 上下文提醒：下一步转订单
+    if (!form.id) showHint('quotation_saved');
     router.push(`/quotations/${r.id}`);
   } finally { saving.value = false; }
 }
@@ -146,7 +151,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
 .head h3 { margin: 0; }
 .sec { margin-bottom: 16px; }
 .sec-head { display: flex; align-items: center; gap: 10px; }

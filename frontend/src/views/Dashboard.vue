@@ -1,5 +1,8 @@
 <template>
   <div>
+    <!-- Onboarding 引导：Dashboard 引导 Checklist（仅未跑通核心链路时展示） -->
+    <OnboardingChecklist v-if="auth.role !== 'customer'" />
+
     <!-- 页面标题 -->
     <div class="page-heading">
       <div class="title"><el-icon><Odometer /></el-icon>经营看板</div>
@@ -114,8 +117,13 @@ import { ref, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
 import { useRouter } from 'vue-router';
 import { dashboardAPI, orderStatusDistAPI, modeDistAPI, recentOrdersAPI, dashboardMetricsAPI, dashboardAgingAPI, salesPerformanceAPI } from '@/api';
+import OnboardingChecklist from '@/components/OnboardingChecklist.vue';
+import { useAuthStore } from '@/stores/auth';
+import { useOnboardingStore } from '@/stores/onboarding';
 
 const router = useRouter();
+const auth = useAuthStore();
+const onboarding = useOnboardingStore();
 const stats = ref({});
 const recent = ref([]);
 const metric = ref({});
@@ -221,6 +229,8 @@ onMounted(async () => {
   ]);
   stats.value = s;
   recent.value = ro;
+  // Onboarding：同步完成度数据（Checklist 进度派生自真实数据，权威源 /onboarding/status）
+  onboarding.fetchStatus();
   renderCharts(st, md);
   try {
     const [m, ag, sp] = await Promise.all([dashboardMetricsAPI(), dashboardAgingAPI(), salesPerformanceAPI()]);
@@ -257,7 +267,6 @@ onBeforeUnmount(() => {
 .chart-card.wide { grid-column: 1 / -1; }
 .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-main); }
 .chart { height: 300px; }
-.chart-card.wide .chart-card-table { }
 
 /* 卡片渐次浮现 */
 .stat-grid { animation: fadeUp .3s ease both; }
