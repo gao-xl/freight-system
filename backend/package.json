@@ -12,7 +12,8 @@
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
-    "test": "node --test --test-concurrency=1 tests/smoke.test.js tests/pdf.test.js tests/onboarding.test.js tests/backup.test.js"
+    "test": "node --test --test-concurrency=1 tests/smoke.test.js tests/pdf.test.js tests/onboarding.test.js",
+    "test:backup": "node --test --test-concurrency=1 tests/backup.test.js"
   },
   "devDependencies": {
     "sequelize-cli": "^6.6.5"
