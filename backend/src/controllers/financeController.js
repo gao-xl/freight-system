@@ -200,6 +200,7 @@ const createInvoice = asyncHandler(async (req, res) => {
     const order = await Order.findByPk(orderId);
     if (order) cid = order.customerId;
   }
+  await assertOrderEditable(orderId);
   const me = await require('../models').User.findByPk(req.user.id);
   const inv = await Invoice.create({
     invoiceNo, invoiceType, orderId, customerId: cid, supplierId: sid,
@@ -214,6 +215,7 @@ const createInvoice = asyncHandler(async (req, res) => {
 const issueInvoice = asyncHandler(async (req, res) => {
   const inv = await scopedFindOne(req, Invoice, { id: req.params.id });
   if (!inv) return fail(res, '发票不存在', 1, 404);
+  await assertOrderEditable(inv.orderId);
   if (inv.status !== 'draft') return fail(res, '仅草稿状态可开票', 1, 400);
   await inv.update({ status: 'issued', issuedAt: new Date() });
   ok(res, inv, '已开票');
@@ -223,6 +225,7 @@ const issueInvoice = asyncHandler(async (req, res) => {
 const cancelInvoice = asyncHandler(async (req, res) => {
   const inv = await scopedFindOne(req, Invoice, { id: req.params.id });
   if (!inv) return fail(res, '发票不存在', 1, 404);
+  await assertOrderEditable(inv.orderId);
   if (inv.status === 'paid') return fail(res, '已核销发票不可作废', 1, 400);
   await inv.update({ status: 'cancelled' });
   ok(res, inv, '已作废');
@@ -257,6 +260,7 @@ const batchWriteoff = asyncHandler(async (req, res) => {
   const fixedAmt = amount ? Number(amount) : null;
   const fsWhere = await scopedWhere(req, { id: { [Op.in]: idList } });
   const recs = await FinanceRecord.findAll({ where: fsWhere });
+  await assertRecordsEditable(recs);
   const done = [], skipped = [];
   for (const rec of recs) {
     if (rec.status === 'paid' || rec.status === 'waived') { skipped.push(rec.id); continue; }
@@ -290,4 +294,74 @@ const creditCheck = asyncHandler(async (req, res) => {
   ok(res, data);
 });
 
-module.exports = { ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, cancelInvoice, writeoff, batchWriteoff, currencySummary, creditCheck };
+// ===== 结账 / 扎帐 / 锁帐 =====
+
+// 账期列表（按年过滤，最近月份在前）
+const periods = asyncHandler(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear();
+  const rows = await AccountingPeriod.findAll({ where: { year }, order: [['month', 'DESC']] });
+  ok(res, rows);
+});
+
+// 自动补齐缺失账期（幂等）：依据现有费用记录归属月份
+const ensurePeriods = asyncHandler(async (req, res) => {
+  const rows = await FinanceRecord.findAll({ attributes: ['settleMonth', 'createdAt'] });
+  const codes = new Set();
+  for (const r of rows) codes.add(periodCodeFromDate(r.settleMonth || r.createdAt));
+  let created = 0;
+  for (const code of codes) {
+    const [, isNew] = await AccountingPeriod.findOrCreate({
+      where: { periodCode: code },
+      defaults: { periodCode: code, ...buildPeriodDefaults(code) },
+    });
+    if (isNew) created++;
+  }
+  ok(res, { created, total: codes.size }, `账期已补齐，新建 ${created} 个`);
+});
+
+// 结账 / 扎帐：计算汇总快照并置为 closed
+const closePeriod = asyncHandler(async (req, res) => {
+  const { code } = req.params;
+  const note = (req.body || {}).note || null;
+  const period = await getOrCreatePeriod(code);
+  if (period.status === 'locked') return fail(res, `账期 ${code} 已锁帐，请先解锁`, 1, 400);
+  const summary = await computePeriodSummary(code);
+  await period.update({ ...summary, status: 'closed', closedBy: req.user?.id || null, closedAt: new Date(), closeNote: note });
+  ok(res, period, '结账（扎帐）完成');
+});
+
+// 锁帐：彻底封存
+const lockPeriod = asyncHandler(async (req, res) => {
+  const { code } = req.params;
+  const note = (req.body || {}).note || null;
+  const period = await getOrCreatePeriod(code);
+  if (period.status === 'locked') return fail(res, `账期 ${code} 已锁帐`, 1, 400);
+  await period.update({ status: 'locked', lockedBy: req.user?.id || null, lockedAt: new Date(), lockNote: note });
+  ok(res, period, '已锁帐');
+});
+
+// 反结账 / 解锁：回到未结账状态，原因必填
+const unlockPeriod = asyncHandler(async (req, res) => {
+  const { code } = req.params;
+  const reason = ((req.body || {}).reason || '').toString().trim();
+  if (!reason) return fail(res, '解锁必须填写原因', 1, 400);
+  const period = await getOrCreatePeriod(code);
+  if (period.status !== 'locked') return fail(res, '仅已锁帐账期可解锁', 1, 400);
+  await period.update({ status: 'open', unlockedBy: req.user?.id || null, unlockedAt: new Date(), unlockReason: reason });
+  ok(res, period, '已解锁，账期回到未结账状态');
+});
+
+// 结账汇总 / 结账单
+const periodStatement = asyncHandler(async (req, res) => {
+  const { code } = req.params;
+  const period = await getOrCreatePeriod(code);
+  const items = await recordsOfPeriod(code);
+  const summary = summarize(items);
+  ok(res, { period, summary, items: items.map((r) => r.toJSON()) });
+});
+
+module.exports = {
+  ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice,
+  cancelInvoice, writeoff, batchWriteoff, currencySummary, creditCheck,
+  periods, ensurePeriods, closePeriod, lockPeriod, unlockPeriod, periodStatement,
+};

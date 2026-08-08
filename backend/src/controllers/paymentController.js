@@ -1,11 +1,19 @@
 const { PaymentTransaction, FinanceRecord } = require('../models');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { IntegrationClient } = require('../integrations');
+const { assertRecordEditable, assertOrderEditable } = require('../services/periodGuard');
 
 // 创建支付/汇出交易
 const create = asyncHandler(async (req, res) => {
   const { financeId, orderId, amount, currency, beneficiary, beneficiaryBank, type } = req.body || {};
   if (!amount || Number(amount) <= 0) return fail(res, '交易金额必须大于0');
+  // 锁账拦截：关联费用或订单落入已锁账期则拒绝
+  if (financeId) {
+    const rec = await FinanceRecord.findByPk(financeId);
+    await assertRecordEditable(rec);
+  } else {
+    await assertOrderEditable(orderId);
+  }
   const txNo = `PAY${Date.now()}`;
   const tx = await PaymentTransaction.create({
     txNo, orderId, financeId, amount: Number(amount), currency: currency || 'USD',

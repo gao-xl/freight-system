@@ -40,6 +40,7 @@ const InvoiceTitle = require('./InvoiceTitle');
 const ApiKey = require('./ApiKey');
 const FreightRate = require('./FreightRate');
 const BusinessRule = require('./BusinessRule');
+const WorkflowConfig = require('./WorkflowConfig');
 const AccountingPeriod = require('./AccountingPeriod');
 
 // 关联关系
@@ -174,5 +175,6 @@ module.exports = {
   ApiKey,
   FreightRate,
   BusinessRule,
+  WorkflowConfig,
   AccountingPeriod,
 };

@@ -147,6 +147,15 @@ export const businessRuleAPI = {
   remove: (id) => request.delete(`/business-rules/${id}`),
   test: (id) => request.post(`/business-rules/${id}/test`),
 };
+// P3.2 流程状态机配置化
+export const workflowAPI = {
+  list: (params) => request.get('/workflow/configs', { params }),
+  statusOptions: () => request.get('/workflow/status-options'),
+  create: (data) => request.post('/workflow/configs', data),
+  update: (id, data) => request.put(`/workflow/configs/${id}`, data),
+  remove: (id) => request.delete(`/workflow/configs/${id}`),
+  transition: (data) => request.post('/workflow/transition', data),
+};
 // 系统审计日志
 export const auditLogAPI = (params) => request.get('/system/audit-logs', { params });
 // 公司设置（公司信息/部门/银行账号/开票抬头）
@@ -213,6 +222,14 @@ export const invoiceAPI = {
 };
 export const financeWriteoffAPI = (id, data) => request.post(`/finance/${id}/writeoff`, data);
 export const financeBatchWriteoffAPI = (ids, amount) => request.post('/finance/batch-writeoff', { ids, amount });
+
+// 结账/扎帐/锁帐：账期管理
+export const financePeriodsAPI = (year) => request.get('/finance/periods', { params: { year } });
+export const financeEnsurePeriodsAPI = () => request.post('/finance/periods/ensure');
+export const financeClosePeriodAPI = (code, data) => request.post(`/finance/periods/${code}/close`, data);
+export const financeLockPeriodAPI = (code, data) => request.post(`/finance/periods/${code}/lock`, data);
+export const financeUnlockPeriodAPI = (code, data) => request.post(`/finance/periods/${code}/unlock`, data);
+export const financePeriodStatementAPI = (code) => request.get(`/finance/periods/${code}/statement`);
 
 // P2.3 Excel 批量导入（统一入口：customer/supplier/order）
 export const importTemplateAPI = (biz) => request.get(`/import/templates/${biz}`, { responseType: 'blob' });

@@ -39,6 +39,7 @@ const automation = require('../controllers/automationController');
 const importCtrl = require('../controllers/importController');
 const freightRate = require('../controllers/freightRateController');
 const businessRule = require('../controllers/businessRuleController');
+const workflow = require('../controllers/workflowController');
 
 const router = express.Router();
 
@@ -292,6 +293,13 @@ router.get('/finance/customers/:customerId/credit', guard('finance', 'read'), fi
 router.get('/finance/monthly-trend', guard('finance', 'read'), finance.monthlyTrend);
 router.get('/finance/reconcile', guard('finance', 'read'), finance.reconcile);
 router.get('/finance/statement', guard('finance', 'read'), financeStatement.statement); // P2.4 对账单
+// 结账/扎帐/锁帐（须在 /finance/:id 之前注册，避免 periods 被 :id 捕获）
+router.get('/finance/periods', guard('finance', 'read'), finance.periods);
+router.post('/finance/periods/ensure', guard('finance', 'read'), finance.ensurePeriods);
+router.get('/finance/periods/:code/statement', guard('finance', 'read'), finance.periodStatement);
+router.post('/finance/periods/:code/close', guard('finance', 'close'), finance.closePeriod);
+router.post('/finance/periods/:code/lock', guard('finance', 'lock'), finance.lockPeriod);
+router.post('/finance/periods/:code/unlock', guard('finance', 'unlock'), finance.unlockPeriod);
 router.get('/finance/invoices', guard('finance', 'read'), finance.invoiceList);
 router.post('/finance/invoices', guard('finance', 'create'), finance.createInvoice);
 router.post('/finance/invoices/:id/issue', guard('finance', 'update'), finance.issueInvoice);
@@ -355,6 +363,14 @@ router.post('/business-rules', guard('alert', 'update'), businessRule.create);
 router.put('/business-rules/:id', guard('alert', 'update'), businessRule.update);
 router.delete('/business-rules/:id', guard('alert', 'update'), businessRule.remove);
 router.post('/business-rules/:id/test', guard('alert', 'update'), businessRule.test);
+
+// P3.2 流程状态机配置化
+router.get('/workflow/status-options', guard('alert', 'read'), workflow.statusOptions);
+router.get('/workflow/configs', guard('alert', 'read'), workflow.list);
+router.post('/workflow/configs', guard('alert', 'update'), workflow.create);
+router.put('/workflow/configs/:id', guard('alert', 'update'), workflow.update);
+router.delete('/workflow/configs/:id', guard('alert', 'update'), workflow.remove);
+router.post('/workflow/transition', guard('order', 'update'), workflow.doTransition);
 
 // 免费第三方外部API
 router.get('/external/vessel/:mmsi', guard('track', 'read'), external.vessel);

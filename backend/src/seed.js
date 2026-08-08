@@ -171,6 +171,15 @@ async function seed() {
   ];
   await BusinessRule.bulkCreate(ruleSeeds);
 
+  // P3.2 流程状态机默认流转规则（订单显式状态变更示例）
+  const WorkflowConfig = require('./models/WorkflowConfig');
+  const workflowSeeds = [
+    { bizType: 'order', fromStatus: 'draft', toStatus: 'confirmed', action: 'update_status', fromRole: 'operator', auto: false, enabled: true, sortOrder: 1, remark: '草稿 → 确认（默认示例）' },
+    { bizType: 'order', fromStatus: 'confirmed', toStatus: 'in_progress', action: 'update_status', fromRole: 'operator', auto: true, enabled: true, sortOrder: 2, remark: '确认 → 进行中（节点推进自动派生）' },
+    { bizType: 'order', fromStatus: '*', toStatus: 'cancelled', action: 'update_status', fromRole: 'manager', auto: false, enabled: true, sortOrder: 3, remark: '任意状态 → 取消（仅经理）' },
+  ];
+  await WorkflowConfig.bulkCreate(workflowSeeds);
+
   // 财务
   const finance = [
     { orderId: 1, direction: 'receivable', category: 'ocean_freight', description: '海运运费（应收）', amount: 14800, currency: 'USD', status: 'unpaid', counterpartyId: 1 },
@@ -226,7 +235,7 @@ async function seed() {
   addPerms('customs', ['create', 'read', 'update', 'delete'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除' })[a]}报关`);
   addPerms('document', ['create', 'read', 'update', 'delete'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除' })[a]}单证`);
   addPerms('track', ['create', 'read', 'update', 'delete'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除' })[a]}跟踪`);
-  addPerms('finance', ['create', 'read', 'update', 'delete', 'approve'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批' })[a]}财务`);
+  addPerms('finance', ['create', 'read', 'update', 'delete', 'approve', 'close', 'lock', 'unlock'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', close: '结账/扎帐', lock: '锁帐', unlock: '解锁' })[a]}财务`);
   addPerms('quotation', ['create', 'read', 'update', 'delete', 'approve', 'convert'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', convert: '转订单' })[a]}报价`);
   addPerms('integration', ['read', 'update', 'trigger'], (a) => `${({ read: '查看', update: '配置', trigger: '触发' })[a]}对接`);
   addPerms('qingdao', ['read', 'update'], (a) => `${({ read: '查看', update: '更新' })[a]}青岛港节点`);
@@ -256,7 +265,7 @@ async function seed() {
     manager: [
       ...allBusiness.flatMap((m) => actionGroup(m, crud)),
       ...actionGroup('order', ['approve']),
-      ...actionGroup('finance', crud).concat(actionGroup('finance', ['approve'])),
+      ...actionGroup('finance', crud).concat(actionGroup('finance', ['approve', 'close', 'lock', 'unlock'])),
       ...actionGroup('quotation', crud).concat(actionGroup('quotation', ['approve', 'convert'])),
       ...actionGroup('integration', ['read', 'update', 'trigger']),
       ...actionGroup('qingdao', ['read', 'update']),
@@ -278,7 +287,7 @@ async function seed() {
     ],
     finance: [
       ...allBusiness.flatMap((m) => actionGroup(m, ['read'])),
-      ...actionGroup('finance', crud).concat(actionGroup('finance', ['approve'])),
+      ...actionGroup('finance', crud).concat(actionGroup('finance', ['approve', 'close', 'lock', 'unlock'])),
       ...actionGroup('quotation', ['read']),
       ...actionGroup('qingdao', ['read']),
       ...actionGroup('alert', ['read']),
