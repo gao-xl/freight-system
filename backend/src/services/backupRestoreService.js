@@ -28,24 +28,6 @@ function countTree(dir) {
   return n;
 }
 
-// 清空目录：逐项删除，返回被占用/排除未能删除的路径（运行中后端会锁住自身 SQLite 库文件）
-function emptyDir(dir, exclude = []) {
-  const skipped = [];
-  fs.mkdirSync(dir, { recursive: true });
-  for (const item of fs.readdirSync(dir)) {
-    if (exclude.includes(item)) {
-      skipped.push(item);
-      continue;
-    }
-    try {
-      fs.rmSync(path.join(dir, item), { recursive: true, force: true });
-    } catch (e) {
-      skipped.push(item);
-    }
-  }
-  return skipped;
-}
-
 function copyTree(src, dest, exclude = []) {
   const skipped = [];
   fs.mkdirSync(dest, { recursive: true });
@@ -68,6 +50,15 @@ function copyTree(src, dest, exclude = []) {
   return skipped;
 }
 
+// 非破坏性替换：仅把归档中的文件覆盖到目标目录，绝不删除归档之外的文件
+// （运行中的 data/ 可能含有其它库文件/配置，批量清空有数据风险；CLI restore.js 的 emptyDir 只用于停机场景）
+function overlayFromStage(stageDir, targetDir, liveDb) {
+  const skipped = [];
+  if (!fs.existsSync(stageDir)) return skipped;
+  skipped.push(...copyTree(stageDir, targetDir, liveDb ? [liveDb] : []).map((f) => `${path.basename(stageDir)}/${f}`));
+  return skipped;
+}
+
 // 执行一次备份，返回给前端展示的元数据
 async function createApiBackup() {
   const r = await createBackup({ outDir: backupDir(), keep: 7 });
@@ -79,14 +70,8 @@ async function createApiBackup() {
   };
 }
 
-/**
- * 恢复归档（与 scripts/restore.js 流程一致，跳过交互确认）。
- * @param {string} archivePath 上传的 tar.gz 绝对路径
- * @param {object} [opts] { dryRun: boolean }
- * @returns {Promise<{ok:boolean, dryRun?:boolean, message:string, details?:object, snapshotFile?:string}>}
- */
-// 恢复归档（与 scripts/restore.js 流程一致，跳过交互确认）
-// 运行中后端会锁住自身 SQLite 库文件：data/ 替换时显式排除当前库文件，避免删/写打开文件
+// 恢复归档（与 scripts/restore.js 流程一致，跳过交互确认；HTTP 场景做非破坏性覆盖）
+// 运行中后端会锁住自身 SQLite 库文件：data/ 覆盖时显式排除当前库文件，避免删/写打开文件
 // （Windows 会 EBUSY；Linux 虽可删但会丢失对新 inode 的写入），并在响应中提示用 CLI 恢复数据库。
 const config = require('../config');
 
@@ -130,19 +115,14 @@ async function restoreApiArchive(archivePath, opts = {}) {
     // --- 2. 快照当前状态（恢复失败可退回） ---
     const snapshot = await createBackup({ outDir: backupDir(), keep: 5, prefix: SNAPSHOT_PREFIX });
 
-    // --- 3. 替换 data/ 与 uploads/（不覆盖 .env，防止密钥被替换） ---
+    // --- 3. 替换 data/ 与 uploads/（非破坏性覆盖，不覆盖 .env 防止密钥被替换） ---
+    // 只把归档中出现的文件覆盖到目标，归档之外的文件一律保留——避免运行中的 data/ 里其它库文件被误删
     const targetData = path.join(BACKEND_ROOT, 'data');
     const targetUploads = path.join(BACKEND_ROOT, 'uploads');
-    const skipped = [];
-    if (fs.existsSync(stageData)) {
-      // 运行中的 SQLite 库文件不参与删除/替换
-      skipped.push(...emptyDir(targetData, liveDb ? [liveDb] : []).map((f) => `data/${f}`));
-      skipped.push(...copyTree(stageData, targetData, liveDb ? [liveDb] : []).map((f) => `data/${f}`));
-    }
-    if (fs.existsSync(stageUploads)) {
-      emptyDir(targetUploads);
-      copyTree(stageUploads, targetUploads);
-    }
+    const skipped = [
+      ...overlayFromStage(stageData, targetData, liveDb),
+      ...overlayFromStage(stageUploads, targetUploads, null),
+    ];
     if (liveDb) skipped.push(`data/${liveDb}（运行中的数据库文件，已保留）`);
 
     logger.info(`[RESTORE] 恢复完成：来源 ${details.hostname}，快照 ${path.basename(snapshot.file)}${skipped.length ? `，${skipped.length} 个文件未替换` : ''}`);
