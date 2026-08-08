@@ -4,6 +4,8 @@ node_modules/
 # 构建产物
 dist/
 build/
+dist-e2e/
+dist-qa/
 # 开发文档构建产物（由 docs-site npm run build 生成，随后端一起输出）
 backend/public/docs/
 

@@ -6,12 +6,13 @@
   "scripts": {
     "start": "node src/server.js",
     "seed": "node src/seed.js",
+    "init-db": "node src/init-db.js",
     "dev": "node --watch src/server.js",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/smoke.test.js tests/pdf.test.js tests/onboarding.test.js tests/backup.test.js"
   },
   "devDependencies": {
     "sequelize-cli": "^6.6.5"
@@ -34,6 +35,8 @@
     "pdfkit": "^0.19.1",
     "pdfmake": "^0.3.11",
     "pg": "^8.22.0",
+    "proxy-agent": "^6.5.0",
+    "puppeteer-core": "^22.15.0",
     "sequelize": "^6.37.3",
     "sqlite3": "^5.1.7",
     "swagger-jsdoc": "^6.3.0",

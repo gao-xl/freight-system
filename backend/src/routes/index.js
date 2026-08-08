@@ -118,6 +118,20 @@ router.get('/system/health', authRequired, requirePermission('system', '*'), sys
 router.get('/system/defaults', authRequired, system.getDefaults);
 router.put('/system/defaults', authRequired, system.putDefaults);
 
+// 备份/恢复（AC-22，admin；复用 scripts/backup.js + scripts/restore.js 逻辑）
+const backupCtrl = require('../controllers/backupController');
+const os = require('os');
+const restoreUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, os.tmpdir()),
+    filename: (req, file, cb) => cb(null, `freight-restore-${Date.now()}-${file.originalname}`),
+  }),
+  limits: { fileSize: 512 * 1024 * 1024 },
+});
+router.post('/system/backup', authRequired, requirePermission('system', '*'), backupCtrl.backup);
+router.get('/system/backup/download/:filename', authRequired, requirePermission('system', '*'), backupCtrl.download);
+router.post('/system/restore', authRequired, requirePermission('system', '*'), restoreUpload.single('file'), backupCtrl.restore);
+
 // 数据隔离：所有业务路由统一注入 req.dataScope（范围：all/group/self）
 // 控制器通过 scopedWhere/scopedFindOne 等辅助函数消费该范围，实现行级数据隔离
 router.use(authRequired, dataScope);

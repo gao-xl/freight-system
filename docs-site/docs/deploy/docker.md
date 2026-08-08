@@ -1,6 +1,30 @@
 # Docker 部署
 
-零运维优先：单容器（前端 Nginx + 后端 Node + SQLite），一条命令跑起来。
+一键部署：前端 Nginx + 后端 Node + PostgreSQL，`docker compose up` 自动拉起全部服务。
+
+## 首次部署检查清单（AC-21 / ADR-007）
+
+部署前先跑一次环境检查（无需 Docker，Node 即可）：
+
+```bash
+cd backend
+node scripts/check-env.js
+```
+
+脚本逐项输出 ✅/❌ 与中文修复指引，与下表一一对应：
+
+| # | 检查项 | 要求 | 修复指引 |
+|---|--------|------|----------|
+| 1 | Node 运行时 | >= 18 | 安装 Node LTS：https://nodejs.org |
+| 2 | Docker 已安装且守护进程运行 | `docker info` 成功 | Windows 用 Docker Desktop；Linux `sudo systemctl start docker` |
+| 3 | docker compose | `docker compose version` 可用 | 升级 Docker 至 compose v2，或安装 docker-compose-plugin |
+| 4 | 端口空闲 | 3000 / 5175 / 8080 未被占用 | `netstat -ano \| findstr <端口>` / `lsof -i :<端口>` 停掉占用进程 |
+| 5 | 磁盘剩余 | >= 5GB | `df -h` 查看并清理 |
+| 6 | 内存 | >= 2GB（PostgreSQL 最低要求） | 为服务器/虚拟机分配至少 2GB |
+| 7 | .env 与 JWT_SECRET | .env 存在且 JWT_SECRET >= 64 字符 | `cp backend/.env.example backend/.env`，`openssl rand -hex 32` 生成密钥填入 |
+| 8 | 时区 | 建议 Asia/Shanghai | `sudo timedatectl set-timezone Asia/Shanghai`，compose 中设 `TZ=Asia/Shanghai` |
+
+全部通过后按下方「快速启动」三步曲部署；存在失败项按指引修复后重跑脚本。
 
 ## 快速启动
 
@@ -12,27 +36,20 @@ docker compose up -d --build
 |----|-----|
 | 访问地址 | `http://localhost:8080` |
 | 默认账号 | `admin / 123456`（**上线前必须改密**） |
-| 数据目录 | `backend/data/`（SQLite 文件 + uploads） |
+| 数据库 | PostgreSQL（`pg-data` 命名卷持久化） |
 
 ## 数据持久化
 
-`docker-compose.yml` 声明了 4 个卷：
+`docker-compose.yml` 声明：
 
-- `backend/data`：数据库 + 上传文件
-- `backend/.env`：环境变量
+- `pg-data` 命名卷：PostgreSQL 数据
+- `backend/uploads`：上传文件
 - `backend/backups`：备份输出
 
-## PostgreSQL profile（多并发团队）
-
-```bash
-docker compose --profile pg up -d
-```
-
-需在 `.env` 配置：
+数据库连接参数在 `.env` 配置：
 
 ```
 DB_DIALECT=postgres
-DB_HOST=db
 DB_NAME=freight
 DB_USER=freight
 DB_PASSWORD=<强密码>
