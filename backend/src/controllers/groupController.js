@@ -1,6 +1,7 @@
 const { Group, User, UserGroup } = require('../models');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
+const { invalidate } = require('../services/permissionService');
 
 // B2 小组列表（含成员数、组长）
 const list = asyncHandler(async (req, res) => {
@@ -42,6 +43,7 @@ const update = asyncHandler(async (req, res) => {
   const body = { ...req.body };
   delete body.id;
   await g.update(body);
+  invalidate(); // D12 组信息变更（含组长/归属）→ 清权限缓存
   ok(res, g, '更新成功');
 });
 
@@ -50,6 +52,7 @@ const remove = asyncHandler(async (req, res) => {
   if (!g) return fail(res, '小组不存在', 1, 404);
   await UserGroup.destroy({ where: { groupId: g.id } });
   await g.destroy();
+  invalidate(); // D12 删组影响组长/成员归属 → 清权限缓存
   ok(res, null, '删除成功');
 });
 
@@ -62,6 +65,7 @@ const addMember = asyncHandler(async (req, res) => {
   const exists = await UserGroup.findOne({ where: { groupId: g.id, userId } });
   if (exists) return ok(res, null, '成员已存在');
   await UserGroup.create({ groupId: g.id, userId });
+  invalidate(); // D12 成员集合变更 → 清权限缓存
   ok(res, null, '添加成员成功');
 });
 
@@ -69,6 +73,7 @@ const addMember = asyncHandler(async (req, res) => {
 const removeMember = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   await UserGroup.destroy({ where: { groupId: req.params.id, userId } });
+  invalidate(); // D12 成员集合变更 → 清权限缓存
   ok(res, null, '移除成员成功');
 });
 
