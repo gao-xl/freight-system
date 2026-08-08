@@ -135,6 +135,9 @@ async function runAllRules() {
       ruleCutoffTime(),
       ruleQingdaoBlocked(),
     ]);
+    // P3.1 DB 规则引擎：cron 触发规则（用户通过 Web UI 配置）
+    const { runDbRules } = require('./ruleEngineService');
+    await runDbRules({ trigger: 'cron' });
     logger.info(`[ALERT] 规则扫描完成，耗时 ${Date.now() - t0}ms`);
   } catch (e) {
     logger.error('[ALERT] 规则扫描失败', { message: e.message });
@@ -168,22 +171,24 @@ async function resolveAlert(id, action) {
 module.exports = { runAllRules, getAlerts, resolveAlert, upsertAlert, subscribeEvents };
 
 // P1.6 事件驱动：订单/财务/订舱变更后即时触发相关规则
+// P3.1 事件驱动的 DB 规则（trigger=事件名）也在此触发
 function subscribeEvents() {
   const events = require('./eventBus');
+  const { runDbRules } = require('./ruleEngineService');
 
-  // 订单创建/更新 → 即时检查 ETA 临近、截港时间
-  events.onAsync('order.created', () => runAllRules());
-  events.onAsync('order.updated', () => runAllRules());
+  // 订单创建/更新 → 即时检查 ETA 临近、截港时间 + DB 事件规则
+  events.onAsync('order.created', () => { runAllRules(); runDbRules({ trigger: 'order.created' }).catch(() => {}); });
+  events.onAsync('order.updated', () => { runAllRules(); runDbRules({ trigger: 'order.updated' }).catch(() => {}); });
 
   // 订单状态流转 → 即时检查青岛港卡点
   events.onAsync('order.transitioned', () => ruleQingdaoBlocked());
 
-  // 财务记录创建/更新 → 即时检查超期应收
-  events.onAsync('finance.created', () => ruleOverdueReceivable());
-  events.onAsync('finance.updated', () => ruleOverdueReceivable());
+  // 财务记录创建/更新 → 即时检查超期应收 + DB 事件规则
+  events.onAsync('finance.created', () => { ruleOverdueReceivable(); runDbRules({ trigger: 'finance.created' }).catch(() => {}); });
+  events.onAsync('finance.updated', () => { ruleOverdueReceivable(); runDbRules({ trigger: 'finance.updated' }).catch(() => {}); });
 
   // 订舱装船 → 即时检查 ETA + cut-off
-  events.onAsync('booking.shipped', () => Promise.all([ruleEtaSoon(), ruleCutoffTime()]));
+  events.onAsync('booking.shipped', () => { Promise.all([ruleEtaSoon(), ruleCutoffTime()]); runDbRules({ trigger: 'booking.shipped' }).catch(() => {}); });
 
   logger.info('[ALERT] 事件驱动监听已注册：order.created/updated/transitioned, finance.created/updated, booking.shipped');
 }

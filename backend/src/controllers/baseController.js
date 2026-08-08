@@ -9,7 +9,7 @@ const events = require('../services/eventBus');
 // scoped：启用数据隔离（要求模型具备 groupId/ownerId 字段）。list/get 按范围过滤，单条写操作校验可见性，create 自动归属。
 // protectedFields：不允许用户通过 create/update/batch-update 写入的系统字段（防越权篡改存储路径等）
 function crudController(opts) {
-  const { model, name, searchFields = [], includes = [], order = [['id', 'DESC']], codePrefix, codeField, protectedFields = [], scoped = false } = opts;
+  const { model, name, searchFields = [], includes = [], order = [['id', 'DESC']], codePrefix, codeField, protectedFields = [], scoped = false, beforeWrite } = opts;
 
   // 剔除受保护字段，防止用户通过请求体篡改存储路径/审计字段等
   function stripProtected(body) {
@@ -73,6 +73,7 @@ function crudController(opts) {
     }
     // 数据隔离：创建时自动归属（未指定则取用户默认组/本人）
     if (scoped && hasScopeColumns(model)) await attachOwnership(req, body);
+    if (beforeWrite) await beforeWrite(req, null, body);
     const item = await model.create(body);
     if (name) events.emit(`${name}.created`, { id: item.id, data: item.toJSON(), user: req.user });
     ok(res, item, '创建成功');
@@ -85,6 +86,7 @@ function crudController(opts) {
     if (!item) return fail(res, '记录不存在', 1, 404);
     const body = serializeCustomFields({ ...req.body });
     delete body.id;
+    if (beforeWrite) await beforeWrite(req, item, body);
     await item.update(body);
     if (name) events.emit(`${name}.updated`, { id: item.id, data: item.toJSON(), user: req.user });
     ok(res, item, '更新成功');
@@ -97,6 +99,7 @@ function crudController(opts) {
     if (!item) return fail(res, '记录不存在', 1, 404);
     const itemId = item.id;
     const itemData = item.toJSON();
+    if (beforeWrite) await beforeWrite(req, item);
     await item.destroy();
     if (name) events.emit(`${name}.deleted`, { id: itemId, data: itemData, user: req.user });
     ok(res, null, '删除成功');
@@ -107,6 +110,10 @@ function crudController(opts) {
     const ids = parseIds(req.body.ids);
     if (!ids.length) return fail(res, '请先选择要删除的记录', 1, 400);
     const where = scoped ? await scopedWhere(req, { id: { [Op.in]: ids } }) : { id: { [Op.in]: ids } };
+    if (beforeWrite) {
+      const items = await model.findAll({ where });
+      await beforeWrite(req, items);
+    }
     const count = await model.destroy({ where });
     ok(res, { deleted: count }, `已删除 ${count} 条记录`);
   });
@@ -119,6 +126,10 @@ function crudController(opts) {
     const data = stripProtected({ ...req.body.data });
     delete data.id;
     const where = scoped ? await scopedWhere(req, { id: { [Op.in]: ids } }) : { id: { [Op.in]: ids } };
+    if (beforeWrite) {
+      const items = await model.findAll({ where });
+      await beforeWrite(req, items, data);
+    }
     const result = await model.update(data, { where });
     const updated = Array.isArray(result) ? result[0] : result;
     ok(res, { updated }, `已更新 ${updated} 条记录`);

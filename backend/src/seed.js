@@ -143,6 +143,34 @@ async function seed() {
   ];
   await AlertRecord.bulkCreate(alerts);
 
+  // P3.1 业务规则引擎示例数据（演示 DB 规则：一条表达式规则 + 两条内置执行器规则）
+  const BusinessRule = require('./models/BusinessRule');
+  const ruleSeeds = [
+    {
+      name: '示例：订单金额超过 100000 预警',
+      bizType: 'order',
+      ruleType: 'order_amount_over',
+      trigger: 'cron',
+      params: JSON.stringify({ threshold: 100000 }),
+      action: JSON.stringify({ level: 'warning', title: '订单金额超限', message: '订单 {orderNo} 金额 {totalAmount} 超过阈值' }),
+      enabled: true,
+      sortOrder: 1,
+      remark: 'P3.1 示例：演示内置执行器规则（订单金额阈值）',
+    },
+    {
+      name: '示例：超期应收 60 天以上（danger）',
+      bizType: 'finance',
+      ruleType: 'overdue_receivable',
+      trigger: 'cron',
+      params: JSON.stringify({ overdueDays: 60 }),
+      action: JSON.stringify({ level: 'danger', title: '严重超期应收', message: '{order.orderNo} 应收已严重逾期' }),
+      enabled: false,
+      sortOrder: 2,
+      remark: 'P3.1 示例：参数化内置规则，默认关闭可启用',
+    },
+  ];
+  await BusinessRule.bulkCreate(ruleSeeds);
+
   // 财务
   const finance = [
     { orderId: 1, direction: 'receivable', category: 'ocean_freight', description: '海运运费（应收）', amount: 14800, currency: 'USD', status: 'unpaid', counterpartyId: 1 },

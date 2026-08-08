@@ -188,6 +188,7 @@ const menuGroups = [
       { path: '/external', title: '外部数据', icon: 'DataAnalysis', permission: 'track:read' },
       { path: '/integrations', title: '外部对接', icon: 'Connection', permission: 'integration:read' },
       { path: '/alerts', title: '预警中心', icon: 'Bell', permission: 'alert:read' },
+      { path: '/system/business-rules', title: '业务规则', icon: 'SetUp', permission: 'alert:read' },
     ],
   },
   {

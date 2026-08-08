@@ -138,6 +138,15 @@ export const alertAPI = {
   resolve: (id) => request.post(`/alerts/${id}/resolve`),
   ignore: (id) => request.post(`/alerts/${id}/ignore`),
 };
+// P3.1 业务规则引擎（DB 化）
+export const businessRuleAPI = {
+  list: (params) => request.get('/business-rules', { params }),
+  meta: () => request.get('/business-rules/meta'),
+  create: (data) => request.post('/business-rules', data),
+  update: (id, data) => request.put(`/business-rules/${id}`, data),
+  remove: (id) => request.delete(`/business-rules/${id}`),
+  test: (id) => request.post(`/business-rules/${id}/test`),
+};
 // 系统审计日志
 export const auditLogAPI = (params) => request.get('/system/audit-logs', { params });
 // 公司设置（公司信息/部门/银行账号/开票抬头）

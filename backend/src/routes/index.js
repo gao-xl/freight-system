@@ -38,6 +38,7 @@ const company = require('../controllers/companyController');
 const automation = require('../controllers/automationController');
 const importCtrl = require('../controllers/importController');
 const freightRate = require('../controllers/freightRateController');
+const businessRule = require('../controllers/businessRuleController');
 
 const router = express.Router();
 
@@ -346,6 +347,14 @@ router.get('/alerts', guard('alert', 'read'), alert.list);
 router.post('/alerts/run', guard('alert', 'read'), alert.run);
 router.post('/alerts/:id/resolve', guard('alert', 'update'), alert.handle);
 router.post('/alerts/:id/ignore', guard('alert', 'update'), alert.handle);
+
+// P3.1 业务规则引擎（DB 化）
+router.get('/business-rules', guard('alert', 'read'), businessRule.list);
+router.get('/business-rules/meta', guard('alert', 'read'), businessRule.meta);
+router.post('/business-rules', guard('alert', 'update'), businessRule.create);
+router.put('/business-rules/:id', guard('alert', 'update'), businessRule.update);
+router.delete('/business-rules/:id', guard('alert', 'update'), businessRule.remove);
+router.post('/business-rules/:id/test', guard('alert', 'update'), businessRule.test);
 
 // 免费第三方外部API
 router.get('/external/vessel/:mmsi', guard('track', 'read'), external.vessel);

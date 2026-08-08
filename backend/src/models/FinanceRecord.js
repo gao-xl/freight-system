@@ -19,11 +19,12 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
   paidAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
   dueDate: { type: DataTypes.DATEONLY },
   paidAt: { type: DataTypes.DATE },
+  settleMonth: { type: DataTypes.DATEONLY }, // 结算归属月份（账期），为空则按 createdAt 归属
   remark: { type: DataTypes.TEXT },
   groupId: { type: DataTypes.INTEGER },     // 数据隔离：归属小组
   ownerId: { type: DataTypes.INTEGER },     // 数据隔离：归属操作员（负责人）
   customFields: { type: DataTypes.TEXT },   // B4 自定义字段扩展（JSON 字符串）
-}, { timestamps: true });
+}, { timestamps: true, indexes: [{ fields: ['settleMonth'] }] });
 
 // P2.4 本币折算金额：localAmount = amount * exchangeRate
 // 规则：exchangeRate 优先（新 API 唯一入口）；兼容历史 API 传 rate（≠1 时降级为别名）；

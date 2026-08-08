@@ -1,4 +1,4 @@
-const { FinanceRecord, Order, Customer, Supplier, Invoice } = require('../models');
+const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod } = require('../models');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
@@ -6,6 +6,35 @@ const { scopedWhere, scopedFindOne } = require('../middleware/dataScope');
 const { exportBuffer } = require('../services/exportService');
 const { sequelize } = require('../models');
 const { financeSummaryByCurrency, checkCustomerCredit } = require('../services/currencyService');
+const {
+  periodCodeFromDate,
+  getOrCreatePeriod,
+  buildPeriodDefaults,
+  recordsOfPeriod,
+  summarize,
+  computePeriodSummary,
+  assertRecordEditable,
+  assertRecordsEditable,
+  assertBodyEditable,
+  assertOrderEditable,
+} = require('../services/periodGuard');
+
+// beforeWrite 钩子：锁账拦截（落入已锁账期则拒绝写操作）
+async function beforeWrite(req, item, body) {
+  // 新增：按目标结算月份校验
+  if (!item) {
+    await assertBodyEditable(body || {});
+    return;
+  }
+  const list = Array.isArray(item) ? item : [item];
+  for (const rec of list) {
+    if (rec instanceof FinanceRecord) await assertRecordEditable(rec);
+  }
+  // 编辑时若将结算月份改到已锁账期，一并拦截
+  if (!Array.isArray(item) && body && body.settleMonth) {
+    await assertBodyEditable(body);
+  }
+}
 
 const base = crudController({
   name: 'finance',
@@ -14,6 +43,7 @@ const base = crudController({
   includes: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],
   order: [['id', 'DESC']],
   scoped: true,
+  beforeWrite,
 });
 
 // 财务汇总：应收/应付/已收/已付/利润
@@ -206,6 +236,7 @@ const writeoff = asyncHandler(async (req, res) => {
 
   const rec = await scopedFindOne(req, FinanceRecord, { id: req.params.id });
   if (!rec) return fail(res, '费用记录不存在', 1, 404);
+  await assertRecordEditable(rec);
   if (rec.status === 'paid' || rec.status === 'waived') return fail(res, '该记录已完成，无需核销', 1, 400);
 
   const total = Number(rec.amount);
