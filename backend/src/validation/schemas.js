@@ -237,7 +237,11 @@ const assignRoles = Joi.object({
 
 // 客户门户在线补料（SI）（E3）
 // 白名单校验：仅允许提单相关字段，拒绝未知键，防止越权改写订单其它字段
+// 契约字段（门户前端按此对接）：shipper/consignee/notifyParty/marksNumbers/cargoDesc/remark；
+// 同时兼容细分字段（shipperName/shipperAddress/consigneeName/...）供精确补料
 const portalSi = Joi.object({
+  shipper: str(500),
+  consignee: str(500),
   shipperName: str(200),
   shipperAddress: str(500),
   consigneeName: str(200),
@@ -255,7 +259,7 @@ const portalSi = Joi.object({
   cargoVolume: Joi.number().min(0).allow(null),
   containerNo: str(50),
   remark: text,
-}).or('shipperName', 'shipperAddress', 'consigneeName', 'consigneeAddress', 'notifyParty', 'marksNumbers', 'placeOfReceipt', 'placeOfDelivery', 'cargoDesc', 'containerNo');
+}).or('shipper', 'consignee', 'shipperName', 'shipperAddress', 'consigneeName', 'consigneeAddress', 'notifyParty', 'marksNumbers', 'placeOfReceipt', 'placeOfDelivery', 'cargoDesc', 'containerNo');
 
 module.exports = {
   login, changePassword,

@@ -82,30 +82,54 @@ async function findOwnOrder(customerId, orderId) {
   return Order.findOne({ where: { id: orderId, customerId } });
 }
 
-// 门户补料可写入的订单提单字段白名单（与 portalSi schema 一致）
-const SI_ORDER_FIELDS = [
-  'shipperName', 'shipperAddress',
-  'consigneeName', 'consigneeAddress',
-  'notifyParty', 'marksNumbers',
-  'placeOfReceipt', 'placeOfDelivery', 'freightCharges',
-  'originalBLCount', 'telexRelease',
-  'cargoDesc', 'packageCount', 'cargoWeight', 'cargoVolume', 'containerNo',
-  'remark',
-];
+// 门户补料可写入的订单提单字段映射（前端契约字段 → Order 字段）
+const SI_MAP = {
+  shipper: 'shipperName',            // 发货人（名称+地址合并文本）
+  consignee: 'consigneeName',        // 收货人（名称+地址合并文本）
+  notifyParty: 'notifyParty',        // 通知方
+  marksNumbers: 'marksNumbers',      // 唛头/件数
+  cargoDesc: 'cargoDesc',
+  remark: 'remark',
+  // 细分字段（精确补料场景兼容）
+  shipperName: 'shipperName',
+  shipperAddress: 'shipperAddress',
+  consigneeName: 'consigneeName',
+  consigneeAddress: 'consigneeAddress',
+  placeOfReceipt: 'placeOfReceipt',
+  placeOfDelivery: 'placeOfDelivery',
+  freightCharges: 'freightCharges',
+  originalBLCount: 'originalBLCount',
+  telexRelease: 'telexRelease',
+  packageCount: 'packageCount',
+  cargoWeight: 'cargoWeight',
+  cargoVolume: 'cargoVolume',
+  containerNo: 'containerNo',
+};
 
 // GET /api/portal/orders/:id/invoices/:invoiceId/download
-// 下载账单 PDF：复用发票打印链路（docType=invoice，按 Invoice 模型取数）
+// 下载账单 PDF：账单记录兼容两种来源——发票（Invoice，docType=invoice 打印链路）
+// 或应收费用行（FinanceRecord，docType=debit_note 费用通知单打印链路），均须归属本客户订单
 const downloadInvoice = asyncHandler(async (req, res) => {
   const customerId = req.user.customerId;
   if (!customerId) return fail(res, '当前账号未关联客户档案', 1, 400);
   const order = await findOwnOrder(customerId, req.params.id);
   if (!order) return fail(res, '订单不存在或无权查看', 1, 404);
-  const invoice = await Invoice.findOne({ where: { id: req.params.invoiceId, orderId: order.id } });
-  if (!invoice) return fail(res, '账单不存在或无权下载', 1, 404);
-  const { pdf } = await printService.render(null, 'invoice', invoice.id);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.id}.pdf"`);
-  res.send(pdf);
+  const bizId = req.params.invoiceId;
+  const invoice = await Invoice.findOne({ where: { id: bizId, orderId: order.id } });
+  if (invoice) {
+    const { pdf } = await printService.render(null, 'invoice', invoice.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.id}.pdf"`);
+    return res.send(pdf);
+  }
+  const fin = await FinanceRecord.findOne({ where: { id: bizId, orderId: order.id } });
+  if (fin) {
+    const { pdf } = await printService.render(null, 'debit_note', order.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="debit-note-${order.id}.pdf"`);
+    return res.send(pdf);
+  }
+  return fail(res, '账单不存在或无权下载', 1, 404);
 });
 
 // GET /api/portal/orders/:id/documents/:docId/download
@@ -136,8 +160,8 @@ const submitSi = asyncHandler(async (req, res) => {
   if (!order) return fail(res, '订单不存在或无权查看', 1, 404);
   if (order.status === 'cancelled') return fail(res, '订单已取消，不能提交补料', 1, 409);
   const patch = {};
-  for (const f of SI_ORDER_FIELDS) {
-    if (req.body[f] !== undefined) patch[f] = req.body[f];
+  for (const [srcKey, orderField] of Object.entries(SI_MAP)) {
+    if (req.body[srcKey] !== undefined) patch[orderField] = req.body[srcKey];
   }
   await order.update({
     ...patch,
