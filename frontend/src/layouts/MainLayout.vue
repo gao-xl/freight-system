@@ -179,6 +179,7 @@ const menuGroups = [
     label: '财务与报价',
     items: [
       { path: '/finance', title: '财务管理', icon: 'Money', permission: 'finance:read' },
+      { path: '/finance/invoices', title: '发票管理', icon: 'Ticket', permission: 'finance:read' }, // N2
       { path: '/finance/statement', title: '对账单', icon: 'Tickets', permission: 'finance:read' },
       { path: '/quotations', title: '报价询价', icon: 'PriceTag', permission: 'quotation:read' },
       { path: '/import', title: '数据导入', icon: 'Upload', permission: undefined },

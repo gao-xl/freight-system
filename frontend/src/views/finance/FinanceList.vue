@@ -2,7 +2,9 @@
   <div>
     <!-- 页面标题 -->
     <div class="page-heading">
-      <div class="title"><el-icon><Money /></el-icon>财务管理</div>
+      <div class="title"><el-icon><Money /></el-icon>财务管理
+        <el-button link type="primary" style="margin-left:12px" @click="openTplMgr"><el-icon><Collection /></el-icon>费用模板</el-button>
+      </div>
       <span class="page-desc">应收应付流水 · 对账 · 毛利</span>
     </div>
 
@@ -27,6 +29,29 @@
         <div class="label">毛利</div><div class="value" style="color:#7c3aed">{{ money(summary.profit) }}</div>
         <div class="sub">应收 - 应付</div>
       </div>
+    </div>
+
+    <!-- N5 应收账龄 -->
+    <div class="page-card" style="margin-bottom:16px">
+      <div class="card-title">
+        应收账龄（本币 · 按未收余额分桶）
+        <el-button link type="primary" style="float:right" @click="loadAging"><el-icon><Refresh /></el-icon>刷新</el-button>
+      </div>
+      <div v-if="aging.totalBalance != null" class="aging-grid">
+        <div v-for="b in agingBuckets" :key="b.key" class="aging-cell" :class="b.cls">
+          <span>{{ b.label }}</span><b>{{ money(b.total) }}</b>
+        </div>
+        <div class="aging-cell total"><span>未收总额</span><b>{{ money(aging.totalBalance) }}</b></div>
+      </div>
+      <el-table :data="aging.customers" size="small" stripe max-height="320" v-loading="agingLoading">
+        <el-table-column label="客户" min-width="180"><template #default="{ row }">{{ row.name }}</template></el-table-column>
+        <el-table-column label="未收余额" width="130" align="right"><template #default="{ row }">{{ money(row.balance) }}</template></el-table-column>
+        <el-table-column label="0-30天" width="110" align="right"><template #default="{ row }">{{ money(row.buckets['0-30'] || 0) }}</template></el-table-column>
+        <el-table-column label="31-60天" width="110" align="right"><template #default="{ row }">{{ money(row.buckets['31-60'] || 0) }}</template></el-table-column>
+        <el-table-column label="61-90天" width="110" align="right"><template #default="{ row }">{{ money(row.buckets['61-90'] || 0) }}</template></el-table-column>
+        <el-table-column label="90天+" width="110" align="right"><template #default="{ row }">{{ money(row.buckets['90+'] || 0) }}</template></el-table-column>
+      </el-table>
+      <el-empty v-if="!agingLoading && !aging.customers?.length" description="暂无应收未收记录" :image-size="60" />
     </div>
 
     <div class="page-card" style="margin-bottom:16px">
@@ -171,6 +196,7 @@
       <div class="right-btn">
         <template v-if="multiple.length">
           <el-button type="success" plain @click="openBatchWriteoff">批量记为已收付</el-button>
+          <el-button type="warning" plain @click="openPayment">收款核销</el-button>
           <el-button type="danger" plain @click="batchRemove">批量删除</el-button>
           <el-divider direction="vertical" />
         </template>
@@ -261,6 +287,83 @@
         <el-button type="primary" :loading="writingoff" @click="batchWriteoff">执行核销</el-button>
       </template>
     </el-dialog>
+
+    <!-- N3 收款核销 -->
+    <el-dialog v-model="payDialog" title="收款核销" width="680px">
+      <div class="batch-tip">已选 <b>{{ selectedIds().length }}</b> 条应收费用，按客户登记一笔到账并分摊核销。</div>
+      <el-form label-width="90px">
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="收款客户">
+              <el-select v-model="payForm.customerId" filterable placeholder="选择客户" style="width:100%">
+                <el-option v-for="c in payCustomers" :key="c.id" :label="`${c.name} (${c.code})`" :value="c.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12"><el-form-item label="到账金额"><el-input-number v-model="payForm.amount" :min="0.01" :precision="2" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="币种"><el-input v-model="payForm.currency" placeholder="CNY" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="到账日期"><el-date-picker v-model="payForm.paidAt" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="备注"><el-input v-model="payForm.remark" placeholder="如：银行回款单号" /></el-form-item></el-col>
+        </el-row>
+      </el-form>
+      <div class="ff-sum" style="margin:6px 0 8px">核销费用（按顺序分摊，多币种分别匹配）</div>
+      <template #footer>
+        <el-button @click="payDialog = false">取消</el-button>
+        <el-button type="primary" :loading="paying" @click="doPayment">确认核销</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- N1 费用模板管理 -->
+    <el-dialog v-model="tplMgrVisible" title="费用模板管理" width="680px">
+      <div class="table-topbar" style="margin-bottom:10px">
+        <span class="hint">常用费用组合：在订单财务页可一键套用，批量生成费用</span>
+        <el-button size="small" type="primary" @click="openTplEdit()"><el-icon><Plus /></el-icon>新建模板</el-button>
+      </div>
+      <el-table :data="tpls" size="small" stripe max-height="360" v-loading="tplLoading">
+        <el-table-column prop="name" label="模板名称" min-width="150" />
+        <el-table-column label="费用条目" width="90" align="center">
+          <template #default="{ row }">{{ tplItemCount(row) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openTplEdit(row)">编辑</el-button>
+            <el-button link type="danger" @click="removeTpl(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="tplEditVisible" :title="tplEdit.id ? '编辑模板' : '新建模板'" width="760px">
+      <el-form label-width="80px">
+        <el-form-item label="模板名称"><el-input v-model="tplEdit.name" placeholder="如：海出整箱基础费" /></el-form-item>
+      </el-form>
+      <el-table :data="tplEdit.items" size="small" border max-height="300">
+        <el-table-column label="方向" width="90">
+          <template #default="{ row }"><el-select v-model="row.direction" size="small"><el-option label="应收" value="receivable" /><el-option label="应付" value="payable" /></el-select></template>
+        </el-table-column>
+        <el-table-column label="类别" width="140">
+          <template #default="{ row }"><el-select v-model="row.category" size="small" filterable>
+            <el-option v-for="(label, val) in FIN_CATEGORY" :key="val" :label="label" :value="val" /></el-select></template>
+        </el-table-column>
+        <el-table-column label="说明" min-width="160">
+          <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="费用说明" /></template>
+        </el-table-column>
+        <el-table-column label="币种" width="90">
+          <template #default="{ row }"><el-input v-model="row.currency" size="small" /></template>
+        </el-table-column>
+        <el-table-column label="金额" width="130">
+          <template #default="{ row }"><el-input-number v-model="row.amount" :min="0" :precision="2" size="small" style="width:100%" /></template>
+        </el-table-column>
+        <el-table-column label="" width="60" align="center">
+          <template #default="{ $index }"><el-button link type="danger" @click="tplEdit.items.splice($index, 1)"><el-icon><Delete /></el-icon></el-button></template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top:8px;text-align:right"><el-button size="small" @click="tplEdit.items.push({ direction:'receivable', category:'ocean_freight', description:'', currency:'USD', amount:0 })">添加一行</el-button></div>
+      <template #footer>
+        <el-button @click="tplEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="tplSaving" @click="saveTpl">保存模板</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -270,7 +373,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import * as echarts from 'echarts';
 import { financeAPI, financeSummaryAPI, financeTrendAPI, orderAPI, financeExportAPI, financeBatchWriteoffAPI,
-  financePeriodsAPI, financeEnsurePeriodsAPI, financeClosePeriodAPI, financeLockPeriodAPI, financeUnlockPeriodAPI, financePeriodStatementAPI } from '@/api';
+  financePeriodsAPI, financeEnsurePeriodsAPI, financeClosePeriodAPI, financeLockPeriodAPI, financeUnlockPeriodAPI, financePeriodStatementAPI, feeTemplateAPI, financeAgingAPI, financePaymentAPI, customerAPI } from '@/api';
 import { FIN_DIRECTION, FIN_CATEGORY, FIN_STATUS, dictText, statusOf, money } from '@/utils/dicts';
 
 const PERIOD_STATUS = {
@@ -292,6 +395,112 @@ const writeoffAmount = ref(null);
 
 function onSelect(rows) { multiple.value = rows; }
 const selectedIds = () => multiple.value.map((r) => r.id);
+
+// N5 应收账龄
+const agingLoading = ref(false);const aging = ref({ totalBalance: 0, customers: [] });
+const agingBuckets = [
+  { key: '0-30', label: '0-30天', cls: 'ok', total: 0 },
+  { key: '31-60', label: '31-60天', cls: 'warn', total: 0 },
+  { key: '61-90', label: '61-90天', cls: 'warn', total: 0 },
+  { key: '90+', label: '90天+', cls: 'danger', total: 0 },
+];
+async function loadAging() {
+  agingLoading.value = true;
+  try {
+    const d = await financeAgingAPI();
+    aging.value = d;
+    for (const b of agingBuckets) b.total = d.buckets?.[b.key]?.total || 0;
+  } catch { aging.value = { totalBalance: 0, customers: [] }; }
+  finally { agingLoading.value = false; }
+}
+
+// N3 收款核销
+const payDialog = ref(false);
+const paying = ref(false);
+const payCustomers = ref([]);
+const payForm = ref({ customerId: null, amount: null, currency: 'CNY', paidAt: null, remark: '' });
+async function openPayment() {
+  if (!selectedIds().length) return;
+  try {
+    const d = await customerAPI.list({ pageSize: 100, status: 'active' });
+    payCustomers.value = d.list || [];
+  } catch { payCustomers.value = []; }
+  payForm.value = { customerId: null, amount: null, currency: 'CNY', paidAt: null, remark: '' };
+  payDialog.value = true;
+}
+async function doPayment() {
+  if (!payForm.value.customerId) { ElMessage.warning('请选择收款客户'); return; }
+  if (!payForm.value.amount || payForm.value.amount <= 0) { ElMessage.warning('请输入到账金额'); return; }
+  paying.value = true;
+  try {
+    const res = await financePaymentAPI({
+      customerId: payForm.value.customerId,
+      direction: 'received',
+      amount: payForm.value.amount,
+      currency: payForm.value.currency || 'CNY',
+      paidAt: payForm.value.paidAt || undefined,
+      financeIds: selectedIds(),
+      remark: payForm.value.remark || '',
+    });
+    ElMessage.success(res.msg || '核销完成');
+    payDialog.value = false;
+    multiple.value = [];
+    load(query.page);
+    loadSummary();
+    loadAging();
+  } catch (e) { /* 拦截器 */ }
+  finally { paying.value = false; }
+}
+
+// N1 费用模板管理
+const tplMgrVisible = ref(false);
+const tplLoading = ref(false);
+const tpls = ref([]);
+const tplEditVisible = ref(false);
+const tplSaving = ref(false);
+const tplEdit = ref({ id: null, name: '', items: [] });
+function openTplMgr() { tplMgrVisible.value = true; loadTpls(); }
+async function loadTpls() {
+  tplLoading.value = true;
+  try {
+    const res = await feeTemplateAPI.list({ pageSize: 100 });
+    tpls.value = (res.list || res || []).map((t) => {
+      let items = [];
+      try { items = typeof t.items === 'string' ? JSON.parse(t.items) : (t.items || []); } catch { items = []; }
+      return { ...t, items };
+    });
+  } catch { tpls.value = []; }
+  finally { tplLoading.value = false; }
+}
+function openTplEdit(row) {
+  if (row) tplEdit.value = { id: row.id, name: row.name, items: (row.items || []).map((i) => ({ ...i })) };
+  else tplEdit.value = { id: null, name: '', items: [{ direction: 'receivable', category: 'ocean_freight', description: '', currency: 'USD', amount: 0 }] };
+  tplEditVisible.value = true;
+}
+async function saveTpl() {
+  const name = (tplEdit.value.name || '').trim();
+  if (!name) { ElMessage.warning('请填写模板名称'); return; }
+  const items = tplEdit.value.items.filter((i) => Number(i.amount) > 0);
+  if (!items.length) { ElMessage.warning('模板至少需要一行金额>0 的费用'); return; }
+  tplSaving.value = true;
+  try {
+    if (tplEdit.value.id) await feeTemplateAPI.update(tplEdit.value.id, { name, items });
+    else await feeTemplateAPI.create({ name, items });
+    ElMessage.success('模板已保存');
+    tplEditVisible.value = false;
+    loadTpls();
+  } catch (e) { /* 拦截器提示 */ }
+  finally { tplSaving.value = false; }
+}
+async function removeTpl(row) {
+  try {
+    await ElMessageBox.confirm(`确认删除模板「${row.name}」？`, '删除确认', { type: 'warning' });
+    await feeTemplateAPI.remove(row.id);
+    ElMessage.success('已删除');
+    loadTpls();
+  } catch { /* 取消或失败 */ }
+}
+const tplItemCount = (row) => (Array.isArray(row.items) ? row.items.length : 0);
 
 // ===== 账期管理（结账/扎帐/锁帐）=====
 const periods = ref([]);
@@ -502,7 +711,7 @@ function goOrder(row) { if (row.order?.id) router.push(`/orders/${row.order.id}`
 
 function resize() { trendChart?.resize(); }
 
-onMounted(() => { load(1); loadOptions(); loadSummary(); loadCurrency(); loadPeriods(); window.addEventListener('resize', resize); });
+onMounted(() => { load(1); loadOptions(); loadSummary(); loadCurrency(); loadPeriods(); loadAging(); window.addEventListener('resize', resize); });
 onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart?.dispose(); });
 </script>
 
@@ -515,12 +724,27 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart
 .right-btn { display: flex; gap: 8px; align-items: center; }
 .batch-tip { margin-bottom: 14px; font-size: 13px; color: var(--text-muted); }
 .currency-total { margin-top: 10px; font-size: 13px; color: var(--text-muted); border-top: 1px dashed var(--border); padding-top: 10px; }
-.period-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.period-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .period-meta { font-size: 12px; color: var(--text-muted); }
-.stmt-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.stmt-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
 .stmt-title { font-size: 15px; font-weight: 600; }
 .stmt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-.stmt-cell { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+.aging-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 12px; }
+.aging-cell { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; min-width: 0; }
+.aging-cell span { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.aging-cell b { font-size: 15px; }
+.aging-cell.ok b { color: var(--success); }
+.aging-cell.warn b { color: var(--warning); }
+.aging-cell.danger b { color: var(--danger); }
+.aging-cell.total { border-color: var(--danger); }
+.aging-cell.total b { color: var(--danger); }
+.stmt-cell { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; min-width: 0; }
 .stmt-cell span { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-.stmt-cell b { font-size: 16px; }
+.stmt-cell b { font-size: 16px; overflow-wrap: anywhere; }
+
+@media (max-width: 768px) {
+  .period-toolbar > * { flex: 1 1 auto; min-width: 0; }
+  .period-toolbar .el-select { width: 100% !important; }
+  .stmt-grid { grid-template-columns: repeat(2, 1fr); }
+}
 </style>

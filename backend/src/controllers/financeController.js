@@ -1,4 +1,4 @@
-const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod } = require('../models');
+const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod, PaymentRecord } = require('../models');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');
@@ -232,6 +232,66 @@ const issueInvoice = asyncHandler(async (req, res) => {
   ok(res, inv, '已开票');
 });
 
+// N2 从费用勾选生成发票：POST /finance/invoices/from-fees { orderId, feeIds?, invoiceType, taxRate }
+// 按币种分组生成多张发票（同币种一张）；开票明细行 items 记录；回写费用 invoiceNo（勾稽）
+// feeIds 为空 = 该订单全部未开票费用
+const createInvoiceFromFees = asyncHandler(async (req, res) => {
+  const { orderId, feeIds = [], invoiceType = 'receivable', taxRate = 0 } = req.body || {};
+  if (!orderId) return fail(res, '缺少订单号', 1, 400);
+  await assertOrderEditable(orderId);
+  const order = await scopedFindOne(req, Order, { id: orderId });
+  if (!order) return fail(res, '订单不存在或无权访问', 1, 404);
+
+  const whereFees = { orderId };
+  if (Array.isArray(feeIds) && feeIds.length) whereFees.id = { [Op.in]: feeIds };
+  const fees = await FinanceRecord.findAll({ where: whereFees });
+  const wantDir = invoiceType === 'payable' ? 'payable' : 'receivable';
+  const candidates = fees.filter((f) => f.direction === wantDir && !f.invoiceNo && Number(f.amount) > 0);
+  if (!candidates.length) return fail(res, `该订单没有未开票的${invoiceType === 'payable' ? '应付' : '应收'}费用`, 1, 400);
+
+  // 按币种分组（同币种一张票）
+  const byCurrency = {};
+  for (const f of candidates) {
+    const cur = f.currency || 'USD';
+    (byCurrency[cur] = byCurrency[cur] || []).push(f);
+  }
+  const me = await require('../models').User.findByPk(req.user.id);
+  const prefix = invoiceType === 'receivable' ? 'AR' : 'AP';
+  const created = [];
+  const t = await sequelize.transaction();
+  try {
+    for (const [currency, list] of Object.entries(byCurrency)) {
+      const amt = Number(list.reduce((s, f) => s + Number(f.amount), 0).toFixed(2));
+      const tax = Number(taxRate) ? Number((amt * Number(taxRate) / 100).toFixed(2)) : 0;
+      let inv = null;
+      for (let attempt = 0; attempt < 3 && !inv; attempt++) {
+        const invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
+        try {
+          inv = await Invoice.create({
+            invoiceNo, invoiceType, orderId,
+            customerId: invoiceType === 'receivable' ? order.customerId : null,
+            supplierId: null,
+            amount: amt, currency, taxRate: Number(taxRate) || 0, taxAmount: tax, totalAmount: Number((amt + tax).toFixed(2)),
+            items: JSON.stringify(list.map((f) => ({ financeId: f.id, description: f.description, amount: Number(f.amount), currency: f.currency }))),
+            status: 'draft', createdBy: req.user?.id,
+            groupId: me?.groupId || null, ownerId: req.user.id,
+          }, { transaction: t });
+        } catch (e) {
+          if (e.name === 'SequelizeUniqueConstraintError' && attempt < 2) continue;
+          throw e;
+        }
+      }
+      for (const f of list) await f.update({ invoiceNo: inv.invoiceNo }, { transaction: t });
+      created.push(inv);
+    }
+    await t.commit();
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+  ok(res, { count: created.length, invoices: created.map((i) => i.toJSON()) }, `已生成 ${created.length} 张发票`);
+});
+
 // 作废发票
 const cancelInvoice = asyncHandler(async (req, res) => {
   const inv = await scopedFindOne(req, Invoice, { id: req.params.id });
@@ -285,9 +345,97 @@ const batchWriteoff = asyncHandler(async (req, res) => {
   ok(res, { done: done.length, skipped: skipped.length }, `已核销 ${done.length} 条${skipped.length ? `，跳过已完成 ${skipped.length} 条` : ''}`);
 });
 
+// N3 收款/付款单：一笔到账按顺序分摊核销多张费用，联动发票状态
+// POST /finance/payments { customerId|supplierId, direction, amount, currency, paidAt, financeIds, remark }
+const createPayment = asyncHandler(async (req, res) => {
+  const { customerId, supplierId, direction = 'received', amount, currency, paidAt, financeIds = [], remark } = req.body || {};
+  const amt = Number(amount || 0);
+  if (amt <= 0) return fail(res, '到账金额必须大于 0', 1, 400);
+  if (!Array.isArray(financeIds) || !financeIds.length) return fail(res, '请选择要核销的费用', 1, 400);
+  if (direction === 'received' && !customerId) return fail(res, '收款需指定客户', 1, 400);
+  if (direction === 'paid' && !supplierId) return fail(res, '付款需指定供应商', 1, 400);
+  const idList = financeIds.map(Number).filter((n) => n > 0);
+  const fees = await FinanceRecord.findAll({ where: { id: { [Op.in]: idList } } });
+  await assertRecordsEditable(fees);
+  if (!fees.length) return fail(res, '未找到费用记录', 1, 404);
+  const wantDir = direction === 'received' ? 'receivable' : 'payable';
+  const targets = fees.filter((f) => f.direction === wantDir && f.status !== 'paid' && f.status !== 'waived');
+  if (!targets.length) return fail(res, '所选费用无需核销（已结清或方向不符）', 1, 400);
+
+  const t = await sequelize.transaction();
+  try {
+    let remaining = amt;
+    let appliedCount = 0, appliedAmount = 0;
+    const updated = [];
+    for (const f of targets) {
+      if (remaining <= 0) break;
+      const total = Number(f.amount);
+      const paidPrev = Number(f.paidAmount);
+      const open = total - paidPrev;
+      if (open <= 0.001) continue;
+      const pay = Math.min(open, remaining);
+      const newPaid = Number((paidPrev + pay).toFixed(2));
+      const status = newPaid >= total - 0.001 ? 'paid' : 'partial';
+      await f.update({ paidAmount: newPaid, status, paidAt: status === 'paid' ? new Date() : f.paidAt }, { transaction: t });
+      remaining = Number((remaining - pay).toFixed(2));
+      appliedCount += 1;
+      appliedAmount += pay;
+      updated.push(f);
+      // 发票联动：费用结清且挂发票号 → 检查发票是否全部核销
+      if (status === 'paid' && f.invoiceNo) await syncInvoiceStatusByNo(f.invoiceNo, t);
+    }
+    const code = `${direction === 'received' ? 'REC' : 'PAY'}${Date.now()}`;
+    const rec = await PaymentRecord.create({
+      code, direction, customerId: customerId || null, supplierId: supplierId || null,
+      amount: amt, currency: currency || 'CNY', paidAt: paidAt || new Date().toISOString().slice(0, 10),
+      appliedCount, appliedAmount: Number(appliedAmount.toFixed(2)), remark,
+      groupId: req.user?.groupId || null, ownerId: req.user?.id || null,
+    }, { transaction: t });
+    const events = require('../services/eventBus');
+    for (const f of updated) events.emit('finance.updated', { id: f.id, data: f.toJSON(), user: req.user });
+    await t.commit();
+    ok(res, { payment: rec.toJSON(), appliedCount, appliedAmount: Number(appliedAmount.toFixed(2)), leftover: remaining },
+      `核销 ${appliedCount} 条费用，金额 ${appliedAmount.toFixed(2)}${remaining > 0 ? `，余 ${remaining.toFixed(2)} 未核销` : ''}`);
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+});
+
+// 发票联动：发票 items 关联费用全部结清 → 发票置 paid
+async function syncInvoiceStatusByNo(invoiceNo, t) {
+  const inv = await Invoice.findOne({ where: { invoiceNo }, transaction: t });
+  if (!inv || inv.status !== 'issued') return;
+  let items = [];
+  try { items = JSON.parse(inv.items || '[]'); } catch { items = []; }
+  if (!items.length) return;
+  const feeIds = items.map((i) => i.financeId).filter(Boolean);
+  const fees = await FinanceRecord.findAll({ where: { id: { [Op.in]: feeIds } }, transaction: t });
+  if (fees.length && fees.every((f) => f.status === 'paid' || f.status === 'waived')) {
+    await inv.update({ status: 'paid' }, { transaction: t });
+  }
+}
+
+// 收款/付款单列表
+const paymentList = asyncHandler(async (req, res) => {
+  const { page = 1, pageSize = 10, direction, customerId } = req.query;
+  const where = {};
+  if (direction) where.direction = direction;
+  if (customerId) where.customerId = customerId;
+  const finalWhere = await scopedWhere(req, where);
+  const { rows, count } = await PaymentRecord.findAndCountAll({
+    where: finalWhere,
+    include: [
+      { model: Customer, as: 'customer', attributes: ['id', 'name'] },
+      { model: Supplier, as: 'supplier', attributes: ['id', 'name'] },
+    ],
+    order: [['id', 'DESC']], limit: parseInt(pageSize), offset: (page - 1) * pageSize,
+  });
+  ok(res, { list: rows, total: count, page: parseInt(page), pageSize: parseInt(pageSize) });
+});
+
 // B6 多币种汇总：按币种分组并换算为基准币种
-const currencySummary = asyncHandler(async (req, res) => {
-  const base = (req.query.base || 'USD').toUpperCase();
+const currencySummary = asyncHandler(async (req, res) => {  const base = (req.query.base || 'USD').toUpperCase();
   // B2 数据隔离：汇总仅统计当前用户可见范围的财务记录（admin=all 不受限）
   const where = await scopedWhere(req, {});
   const data = await financeSummaryByCurrency(base, where);
@@ -371,8 +519,105 @@ const periodStatement = asyncHandler(async (req, res) => {
   ok(res, { period, summary, items: items.map((r) => r.toJSON()) });
 });
 
+// N1 批量创建费用：POST /finance/batch { orderId, items: [{direction,category,description,amount,currency,dueDate,settleMonth}] }
+// 走锁账拦截 + 模型钩子汇率折算 + 事件总线（finance.created 逐条）
+const batchCreate = asyncHandler(async (req, res) => {
+  const { orderId, items } = req.body || {};
+  if (!orderId) return fail(res, '缺少订单号', 1, 400);
+  if (!Array.isArray(items) || !items.length) return fail(res, '缺少费用明细', 1, 400);
+  const list = items.filter((i) => i && Number(i.amount) > 0);
+  if (!list.length) return fail(res, '费用明细金额均为空', 1, 400);
+  // 锁账拦截：订单级 + 逐项结算月份
+  await assertOrderEditable(orderId);
+  for (const it of list) {
+    if (it.settleMonth) await assertBodyEditable({ settleMonth: it.settleMonth });
+  }
+  const rows = await FinanceRecord.bulkCreate(list.map((it) => ({
+    orderId,
+    direction: it.direction === 'payable' ? 'payable' : 'receivable',
+    category: it.category || 'other',
+    description: String(it.description || '').slice(0, 255),
+    amount: Number(it.amount) || 0,
+    currency: String(it.currency || 'USD').toUpperCase().slice(0, 10),
+    dueDate: it.dueDate || null,
+    settleMonth: it.settleMonth || null,
+    remark: String(it.remark || '').slice(0, 500),
+    groupId: req.user?.groupId || null,
+    ownerId: req.user?.id || null,
+  })), { validate: true, individualHooks: true }); // individualHooks 触发每条 beforeCreate 汇率折算
+  const events = require('../services/eventBus');
+  for (const r of rows) events.emit('finance.created', { id: r.id, data: r.toJSON(), user: req.user });
+  ok(res, { count: rows.length }, `已创建 ${rows.length} 条费用`);
+});
+
+// N5 AR 账龄：按客户聚合未收（应收-已收），账龄分桶 0-30/31-60/61-90/90+/已结清
+// 口径：dueDate 优先（未设到期日按 createdAt）；未收原币 = amount - paidAmount；本币未收 = localAmount * (1 - paidAmount/amount)
+const aging = asyncHandler(async (req, res) => {
+  const finalWhere = await scopedWhere(req, { direction: 'receivable' });
+  const rows = await FinanceRecord.findAll({
+    where: finalWhere,
+    include: [
+      { model: Order, as: 'order', attributes: ['id', 'orderNo'], include: [{ model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] }] },
+    ],
+  });
+  const now = new Date();
+  const buckets = { '0-30': [], '31-60': [], '61-90': [], '90+': [], settled: [] };
+  const byCustomer = new Map(); // customerId -> { customer, total, balance, buckets: {key: base} }
+  const bucketKey = (days) => (days <= 30 ? '0-30' : days <= 60 ? '31-60' : days <= 90 ? '61-90' : '90+');
+  const keyOf = (cid) => String(cid || 0);
+
+  for (const r of rows) {
+    const amt = Number(r.amount) || 0;
+    const paid = Number(r.paidAmount) || 0;
+    const open = amt - paid; // 未收原币
+    const localAmt = Number(r.localAmount);
+    const openBase = localAmt ? Number((localAmt * (open / (amt || 1))).toFixed(2)) : open; // 本币未收
+    const customer = r.order?.customer || null;
+    const cid = customer?.id || 0;
+    const cname = customer ? `${customer.name} (${customer.code})` : '未关联客户';
+    if (open <= 0.001) {
+      if (!byCustomer.has(cid)) byCustomer.set(cid, { id: cid, name: cname, total: 0, balance: 0, buckets: {} });
+      const c = byCustomer.get(cid);
+      c.total += openBase; // 结清的不加 balance，但计入总额？结清=0 余额，跳过
+      continue;
+    }
+    const baseDate = r.dueDate ? new Date(r.dueDate) : new Date(r.createdAt);
+    const days = Math.max(0, Math.floor((now - baseDate) / 86400000));
+    const key = bucketKey(days);
+    if (!byCustomer.has(cid)) byCustomer.set(cid, { id: cid, name: cname, total: 0, balance: 0, buckets: {} });
+    const c = byCustomer.get(cid);
+    c.balance += openBase;
+    c.total += openBase;
+    c.buckets[key] = (c.buckets[key] || 0) + openBase;
+  }
+
+  const customerList = [...byCustomer.values()].sort((a, b) => b.balance - a.balance);
+  for (const c of customerList) {
+    for (const key of Object.keys(buckets)) {
+      if (c.buckets[key]) buckets[key].push({ customerId: c.id, name: c.name, balance: c.buckets[key] });
+    }
+  }
+  for (const key of Object.keys(buckets)) buckets[key].sort((a, b) => b.balance - a.balance);
+
+  const totalBalance = customerList.reduce((s, c) => s + c.balance, 0);
+  const agedTotal = Object.keys(buckets).filter((k) => k !== 'settled').reduce((s, k) => s + buckets[k].reduce((x, i) => x + i.balance, 0), 0);
+  ok(res, {
+    generatedAt: now.toISOString(),
+    totalBalance,       // 未收总余额（本币）
+    agedTotal,          // 已逾期+未到期分桶合计
+    buckets: {
+      '0-30': { list: buckets['0-30'], total: buckets['0-30'].reduce((s, i) => s + i.balance, 0) },
+      '31-60': { list: buckets['31-60'], total: buckets['31-60'].reduce((s, i) => s + i.balance, 0) },
+      '61-90': { list: buckets['61-90'], total: buckets['61-90'].reduce((s, i) => s + i.balance, 0) },
+      '90+': { list: buckets['90+'], total: buckets['90+'].reduce((s, i) => s + i.balance, 0) },
+      settled: { count: rows.length - customerList.reduce((s, c) => s + c.buckets['0-30'] + c.buckets['31-60'] + c.buckets['61-90'] + c.buckets['90+'], 0), total: 0 },
+    },
+    customers: customerList.map((c) => ({ customerId: c.id, name: c.name, balance: c.balance, total: c.total, buckets: c.buckets })),
+  });
+});
+
 module.exports = {
-  ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice,
-  cancelInvoice, writeoff, batchWriteoff, currencySummary, creditCheck,
-  periods, ensurePeriods, closePeriod, lockPeriod, unlockPeriod, periodStatement,
+  ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, createInvoiceFromFees,
+  cancelInvoice, writeoff, batchWriteoff, currencySummary, creditCheck, createPayment, paymentList,
+  periods, ensurePeriods, closePeriod, lockPeriod, unlockPeriod, periodStatement, batchCreate, aging,
 };

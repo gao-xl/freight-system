@@ -30,6 +30,7 @@ const routes = [
       { path: 'yards', name: 'yards', component: () => import('@/views/yards/YardQuery.vue'), meta: { title: '场站查询', icon: 'Van', permission: 'yard:read' } },
       { path: 'external', name: 'external', component: () => import('@/views/external/ExternalQuery.vue'), meta: { title: '外部数据', icon: 'DataAnalysis', permission: 'track:read' } },
       { path: 'finance', name: 'finance', component: () => import('@/views/finance/FinanceList.vue'), meta: { title: '财务管理', icon: 'Money', permission: 'finance:read' } },
+      { path: 'finance/invoices', name: 'invoices', component: () => import('@/views/finance/InvoiceList.vue'), meta: { title: '发票管理', icon: 'Ticket', permission: 'finance:read' } }, // N2
       { path: 'finance/statement', name: 'statement', component: () => import('@/views/finance/StatementList.vue'), meta: { title: '对账单', icon: 'Tickets', permission: 'finance:read' } },
       { path: 'import', name: 'import', component: () => import('@/views/import/ImportCenter.vue'), meta: { title: '数据导入', icon: 'Upload', permission: undefined } },
       { path: 'quotations', name: 'quotations', component: () => import('@/views/quotations/QuotationList.vue'), meta: { title: '报价询价', icon: 'PriceTag', permission: 'quotation:read' } },

@@ -35,6 +35,25 @@
           <el-descriptions-item label="箱号">{{ detail.order.containerNo || '-' }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="3">{{ detail.order.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
+        <div class="page-card bl-card">
+          <div class="table-topbar">
+            <span class="hint">提单信息（提单模板打印数据源）</span>
+            <el-button type="primary" plain size="small" @click="openBlEdit"><el-icon><Edit /></el-icon>编辑提单信息</el-button>
+          </div>
+          <el-descriptions :column="desCol" border>
+            <el-descriptions-item label="发货人(SHIPPER)">{{ detail.order.shipperName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="发货人地址">{{ detail.order.shipperAddress || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="收货人(CONSIGNEE)">{{ detail.order.consigneeName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="收货人地址">{{ detail.order.consigneeAddress || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="通知方(NOTIFY)">{{ detail.order.notifyParty || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="唛头(MARKS)">{{ detail.order.marksNumbers || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="收货地">{{ detail.order.placeOfReceipt || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="交货地">{{ detail.order.placeOfDelivery || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="运费条款">{{ detail.order.freightCharges || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="正本份数">{{ detail.order.originalBLCount ?? 3 }}</el-descriptions-item>
+            <el-descriptions-item label="电放">{{ detail.order.telexRelease ? '是' : '否' }}</el-descriptions-item>
+          </el-descriptions>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane :label="`订舱(${detail.bookings.length})`" name="booking">
@@ -190,6 +209,9 @@
           <div class="table-topbar">
             <div class="left">
               <el-button type="primary" size="small" @click="finDialog=true; finForm={orderId:detail.order.id,direction:'receivable',currency:'USD'}"><el-icon><Plus /></el-icon>新增费用</el-button>
+              <el-select v-model="selectedTemplate" placeholder="费用模板一键套用" filterable clearable size="small" style="width:200px;margin-left:8px" @change="applyFeeTemplate">
+                <el-option v-for="t in feeTemplates" :key="t.id" :label="t.name" :value="t.id" />
+              </el-select>
             </div>
             <div class="left">
               <span class="fin-sum">应收 <b class="recv">{{ money(finSum('receivable')) }}</b></span>
@@ -216,12 +238,116 @@
             </el-table-column>
           </el-table>
         </div>
+
+        <!-- N1 多行快录 -->
+        <div class="page-card quick-fee-card">
+          <div class="table-topbar">
+            <div class="left">
+              <span class="hint">多行快录：模板套用或逐行添加，一次批量保存（已保存费用见上表）</span>
+            </div>
+            <div class="left">
+              <el-button size="small" @click="addFeeRow"><el-icon><Plus /></el-icon>添加一行</el-button>
+              <el-button size="small" type="primary" :loading="feeSaving" @click="saveFeeRows"><el-icon><Check /></el-icon>批量保存</el-button>
+            </div>
+          </div>
+          <el-table :data="feeRows" size="small" border>
+            <el-table-column label="方向" width="90">
+              <template #default="{ row }">
+                <el-select v-model="row.direction" size="small"><el-option label="应收" value="receivable" /><el-option label="应付" value="payable" /></el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="类别" width="140">
+              <template #default="{ row }">
+                <el-select v-model="row.category" size="small" filterable>
+                  <el-option v-for="(label, val) in FIN_CATEGORY" :key="val" :label="label" :value="val" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="说明" min-width="180">
+              <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="费用说明" /></template>
+            </el-table-column>
+            <el-table-column label="币种" width="90">
+              <template #default="{ row }"><el-input v-model="row.currency" size="small" placeholder="USD" /></template>
+            </el-table-column>
+            <el-table-column label="金额" width="140">
+              <template #default="{ row }"><el-input-number v-model="row.amount" :min="0" :precision="2" size="small" style="width:100%" /></template>
+            </el-table-column>
+            <el-table-column label="" width="60" align="center">
+              <template #default="{ $index }">
+                <el-button link type="danger" @click="feeRows.splice($index, 1)"><el-icon><Delete /></el-icon></el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!feeRows.length" description="暂无待录入费用：可选上方「费用模板」一键套用，或点「添加一行」" :image-size="60" />
+        </div>
+
+        <!-- B8 放单控制 -->
+        <div class="page-card">
+          <div class="table-topbar">
+            <div class="left">
+              <span class="tl-hint">放单前校验应收结清：未结清自动进入审批流</span>
+              <el-tag v-if="releaseData.order" size="small" :type="releaseData.order.releaseStatus==='approved'?'success':'warning'" style="margin-left:12px">
+                {{ REL_STATUS[releaseData.order.releaseStatus] || '未放单' }}
+              </el-tag>
+              <span class="fin-sum">应收未收 <b :class="releaseData.receivableBalance>0?'recv':'profit'">{{ money(releaseData.receivableBalance) }}</b></span>
+            </div>
+            <div class="left">
+              <el-button type="primary" size="small" @click="openReleaseDialog"><el-icon><Check /></el-icon>申请放单</el-button>
+            </div>
+          </div>
+          <el-table :data="releaseData.records" size="small" stripe>
+            <el-table-column label="放单方式" width="110">
+              <template #default="{ row }">{{ RELEASE_TYPE[row.releaseType] || row.releaseType }}</template>
+            </el-table-column>
+            <el-table-column prop="releaseNo" label="放单号" width="130" />
+            <el-table-column label="应收未收" width="120" align="right">
+              <template #default="{ row }">{{ money(row.receivableBalance) }}</template>
+            </el-table-column>
+            <el-table-column label="审批状态" width="110">
+              <template #default="{ row }"><el-tag :type="row.approvalStatus==='approved'?'success':(row.approvalStatus==='pending'?'warning':'danger')" size="small">{{ APPROVAL_STATUS[row.approvalStatus] || row.approvalStatus }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="operatorName" label="申请人" width="110" />
+            <el-table-column prop="approverName" label="审批人" width="110">
+              <template #default="{ row }">{{ row.approverName || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="remark" label="备注" min-width="140" />
+            <el-table-column label="操作" width="150" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="row.approvalStatus==='pending'" link type="success" size="small" @click="approveRelease(row, true)">通过</el-button>
+                <el-button v-if="row.approvalStatus==='pending'" link type="danger" size="small" @click="approveRelease(row, false)">驳回</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!releaseData.records.length" description="暂无放单记录" />
+        </div>
       </el-tab-pane>
     </el-tabs>
 
     <!-- 业务节点流转（A6） -->
-    <el-dialog v-model="statusDialog" title="订单业务节点流转" width="640px">
-      <div class="flow-stage">
+    <!-- D2 提单信息编辑 -->
+    <el-dialog v-model="blDialog" title="编辑提单信息" width="640px">
+      <el-form :model="blForm" label-width="120px">
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="发货人"><el-input v-model="blForm.shipperName" placeholder="SHIPPER" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="收货人"><el-input v-model="blForm.consigneeName" placeholder="CONSIGNEE" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="发货人地址"><el-input v-model="blForm.shipperAddress" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="收货人地址"><el-input v-model="blForm.consigneeAddress" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="通知方"><el-input v-model="blForm.notifyParty" placeholder="NOTIFY PARTY" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="唛头"><el-input v-model="blForm.marksNumbers" type="textarea" :rows="2" placeholder="MARKS &amp; NUMBERS" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="收货地"><el-input v-model="blForm.placeOfReceipt" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="交货地"><el-input v-model="blForm.placeOfDelivery" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="运费条款"><el-input v-model="blForm.freightCharges" placeholder="如 FREIGHT PREPAID" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="正本份数"><el-input-number v-model="blForm.originalBLCount" :min="0" :max="10" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="电放"><el-switch v-model="blForm.telexRelease" /></el-form-item></el-col>
+        </el-row>
+      </el-form>
+      <template #footer>
+        <el-button @click="blDialog = false">取消</el-button>
+        <el-button type="primary" :loading="blSaving" @click="saveBl">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="statusDialog" title="订单业务节点流转" width="640px">      <div class="flow-stage">
         <el-steps :active="flowData.currentIndex" align-center finish-status="success">
           <el-step v-for="n in flowData.nodes" :key="n.key" :title="n.label" :status="stageStatus(n)" />
         </el-steps>
@@ -301,6 +427,24 @@
       </el-form>
       <template #footer><el-button @click="finDialog=false">取消</el-button><el-button type="primary" @click="saveFinance">保存</el-button></template>
     </el-dialog>
+
+    <!-- B8 申请放单 -->
+    <el-dialog v-model="releaseDialog" title="申请放单" width="480px">
+      <el-form :model="releaseForm" label-width="90px">
+        <el-form-item label="放单方式">
+          <el-radio-group v-model="releaseForm.releaseType">
+            <el-radio label="original">正本</el-radio>
+            <el-radio label="telex">电放</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="放单号"><el-input v-model="releaseForm.releaseNo" placeholder="如 BL/CIMC20260808001 或电放号" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="releaseForm.remark" type="textarea" :rows="2" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="releaseDialog=false">取消</el-button>
+        <el-button type="primary" :loading="releaseSaving" @click="submitRelease">提交</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -308,7 +452,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { orderDetailAPI, orderTimelineAPI, orderFlowAPI, orderAdvanceAPI, orderNodesAPI, updateOrderNodeAPI, bookingAPI, customsAPI, documentAPI, trackAPI, financeAPI, supplierAPI, orderAPI, orderContainersAPI, saveOrderContainersAPI } from '@/api';
+import { orderDetailAPI, orderTimelineAPI, orderFlowAPI, orderAdvanceAPI, orderNodesAPI, updateOrderNodeAPI, bookingAPI, customsAPI, documentAPI, trackAPI, financeAPI, financeBatchAPI, feeTemplateAPI, supplierAPI, orderAPI, orderContainersAPI, saveOrderContainersAPI, releaseAPI } from '@/api';
 import {
   ORDER_STATUS, ORDER_TYPE, MODE, SERVICE_TYPE, BOOKING_STATUS, CUSTOMS_STATUS,
   DOC_TYPE, DOC_STATUS, TRACK_STAGE, FIN_DIRECTION, FIN_CATEGORY, FIN_STATUS,
@@ -320,6 +464,68 @@ const detail = ref(null);
 const suppliers = ref([]);
 const tab = ref('info');
 const timeline = ref([]);
+
+// D2 提单信息编辑
+const blDialog = ref(false);
+const blSaving = ref(false);
+const blForm = ref({});
+function openBlEdit() {
+  const o = detail.value?.order || {};
+  blForm.value = {
+    shipperName: o.shipperName || '', shipperAddress: o.shipperAddress || '',
+    consigneeName: o.consigneeName || '', consigneeAddress: o.consigneeAddress || '',
+    notifyParty: o.notifyParty || '', marksNumbers: o.marksNumbers || '',
+    placeOfReceipt: o.placeOfReceipt || '', placeOfDelivery: o.placeOfDelivery || '',
+    freightCharges: o.freightCharges || '', originalBLCount: o.originalBLCount ?? 3,
+    telexRelease: !!o.telexRelease,
+  };
+  blDialog.value = true;
+}
+async function saveBl() {
+  blSaving.value = true;
+  try {
+    await orderAPI.update(detail.value.order.id, blForm.value);
+    detail.value.order = { ...detail.value.order, ...blForm.value };
+    blDialog.value = false;
+    ElMessage.success('提单信息已保存');
+  } catch (e) { /* 拦截后由拦截器提示 */ }
+  finally { blSaving.value = false; }
+}
+
+// N1 费用多行快录
+const feeTemplates = ref([]);
+const selectedTemplate = ref(null);
+const feeSaving = ref(false);
+const feeRows = ref([]);
+const newFeeRow = () => ({ direction: 'receivable', category: 'ocean_freight', description: '', currency: 'USD', amount: 0 });
+async function loadFeeTemplates() {
+  try { feeTemplates.value = await feeTemplateAPI.list({ pageSize: 100 }); } catch { feeTemplates.value = []; }
+}
+function addFeeRow() { feeRows.value.push(newFeeRow()); }
+async function applyFeeTemplate(id) {
+  if (!id) return;
+  const tpl = feeTemplates.value.find((t) => t.id === id);
+  if (!tpl) return;
+  let items = [];
+  try { items = typeof tpl.items === 'string' ? JSON.parse(tpl.items) : (tpl.items || []); } catch { items = []; }
+  if (items.length) {
+    feeRows.value = items.map((i) => ({ direction: i.direction, category: i.category, description: i.description, currency: i.currency, amount: Number(i.amount) || 0 }));
+    ElMessage.success(`已套用模板「${tpl.name}」${items.length} 条费用`);
+  }
+}
+async function saveFeeRows() {
+  const items = feeRows.value.filter((r) => Number(r.amount) > 0);
+  if (!items.length) { ElMessage.warning('请先填写至少一行有效费用（金额>0）'); return; }
+  feeSaving.value = true;
+  try {
+    const res = await financeBatchAPI({ orderId: detail.value.order.id, items });
+    ElMessage.success(res.msg || `已创建 ${res.count || items.length} 条费用`);
+    feeRows.value = [];
+    selectedTemplate.value = null;
+    await load();
+  } catch (e) { /* 拦截器提示 */ }
+  finally { feeSaving.value = false; }
+}
 
 // 窄屏（<768px）描述列表降为单列，避免挤压
 const isMobile = ref(false);
@@ -335,6 +541,14 @@ const docDialog = ref(false), docForm = ref({});
 const trackDialog = ref(false), trackForm = ref({});
 const finDialog = ref(false), finForm = ref({});
 const statusDialog = ref(false);
+// B8 放单控制
+const releaseData = ref({ order: null, receivableBalance: 0, records: [] });
+const releaseDialog = ref(false);
+const releaseSaving = ref(false);
+const releaseForm = ref({ releaseType: 'original', releaseNo: '', remark: '' });
+const RELEASE_TYPE = { original: '正本', telex: '电放' };
+const APPROVAL_STATUS = { pending: '待审批', approved: '已通过', rejected: '已驳回', none: '' };
+const REL_STATUS = { pending: '待放单', approved: '已放单', none: '' };
 const flowData = ref({ nodes: [], currentIndex: 0, reachedCount: 0, total: 0, statusChanged: false, derivedStatus: '' });
 const orderNodes = ref([]);
 const doneNodeCount = computed(() => orderNodes.value.filter((n) => n.status === 'done').length);
@@ -395,6 +609,7 @@ async function load() {
   timeline.value = tl.nodes || [];
   loadOrderNodes();
   loadContainers();
+  loadRelease();
 }
 
 async function changeStatus() {
@@ -431,8 +646,33 @@ async function saveFinance() {
   ElMessage.success('费用已保存'); finDialog.value = false; load();
 }
 
+// B8 放单控制
+async function loadRelease() {
+  try { releaseData.value = await releaseAPI.records(route.params.id); } catch (e) { releaseData.value = { order: null, receivableBalance: 0, records: [] }; }
+}
+function openReleaseDialog() {
+  releaseForm.value = { releaseType: 'original', releaseNo: '', remark: '' };
+  releaseDialog.value = true;
+}
+async function submitRelease() {
+  releaseSaving.value = true;
+  try {
+    await releaseAPI.apply(route.params.id, releaseForm.value);
+    ElMessage.success('放单申请已提交');
+    releaseDialog.value = false;
+    loadRelease();
+  } catch (e) { /* 拦截器提示 */ }
+  finally { releaseSaving.value = false; }
+}
+async function approveRelease(rec, approve) {
+  await releaseAPI.approve(rec.id, { approve });
+  ElMessage.success(approve ? '放单已审批通过' : '放单已驳回');
+  loadRelease();
+}
+
 onMounted(async () => {
   load();
+  loadFeeTemplates(); // N1 费用模板
   const s = await supplierAPI.list({ page: 1, pageSize: 200 });
   suppliers.value = s.list;
   mql = window.matchMedia('(max-width: 768px)');

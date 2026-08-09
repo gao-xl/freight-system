@@ -15,9 +15,42 @@
       </div>
     </div>
 
+    <!-- N4 客户360° 经营概览 -->
+    <div class="page-card" v-if="ov" style="margin-bottom:16px">
+      <div class="ov-title">经营概览（实时聚合）</div>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="label">订单总数</div><div class="value">{{ ov.orderStats.total }}</div><div class="sub">在途 {{ ov.orderStats.inProgress }} · 完成 {{ ov.orderStats.completed }}</div></div>
+        <div class="stat-card" style="border-color:var(--danger)"><div class="label">应收未收</div><div class="value" style="color:var(--danger)">{{ money(ov.finance.receivableBalance) }}</div><div class="sub">应收 {{ money(ov.finance.receivable) }} · 已收 {{ money(ov.finance.received) }}</div></div>
+        <div class="stat-card" :style="{ borderColor: ov.credit.overLimit ? 'var(--danger)' : 'var(--success)' }">
+          <div class="label">信用额度使用</div>
+          <div class="value" :style="{ color: ov.credit.overLimit ? 'var(--danger)' : 'var(--success)' }">{{ money(ov.credit.used) }} / {{ money(ov.credit.limit) }}</div>
+          <div class="sub">{{ ov.credit.overLimit ? `已超限 ${money(ov.credit.used - ov.credit.limit)}` : `剩余额度 ${money(ov.credit.remaining)}` }}</div>
+        </div>
+        <div class="stat-card"><div class="label">跟进记录</div><div class="value">{{ ov.followCount }}</div><div class="sub">报价 {{ ov.quotes.length }} 条 · 发票 {{ ov.invoices.length }} 条</div></div>
+      </div>
+      <el-row :gutter="12" style="margin-top:12px">
+        <el-col :span="12">
+          <div class="ov-sub">最近发票</div>
+          <el-table :data="ov.invoices" size="small" max-height="180">
+            <el-table-column prop="invoiceNo" label="发票号" min-width="140" />
+            <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ row.currency }} {{ money(row.totalAmount) }}</template></el-table-column>
+            <el-table-column label="状态" width="90"><template #default="{ row }">{{ INV_STATUS[row.status]?.text || row.status }}</template></el-table-column>
+          </el-table>
+        </el-col>
+        <el-col :span="12">
+          <div class="ov-sub">最近报价</div>
+          <el-table :data="ov.quotes" size="small" max-height="180">
+            <el-table-column prop="quoteNo" label="报价单号" min-width="140" />
+            <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ row.currency }} {{ money(row.totalAmount) }}</template></el-table-column>
+            <el-table-column label="状态" width="90"><template #default="{ row }">{{ dictText(QUOTATION_STATUS, row.status) }}</template></el-table-column>
+          </el-table>
+        </el-col>
+      </el-row>
+    </div>
+
     <el-tabs v-model="tab" class="detail-tabs">
       <el-tab-pane label="客户信息" name="info">
-        <el-descriptions :column="3" border class="page-card">
+        <el-descriptions :column="cols" border class="page-card">
           <el-descriptions-item label="客户编码">{{ detail.code }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ detail.name }}</el-descriptions-item>
           <el-descriptions-item label="简称">{{ detail.shortName || '-' }}</el-descriptions-item>
@@ -100,8 +133,21 @@
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { customerAPI, customerFollowsAPI, createCustomerFollowAPI, updateCustomerFollowAPI, deleteCustomerFollowAPI } from '@/api';
-import { CUSTOMER_TYPE, dictText } from '@/utils/dicts';
+import { customerAPI, customerOverviewAPI, customerFollowsAPI, createCustomerFollowAPI, updateCustomerFollowAPI, deleteCustomerFollowAPI } from '@/api';
+import { CUSTOMER_TYPE, QUOTATION_STATUS, dictText, money } from '@/utils/dicts';
+import { useResponsiveColumns } from '@/composables/useResponsive';
+
+// N4 客户360° 经营概览
+const ov = ref(null);
+const INV_STATUS = {
+  draft: { text: '草稿', type: 'info' }, issued: { text: '已开票', type: 'success' },
+  paid: { text: '已核销', type: 'primary' }, cancelled: { text: '已作废', type: 'danger' },
+};
+async function loadOverview() {
+  try { ov.value = await customerOverviewAPI(route.params.id); } catch { ov.value = null; }
+}
+
+const cols = useResponsiveColumns(3, 1);
 
 const FOLLOW_TYPE = { call: '电话', visit: '拜访', email: '邮件', wechat: '微信', quotation: '报价', order: '订单', meeting: '会议', other: '其他' };
 
@@ -149,14 +195,37 @@ async function removeFollow(row) {
   await load();
 }
 
-onMounted(load);
+onMounted(() => { load(); loadOverview(); });
 </script>
 
 <style scoped>
+.header-card { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.head-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.head-left > div { min-width: 0; }
+.hd-title { margin: 0; font-size: 20px; overflow-wrap: break-word; }
+.hd-sub { color: var(--text-sub); font-size: 13px; display: block; }
+.head-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.detail-tabs { background: #fff; border-radius: var(--radius); padding: 8px 20px 20px; box-shadow: var(--shadow-sm); }
 .follow-card { border: 1px solid var(--el-border-color-light); }
-.follow-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.follow-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .follow-content { color: var(--el-text-color-regular); white-space: pre-wrap; }
 .follow-ops { margin-left: auto; }
 .next { font-size: 12px; color: var(--el-text-color-secondary); }
 .overdue { color: var(--el-color-danger); font-weight: 600; }
+.ov-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.ov-sub { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--el-text-color-primary); }
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.stat-card { background: var(--el-fill-color-blank); border: 1px solid var(--el-border-color-light); border-left: 3px solid var(--el-color-primary); border-radius: 6px; padding: 10px 12px; }
+.stat-card .label { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 4px; }
+.stat-card .value { font-size: 18px; font-weight: 700; }
+.stat-card .sub { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; }
+
+/* 窄屏适配：头部堆叠、尾随操作换行 */
+@media (max-width: 768px) {
+  .header-card { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .head-right { width: 100%; justify-content: space-between; }
+  .detail-tabs { padding: 8px 12px 12px; }
+  .follow-head { gap: 6px; }
+  .follow-ops { margin-left: 0; width: 100%; display: flex; justify-content: flex-end; }
+}
 </style>

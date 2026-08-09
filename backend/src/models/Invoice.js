@@ -14,6 +14,7 @@ const Invoice = sequelize.define('Invoice', {
   taxRate: { type: DataTypes.DECIMAL(5, 2), defaultValue: 0 }, // 税率 %
   taxAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
   totalAmount: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 }, // 含税总额 = amount + taxAmount
+  items: { type: DataTypes.TEXT }, // N2 开票明细行 JSON：[{financeId, description, amount, currency}]
   status: { type: DataTypes.ENUM('draft', 'issued', 'paid', 'cancelled'), defaultValue: 'draft' },
   issuedAt: { type: DataTypes.DATE },
   remark: { type: DataTypes.TEXT },

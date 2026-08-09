@@ -1,4 +1,4 @@
-const { Customer, Order, FinanceRecord, CustomerFollow, User } = require('../models');
+const { Customer, Order, FinanceRecord, CustomerFollow, User, Invoice, Quotation } = require('../models');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');
@@ -41,6 +41,48 @@ module.exports = {
   ...base,
   stats,
 };
+
+// N4 客户360°聚合：订单/财务/发票/报价/信用/跟进 一屏概览
+const overview = asyncHandler(async (req, res) => {
+  const cid = Number(req.params.id);
+  const customer = await scopedFindOne(req, Customer, { id: cid });
+  if (!customer) return fail(res, '客户不存在或无权访问', 1, 404);
+  const orderIds = (await Order.findAll({ where: { customerId: cid }, attributes: ['id'] })).map((o) => o.id);
+  const orderStats = {
+    total: orderIds.length,
+    inProgress: await Order.count({ where: { customerId: cid, status: { [Op.in]: ['confirmed', 'in_progress'] } } }),
+    completed: await Order.count({ where: { customerId: cid, status: 'completed' } }),
+    cancelled: await Order.count({ where: { customerId: cid, status: 'cancelled' } }),
+  };
+  let receivable = 0, received = 0, receivableBalance = 0;
+  const finance = orderIds.length
+    ? await FinanceRecord.findAll({ where: { direction: 'receivable', orderId: { [Op.in]: orderIds } } })
+    : [];
+  for (const f of finance) {
+    const amt = Number(f.amount), paid = Number(f.paidAmount);
+    receivable += amt; received += paid; receivableBalance += amt - paid;
+  }
+  const limit = Number(customer.creditLimit) || 0;
+  const credit = {
+    limit, used: Number(receivableBalance.toFixed(2)),
+    remaining: Math.max(0, Number((limit - receivableBalance).toFixed(2))),
+    overLimit: limit > 0 && receivableBalance > limit + 0.001,
+  };
+  const invoices = await Invoice.findAll({
+    where: { customerId: cid }, order: [['id', 'DESC']], limit: 5,
+    attributes: ['id', 'invoiceNo', 'amount', 'currency', 'totalAmount', 'status', 'issuedAt', 'createdAt'],
+  });
+  const quotes = await Quotation.findAll({
+    where: { customerId: cid }, order: [['id', 'DESC']], limit: 5,
+    attributes: ['id', 'quoteNo', 'totalAmount', 'currency', 'status', 'createdAt'],
+  });
+  const followCount = await CustomerFollow.count({ where: { customerId: cid } });
+  ok(res, {
+    customer, orderStats,
+    finance: { receivable, received, receivableBalance: Number(receivableBalance.toFixed(2)) },
+    credit, invoices, quotes, followCount,
+  });
+});
 
 // 查询客户跟进记录（含下次跟进、跟进人）
 const listFollows = asyncHandler(async (req, res) => {
@@ -197,6 +239,7 @@ const importTemplate = asyncHandler(async (req, res) => {
 module.exports = {
   ...base,
   stats,
+  overview, // N4 客户360°
   listFollows,
   createFollow,
   updateFollow,

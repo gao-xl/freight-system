@@ -30,6 +30,7 @@ const crud = (resource) => ({
 });
 
 export const customerAPI = crud('customers');
+export const customerOverviewAPI = (id) => request.get(`/customers/${id}/overview`); // N4 客户360°
 export const customerStatsAPI = () => request.get('/customers/stats');
 export const customerPendingFollowsAPI = () => request.get('/customers/pending-follows');
 export const customerImportAPI = (formData) => request.post('/customers/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -75,7 +76,11 @@ export const documentDownloadAPI = (id) => request.get(`/documents/${id}/downloa
 export const documentPreviewAPI = (id) => request.get(`/documents/${id}/file`, { responseType: 'blob' });
 export const trackAPI = crud('tracks');
 export const financeAPI = { ...crud('finance'), currencySummary: (p) => request.get('/finance/currency-summary', { params: p }), creditCheck: (id, p) => request.get(`/finance/customers/${id}/credit`, { params: p }) };
+export const financeBatchAPI = (data) => request.post('/finance/batch', data); // N1 批量建费
+export const financePaymentAPI = (data) => request.post('/finance/payments', data); // N3 收款核销
+export const feeTemplateAPI = crud('fee-templates'); // N1 费用模板
 export const financeSummaryAPI = () => request.get('/finance/summary');
+export const financeAgingAPI = () => request.get('/finance/aging'); // N5 AR 账龄
 export const financeTrendAPI = (year) => request.get(`/finance/monthly-trend?year=${year}`);
 export const integrationAPI = crud('integrations');
 export const integrationRegistryAPI = () => request.get('/integrations/registry');
@@ -228,6 +233,7 @@ export const financeReconcileAPI = (params) => request.get('/finance/reconcile',
 export const invoiceAPI = {
   list: (params) => request.get('/finance/invoices', { params }),
   create: (data) => request.post('/finance/invoices', data),
+  fromFees: (data) => request.post('/finance/invoices/from-fees', data), // N2 从费用生成发票
   issue: (id) => request.post(`/finance/invoices/${id}/issue`),
   cancel: (id) => request.post(`/finance/invoices/${id}/cancel`),
 };
