@@ -40,9 +40,13 @@ module.exports = {
     user: process.env.DB_USER || 'freight',
     password: process.env.DB_PASSWORD || '',
     ssl: process.env.DB_SSL === 'true',
+    // 单条 SQL 超时（ms）：防止慢查询/失控查询占死连接池，默认 10s
+    statementTimeout: parseInt(process.env.DB_STATEMENT_TIMEOUT) || 10000,
     pool: { max: parseInt(process.env.DB_POOL_MAX) || 10, min: 0, idle: 10000 },
     logging: false,
   },
+  // AuditLog 保留天数：0 表示关闭自动清理（默认关闭，避免意外删审计）；>0 启用每日清理
+  auditRetentionDays: parseInt(process.env.AUDIT_RETENTION_DAYS) || 0,
   // CORS 白名单（逗号分隔），生产必填
   // D5 修复：过滤空串/纯空格项，避免 CORS_ORIGIN="" 时白名单混入空字符串
   corsOrigins: process.env.CORS_ORIGIN

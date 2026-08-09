@@ -8,10 +8,12 @@ const config = require('./config');
 const routes = require('./routes');
 const { sequelize } = require('./models');
 const { audit } = require('./middleware/audit');
+const { observability } = require('./middleware/observability');
 const { logger } = require('./utils/logger');
 const { swaggerSpec } = require('./config/swagger');
 const { ModuleRegistry } = require('./core/moduleRegistry');
-const { startAlertScheduler } = require('./services/alertScheduler');
+const { startAlertScheduler, stopAlertScheduler } = require('./services/alertScheduler');
+const { startDataRetention, stopDataRetention } = require('./services/dataRetention');
 const { subscribeEvents: subscribeAlertEvents } = require('./services/alertService');
 const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
 const { subscribe: subscribeNotificationEvents } = require('./services/notificationService');
@@ -32,6 +34,9 @@ if (config.corsOrigins && config.corsOrigins.length) {
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// 可观测性：请求关联 ID + RED 指标 + 慢请求日志（在所有业务/鉴权之前，串联全链路）
+app.use(observability);
 
 // 全局限流
 const globalLimiter = rateLimit({
@@ -55,8 +60,22 @@ app.use('/api/auth/login', loginLimiter);
 // 操作审计（记录写操作）
 app.use(audit);
 
-// 健康检查
-app.get('/api/health', (req, res) => res.json({ status: 'up', time: new Date().toISOString(), env: config.env }));
+// 健康检查：探活 DB（SELECT 1，5s 超时），DB 不可用时返回 503，供 Docker healthcheck 判定
+// 容器健康。与 pg 的 pg_isready 互为补充：本端点在应用层确认连接池可用，而非仅端口可达。
+app.get('/api/health', async (req, res) => {
+  const timeout = new Promise((r) => setTimeout(() => r(false), 5000));
+  const dbOk = await Promise.race([
+    sequelize.query('SELECT 1').then(() => true).catch(() => false),
+    timeout,
+  ]);
+  const body = {
+    status: dbOk ? 'up' : 'degraded',
+    db: dbOk ? 'up' : 'down',
+    time: new Date().toISOString(),
+    env: config.env,
+  };
+  res.status(dbOk ? 200 : 503).json(body);
+});
 
 // 接口文档（Swagger UI + 原始 OpenAPI JSON）
 // 挂在 /api-docs 而非 /api/*，不占用业务命名空间，也不受 /api 全局限流影响
@@ -115,11 +134,61 @@ app.use((err, req, res, next) => {
   res.status(500).json({ code: 500, message: '服务器内部错误，请联系管理员' });
 });
 
+// ---- 优雅停机 ----
+// 收到 SIGTERM/SIGINT（docker stop / Ctrl+C）时：停止定时任务 → 停止接收新请求 →
+// 等待在途请求完成 → 关闭数据库连接池 → 退出。超过时限仍未完成则强制退出。
+const SHUTDOWN_TIMEOUT_MS = 15000;
+let server = null;
+let shuttingDown = false;
+
+async function closeDb() {
+  try {
+    await sequelize.close();
+    logger.info('[SHUTDOWN] 数据库连接池已关闭');
+  } catch (e) {
+    logger.error('[SHUTDOWN] 关闭数据库连接失败', { message: e.message });
+  }
+}
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`[SHUTDOWN] 收到 ${signal}，开始优雅停机（等待在途请求完成，上限 ${SHUTDOWN_TIMEOUT_MS / 1000}s）...`);
+  // 停止定时任务，避免停机窗口内重复触发
+  stopAlertScheduler();
+  stopDataRetention();
+  if (!server) {
+    process.exit(0);
+    return;
+  }
+  // 主动断开空闲 keep-alive 连接，加速 server.close 完成
+  if (typeof server.closeIdleConnections === 'function') server.closeIdleConnections();
+  const forceTimer = setTimeout(() => {
+    logger.warn('[SHUTDOWN] 超时，强制退出（在途请求未在时限内完成）');
+    closeDb().finally(() => process.exit(1));
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceTimer.unref(); // 不阻止进程自然退出
+  server.close(async () => {
+    if (forceTimer) clearTimeout(forceTimer);
+    await closeDb();
+    logger.info('[SHUTDOWN] 已安全退出');
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 async function start() {
-  // Onboarding 地基：先 sync 补齐模型表（老库补新模型表/新库建全表）→ 自动迁移增量修补
-  // （AUTO_MIGRATE 默认开；顺序依赖：部分存量迁移依赖模型表已存在，如 invoice-items 依赖 Invoices 表由 sync 创建）
-  await sequelize.sync();
-  logger.info('[DB] 数据库同步完成');
+  // Onboarding 地基：开发/测试用 sync 快速建表；生产环境禁止 sync（schema 完全由 migration 管理），
+  // 避免意外的 schema 漂移/破坏。所有模型表均有对应迁移（initial + more-tables 等），migrateRunner
+  // 幂等容错「already exists」，存量 sync 建的库也能原地补齐。
+  if (config.isProd) {
+    logger.info('[DB] 生产环境：跳过 sequelize.sync()，表结构由 migration 全量管理');
+  } else {
+    await sequelize.sync();
+    logger.info('[DB] 数据库同步完成（开发/测试）');
+  }
   if (config.autoMigrate) {
     const applied = await runMigrations();
     if (applied.length) logger.info(`[DB] 自动迁移完成：新增 ${applied.length} 个迁移`);
@@ -136,12 +205,14 @@ async function start() {
   ModuleRegistry.mountRoutes(routes, { guard: require('./middleware/auth').guard });
   // 挂载预警定时任务 + 事件驱动监听
   startAlertScheduler();
+  // 数据保留：每日清理过期审计日志（默认关闭，AUDIT_RETENTION_DAYS>0 启用）
+  startDataRetention();
   subscribeAlertEvents();
   subscribeAutomationEvents();
   // E2 通知推送：订阅预警/业务事件，出站邮件/企微/通用 Webhook（渠道缺配置自动跳过）
   subscribeNotificationEvents();
   logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化 + 通知推送）');
-  app.listen(config.port, () => {
+  server = app.listen(config.port, () => {
     logger.info(`[SERVER] 货运代理管理系统后端已启动: http://localhost:${config.port}`);
   });
 }

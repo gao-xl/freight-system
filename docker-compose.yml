@@ -53,6 +53,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    # 资源上限：防止单容器内存/CPU 失控拖垮宿主机（docker compose 2.x 支持）
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   backend:
     build:
@@ -103,6 +109,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 25s
+    # 资源上限：后端含 PDF 渲染(chromium)，给足内存但设硬顶，防止泄漏拖垮宿主机
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
 
   frontend:
     build:
@@ -120,6 +132,12 @@ services:
       # 等后端健康检查通过再起，避免 nginx 因解析不到 backend 上游而启动失败
       backend:
         condition: service_healthy
+    # 资源上限：nginx 静态代理很轻，给低配即可
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
 volumes:
   pg-data:
