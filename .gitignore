@@ -62,3 +62,6 @@ dist-s02/
 .git-commit-out.txt
 backend/d1-poc.pdf
 backend/pa.tgz
+
+# 代码审查工具产物（brooks-lint 本地运行历史，非项目交付物）
+.brooks-lint-history.json
