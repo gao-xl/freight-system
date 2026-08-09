@@ -481,4 +481,91 @@ router.get('/portal/orders', authRequired, requireRole('customer', 'admin', 'man
 router.get('/portal/bills', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portal.myBills);
 router.get('/portal/orders/:id', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portal.orderDetail);
 
+// E3 客户门户增强：自助下载 / 在线补料 / 运价查询（全部 customerId 隔离）
+/**
+ * @openapi
+ * /api/portal/orders/{id}/invoices/{invoiceId}/download:
+ *   get:
+ *     tags: [客户门户]
+ *     summary: 下载账单 PDF（发票）
+ *     description: 仅本客户订单的发票可下载，非本客户订单/账单返回 404。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer }, description: 订单 id }
+ *       - { name: invoiceId, in: path, required: true, schema: { type: integer }, description: 发票 id }
+ *     responses:
+ *       200:
+ *         description: PDF 文件流
+ *         content: { application/pdf: { schema: { type: string, format: binary } } }
+ *       401: { description: 未登录 }
+ *       404: { description: 订单或账单不存在或无权访问 }
+ */
+router.get('/portal/orders/:id/invoices/:invoiceId/download', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portal.downloadInvoice);
+/**
+ * @openapi
+ * /api/portal/orders/{id}/documents/{docId}/download:
+ *   get:
+ *     tags: [客户门户]
+ *     summary: 下载提单 PDF
+ *     description: 仅本客户订单的提单（bl/packing_list/order 单据）可下载，非本客户订单一律 404。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer }, description: 订单 id }
+ *       - { name: docId, in: path, required: true, schema: { type: integer }, description: 单证 id }
+ *     responses:
+ *       200:
+ *         description: PDF 文件流
+ *         content: { application/pdf: { schema: { type: string, format: binary } } }
+ *       401: { description: 未登录 }
+ *       404: { description: 订单或单证不存在或无权访问 }
+ */
+router.get('/portal/orders/:id/documents/:docId/download', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portal.downloadDocument);
+/**
+ * @openapi
+ * /api/portal/orders/{id}/si:
+ *   post:
+ *     tags: [客户门户]
+ *     summary: 在线补料（SI）提交
+ *     description: 客户提交提单补料字段（shipper/consignee/notifyParty/marks 等），写入订单并记录补料状态，操作员可见。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer }, description: 订单 id }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               shipperName: { type: string, description: 发货人 }
+ *               consigneeName: { type: string, description: 收货人 }
+ *               notifyParty: { type: string, description: 通知方 }
+ *               marksNumbers: { type: string, description: 唛头 }
+ *     responses:
+ *       200:
+ *         description: 补料已提交
+ *       401: { description: 未登录 }
+ *       404: { description: 订单不存在或无权访问 }
+ */
+router.post('/portal/orders/:id/si', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), validate(S.portalSi), portal.submitSi);
+/**
+ * @openapi
+ * /api/portal/rates:
+ *   get:
+ *     tags: [客户门户]
+ *     summary: 运价查询
+ *     description: 复用 FreightRate 检索：from=起运港，to=目的港，keyword 模糊匹配航线/起运港/目的港，只返回有效期内运价。
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: from, in: query, schema: { type: string }, description: 起运港 }
+ *       - { name: to, in: query, schema: { type: string }, description: 目的港 }
+ *       - { name: keyword, in: query, schema: { type: string }, description: 关键字（航线/起运港/目的港） }
+ *       - { name: containerType, in: query, schema: { type: string, enum: [20GP, 40GP, 40HQ] }, description: 箱型 }
+ *     responses:
+ *       200:
+ *         description: 运价列表
+ *       401: { description: 未登录 }
+ */
+router.get('/portal/rates', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portal.rates);
+
 module.exports = router;

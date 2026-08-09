@@ -1,6 +1,7 @@
-const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack, FinanceRecord, Document, User } = require('../models');
+const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack, FinanceRecord, Document, User, Invoice, FreightRate } = require('../models');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { Op } = require('sequelize');
+const printService = require('../services/printService');
 
 // C5 客户自助门户：customer 角色用户仅可查看自己客户（customerId）的数据
 // 全部为只读查询，不提供任何写操作。
@@ -73,4 +74,119 @@ const myBills = asyncHandler(async (req, res) => {
   ok(res, { list: rows, total: count, page, pageSize });
 });
 
-module.exports = { overview, myOrders, orderDetail, myBills };
+// E3 客户门户增强：下载账单/提单 PDF、在线补料（SI）、运价查询
+// 全部走既有 JWT + customerId 隔离：仅可访问本客户订单，非本客户订单一律 404。
+
+// 归属校验：订单必须属于当前客户（customerId 隔离），否则返回 null
+async function findOwnOrder(customerId, orderId) {
+  return Order.findOne({ where: { id: orderId, customerId } });
+}
+
+// 门户补料可写入的订单提单字段白名单（与 portalSi schema 一致）
+const SI_ORDER_FIELDS = [
+  'shipperName', 'shipperAddress',
+  'consigneeName', 'consigneeAddress',
+  'notifyParty', 'marksNumbers',
+  'placeOfReceipt', 'placeOfDelivery', 'freightCharges',
+  'originalBLCount', 'telexRelease',
+  'cargoDesc', 'packageCount', 'cargoWeight', 'cargoVolume', 'containerNo',
+  'remark',
+];
+
+// GET /api/portal/orders/:id/invoices/:invoiceId/download
+// 下载账单 PDF：复用发票打印链路（docType=invoice，按 Invoice 模型取数）
+const downloadInvoice = asyncHandler(async (req, res) => {
+  const customerId = req.user.customerId;
+  if (!customerId) return fail(res, '当前账号未关联客户档案', 1, 400);
+  const order = await findOwnOrder(customerId, req.params.id);
+  if (!order) return fail(res, '订单不存在或无权查看', 1, 404);
+  const invoice = await Invoice.findOne({ where: { id: req.params.invoiceId, orderId: order.id } });
+  if (!invoice) return fail(res, '账单不存在或无权下载', 1, 404);
+  const { pdf } = await printService.render(null, 'invoice', invoice.id);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.id}.pdf"`);
+  res.send(pdf);
+});
+
+// GET /api/portal/orders/:id/documents/:docId/download
+// 下载提单 PDF：复用 bl 打印链路（bizId=订单 id，取订单提单数据）
+// 另兼容以订单为数据源的 packing_list / order 单据；其余单证类型暂不支持门户下载
+const downloadDocument = asyncHandler(async (req, res) => {
+  const customerId = req.user.customerId;
+  if (!customerId) return fail(res, '当前账号未关联客户档案', 1, 400);
+  const order = await findOwnOrder(customerId, req.params.id);
+  if (!order) return fail(res, '订单不存在或无权查看', 1, 404);
+  const doc = await Document.findOne({ where: { id: req.params.docId, orderId: order.id } });
+  if (!doc) return fail(res, '单证不存在或无权下载', 1, 404);
+  if (!['bl', 'packing_list', 'order'].includes(doc.docType)) {
+    return fail(res, '该单证暂不支持门户下载', 1, 400);
+  }
+  const { pdf } = await printService.render(null, doc.docType, order.id);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${doc.docType}-${order.id}.pdf"`);
+  res.send(pdf);
+});
+
+// POST /api/portal/orders/:id/si
+// 在线补料（SI）：白名单字段写入订单提单字段，落补料原文/状态/提交人，操作员在订单详情可见
+const submitSi = asyncHandler(async (req, res) => {
+  const customerId = req.user.customerId;
+  if (!customerId) return fail(res, '当前账号未关联客户档案', 1, 400);
+  const order = await findOwnOrder(customerId, req.params.id);
+  if (!order) return fail(res, '订单不存在或无权查看', 1, 404);
+  if (order.status === 'cancelled') return fail(res, '订单已取消，不能提交补料', 1, 409);
+  const patch = {};
+  for (const f of SI_ORDER_FIELDS) {
+    if (req.body[f] !== undefined) patch[f] = req.body[f];
+  }
+  await order.update({
+    ...patch,
+    siStatus: 'submitted',
+    siData: JSON.stringify(req.body),
+    siSubmittedAt: new Date(),
+    siSubmittedBy: req.user.id,
+    siSubmittedByName: req.user.name || '客户',
+  });
+  ok(res, {
+    siStatus: 'submitted',
+    submittedAt: order.siSubmittedAt,
+    submittedBy: order.siSubmittedByName,
+    applied: patch,
+  }, '补料已提交');
+});
+
+// GET /api/portal/rates?from=&to=&keyword=&containerType=
+// 运价查询：复用 FreightRate 检索（有效期过滤 + from→起运港 / to→目的港 + keyword 模糊），只读
+const rates = asyncHandler(async (req, res) => {
+  const { from, to, keyword } = req.query;
+  const where = {};
+  if (from) where.originPort = from;
+  if (to) where.destPort = to;
+  const containerType = String(req.query.containerType || '').toUpperCase();
+  if (containerType) {
+    if (!['20GP', '40GP', '40HQ'].includes(containerType)) {
+      return fail(res, 'containerType 仅支持 20GP/40GP/40HQ', 1, 400);
+    }
+    where.containerType = containerType;
+  }
+  // 有效期过滤：空有效期视为长期有效
+  const today = new Date();
+  const conds = [
+    { [Op.or]: [{ validFrom: null }, { validFrom: { [Op.lte]: today } }] },
+    { [Op.or]: [{ validTo: null }, { validTo: { [Op.gte]: today } }] },
+  ];
+  if (keyword) {
+    conds.push({
+      [Op.or]: ['route', 'originPort', 'destPort'].map((f) => ({ [f]: { [Op.like]: `%${keyword}%` } })),
+    });
+  }
+  where[Op.and] = conds;
+  const rows = await FreightRate.findAll({
+    where,
+    order: [['rate', 'ASC']],
+    limit: 50,
+  });
+  ok(res, { list: rows, total: rows.length });
+});
+
+module.exports = { overview, myOrders, orderDetail, myBills, downloadInvoice, downloadDocument, submitSi, rates };

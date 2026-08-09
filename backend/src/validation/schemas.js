@@ -206,14 +206,14 @@ const userCreate = Joi.object({
   username: Joi.string().trim().min(2).max(50).required(),
   name: Joi.string().trim().max(50).required(),
   password: Joi.string().min(6).max(255).required(),
-  role: enumVal(['admin', 'manager', 'operator', 'finance', 'viewer']),
+  role: enumVal(['admin', 'manager', 'operator', 'finance', 'viewer', 'customer']),
   email: Joi.string().email().max(100).allow('', null),
   phone: str(30),
   roleIds: Joi.array().items(id),
 }).unknown(true);
 const userUpdate = Joi.object({
   name: str(50),
-  role: enumVal(['admin', 'manager', 'operator', 'finance', 'viewer']),
+  role: enumVal(['admin', 'manager', 'operator', 'finance', 'viewer', 'customer']),
   email: Joi.string().email().max(100).allow('', null),
   phone: str(30),
   status: enumVal(['active', 'disabled']),
@@ -235,6 +235,28 @@ const assignRoles = Joi.object({
   roleIds: Joi.array().items(id).required(),
 }).unknown(true);
 
+// 客户门户在线补料（SI）（E3）
+// 白名单校验：仅允许提单相关字段，拒绝未知键，防止越权改写订单其它字段
+const portalSi = Joi.object({
+  shipperName: str(200),
+  shipperAddress: str(500),
+  consigneeName: str(200),
+  consigneeAddress: str(500),
+  notifyParty: str(500),
+  marksNumbers: text,
+  placeOfReceipt: str(100),
+  placeOfDelivery: str(100),
+  freightCharges: str(255),
+  originalBLCount: Joi.number().integer().min(1).max(20).allow(null),
+  telexRelease: Joi.boolean().allow(null),
+  cargoDesc: str(255),
+  packageCount: Joi.number().integer().min(0).allow(null),
+  cargoWeight: Joi.number().min(0).allow(null),
+  cargoVolume: Joi.number().min(0).allow(null),
+  containerNo: str(50),
+  remark: text,
+}).or('shipperName', 'shipperAddress', 'consigneeName', 'consigneeAddress', 'notifyParty', 'marksNumbers', 'placeOfReceipt', 'placeOfDelivery', 'cargoDesc', 'containerNo');
+
 module.exports = {
   login, changePassword,
   customerCreate, customerUpdate,
@@ -248,4 +270,5 @@ module.exports = {
   followCreate, followUpdate,
   userCreate, userUpdate,
   roleCreate, assignPermissions, assignRoles,
+  portalSi,
 };

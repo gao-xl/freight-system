@@ -44,6 +44,12 @@ const Order = sequelize.define('Order', {
   groupId: { type: DataTypes.INTEGER }, // B2 归属小组
   ownerId: { type: DataTypes.INTEGER }, // B2 归属操作员（负责人）
   customFields: { type: DataTypes.TEXT }, // B4 自定义字段扩展（JSON 字符串）
+  // E3 客户门户在线补料（SI）：客户提交后落订单，操作员在订单详情可见
+  siStatus: { type: DataTypes.ENUM('none', 'submitted', 'confirmed', 'rejected'), defaultValue: 'none' },
+  siData: { type: DataTypes.TEXT },            // 补料提交原文（JSON 字符串，含 shipper/consignee/notify 等）
+  siSubmittedAt: { type: DataTypes.DATE },     // 补料提交时间
+  siSubmittedBy: { type: DataTypes.INTEGER },  // 补料提交用户 id
+  siSubmittedByName: { type: DataTypes.STRING(50) }, // 补料提交人（冗余，便于操作员直接可见）
   remark: { type: DataTypes.TEXT },
   version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
   isDemo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding 演示数据标记（可一键清空）
