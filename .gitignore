@@ -56,3 +56,12 @@ backend/.fix.tgz
 backend/fix-deps.js
 backend/d1-poc.js
 frontend/dist-e2*/
+
+# 构建验证产物（本地验证用，禁止提交）
+dist-final/
+dist-s02/
+
+# 本地杂项（命令日志/草稿/归档，禁止提交）
+.git-commit-out.txt
+backend/d1-poc.pdf
+backend/pa.tgz
