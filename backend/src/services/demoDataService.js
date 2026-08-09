@@ -13,6 +13,7 @@ const {
   CustomsDeclaration, FinanceRecord, FreightRate, CompanyProfile, DemoDataLog,
 } = require('../models');
 const { logger } = require('../utils/logger');
+const { countRecords } = require('../domains/finance/financeService');
 
 const DEMO_PREFIX = '演示';
 
@@ -240,7 +241,7 @@ async function getOnboardingStatus() {
     Order.count(),
     Booking.count(),
     CustomsDeclaration.count(),
-    FinanceRecord.count(),
+    countRecords(),
     FreightRate.count(),
     CompanyProfile.findOne({ attributes: ['companyName'] }),
   ]);

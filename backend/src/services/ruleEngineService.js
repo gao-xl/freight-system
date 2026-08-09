@@ -16,6 +16,7 @@
 
 const { Op } = require('sequelize');
 const { Order, Booking, CustomsDeclaration, FinanceRecord, Customer, AlertRecord, BusinessRule } = require('../models');
+const { findOverdueReceivable } = require('../domains/finance/financeService');
 const { logger } = require('../utils/logger');
 
 // ── 字段白名单：bizType → 可参与条件判断的字段（防注入） ──
@@ -27,7 +28,7 @@ const FIELD_WHITELIST = {
   customer: ['id', 'name', 'level', 'ownerId', 'createdAt'],
 };
 
-// bizType → Sequelize 模型
+// bizType → Sequelize 模型（通用表达式引擎需要各 bizType 模型；finance 专用读走 finance 域门面）
 const MODEL_MAP = {
   order: Order,
   finance: FinanceRecord,
@@ -142,10 +143,7 @@ const executors = {
   overdue_receivable: async (rule, params) => {
     const overdueDays = Number(params.overdueDays || 30);
     const now = new Date();
-    const rows = await FinanceRecord.findAll({
-      where: { direction: 'receivable', status: { [Op.in]: ['unpaid', 'partial'] }, dueDate: { [Op.lt]: now } },
-      include: [{ model: Order, as: 'order', attributes: ['orderNo'] }],
-    });
+    const rows = await findOverdueReceivable(now);
     for (const r of rows) {
       const days = Math.floor((now - new Date(r.dueDate)) / (24 * 3600 * 1000));
       const remain = Number(r.amount) - Number(r.paidAmount || 0);

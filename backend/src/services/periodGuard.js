@@ -1,7 +1,8 @@
 // 账期守卫：结账/扎帐/锁帐的核心服务
 // 负责账期归属解析、结账汇总计算、以及锁账写操作拦截
 const { Op } = require('sequelize');
-const { AccountingPeriod, FinanceRecord } = require('../models');
+const { AccountingPeriod } = require('../models');
+const { findRecordsByOrderId, findRecordsInPeriod } = require('../domains/finance/financeService');
 
 // 由日期得到账期号，如 2026-08
 function periodCodeFromDate(date) {
@@ -43,18 +44,7 @@ async function getOrCreatePeriod(periodCode) {
 // 该账期下的所有费用记录（settleMonth 命中优先，为空则按 createdAt）
 async function recordsOfPeriod(periodCode) {
   const { start, end } = periodRange(periodCode);
-  return FinanceRecord.findAll({
-    where: {
-      [Op.and]: [
-        {
-          [Op.or]: [
-            { settleMonth: { [Op.gte]: start, [Op.lt]: end } },
-            { settleMonth: null, createdAt: { [Op.gte]: start, [Op.lt]: end } },
-          ],
-        },
-      ],
-    },
-  });
+  return findRecordsInPeriod(start, end);
 }
 
 // 汇总应收/应付/已收/已付/余额/毛利
@@ -111,7 +101,7 @@ async function assertBodyEditable(body) {
 // 依据订单关联的费用记录校验（开票/支付等入口）
 async function assertOrderEditable(orderId) {
   if (!orderId) return;
-  const records = await FinanceRecord.findAll({ where: { orderId } });
+  const records = await findRecordsByOrderId(orderId);
   await assertRecordsEditable(records);
 }
 

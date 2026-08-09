@@ -3,7 +3,7 @@ const {
   Order, Booking, CustomsDeclaration, ShipmentTrack,
 } = require('../models');
 const { advanceOne, computeReached } = require('./orderService');
-const { autoCreateReceivable: financeAutoCreateReceivable } = require('../domains/finance/financeService');
+const { autoCreateReceivable: financeAutoCreateReceivable, findRecord } = require('../domains/finance/financeService');
 const { record: auditRecord } = require('../core/auditService');
 const { logger } = require('../utils/logger');
 
@@ -88,7 +88,6 @@ async function autoAdvanceFromCustoms() {
 // 审计语义保持：对每个新生成的应收订单逐单留痕（username=SYSTEM）。
 async function autoCreateReceivable() {
   const created = await financeAutoCreateReceivable();
-  const { FinanceRecord } = require('../models');
   const orders = await Order.findAll({
     where: {
       status: { [Op.in]: ['confirmed', 'in_progress', 'completed'] },
@@ -96,8 +95,8 @@ async function autoCreateReceivable() {
     },
   });
   for (const o of orders) {
-    const exist = await FinanceRecord.findOne({
-      where: { orderId: o.id, direction: 'receivable', description: { [Op.like]: `%#auto%` } },
+    const exist = await findRecord({
+      orderId: o.id, direction: 'receivable', description: { [Op.like]: `%#auto%` },
     });
     if (!exist) continue;
     await logAudit('auto_finance', o.id, `订单${o.orderNo}确认，自动生成应收 ${o.currency || 'USD'} ${o.totalAmount}`);

@@ -57,4 +57,71 @@ async function createRecord(payload, opts = {}) {
   return FinanceRecord.create(payload, opts.transaction ? { transaction: opts.transaction } : undefined);
 }
 
-module.exports = { autoCreateReceivable, createRecord, AUTO_MARKER };
+/**
+ * —— 读门面（E6 对称收口：跨域读也统一经 finance 域，避免散落直查 FinanceRecord）——
+ * 以下方法供「非 finance 域」读取财务数据；finance 域内部（controller/statement）仍可直接用模型。
+ */
+
+// 按订单读取费用记录（面向订单详情/打印/账期守卫等跨域读）
+function findRecordsByOrderId(orderId, opts = {}) {
+  return FinanceRecord.findAll({ where: { orderId }, ...opts });
+}
+
+// 按多订单批量读取（面向对账单/报表聚合）
+function findRecordsByOrderIds(orderIds, opts = {}) {
+  if (!Array.isArray(orderIds) || !orderIds.length) return Promise.resolve([]);
+  return FinanceRecord.findAll({ where: { orderId: { [Op.in]: orderIds } }, ...opts });
+}
+
+// 超期应收（已过到期日且未收清）——面向预警/规则引擎
+function findOverdueReceivable(now = new Date()) {
+  return FinanceRecord.findAll({
+    where: { direction: 'receivable', status: { [Op.in]: ['unpaid', 'partial'] }, dueDate: { [Op.lt]: now } },
+    include: [{ model: Order, as: 'order', attributes: ['orderNo'] }],
+  });
+}
+
+// 幂等/归属校验用的单条查询
+function findRecord(where, opts = {}) {
+  return FinanceRecord.findOne({ where, ...opts });
+}
+
+// 统计（面向演示数据/仪表盘数）
+function countRecords(where = {}) {
+  return FinanceRecord.count({ where });
+}
+
+// 按账期读取费用记录（面向结账/对账；periodRange 由调用方换算为起止 Date）
+function findRecordsInPeriod(start, end) {
+  return FinanceRecord.findAll({
+    where: {
+      [Op.and]: [
+        {
+          [Op.or]: [
+            { settleMonth: { [Op.gte]: start, [Op.lt]: end } },
+            { settleMonth: null, createdAt: { [Op.gte]: start, [Op.lt]: end } },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+// 按维度读取费用记录（面向多币种汇总/信用额度等聚合读；where 已含数据隔离约束）
+function findRecordsForAggregation(where, opts = {}) {
+  return FinanceRecord.findAll({ where, ...opts });
+}
+
+module.exports = {
+  autoCreateReceivable,
+  createRecord,
+  AUTO_MARKER,
+  // 读门面
+  findRecordsByOrderId,
+  findRecordsByOrderIds,
+  findOverdueReceivable,
+  findRecord,
+  countRecords,
+  findRecordsInPeriod,
+  findRecordsForAggregation,
+};

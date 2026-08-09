@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
-const { Order, Booking, CustomsDeclaration, FinanceRecord, QingdaoNode, AlertRecord, Customer } = require('../models');
+const { Order, Booking, CustomsDeclaration, QingdaoNode, AlertRecord, Customer } = require('../models');
+const { findOverdueReceivable } = require('../domains/finance/financeService');
 const { logger } = require('../utils/logger');
 
 // 规则引擎：扫描业务数据产出预警
@@ -57,10 +58,7 @@ async function ruleEtaSoon() {
 // 规则2：超期应收（已过到期日且未收清）
 async function ruleOverdueReceivable() {
   const now = new Date();
-  const records = await FinanceRecord.findAll({
-    where: { direction: 'receivable', status: { [Op.in]: ['unpaid', 'partial'] }, dueDate: { [Op.lt]: now } },
-    include: [{ model: Order, as: 'order', attributes: ['orderNo'] }],
-  });
+  const records = await findOverdueReceivable(now);
   for (const r of records) {
     const days = Math.floor((now - new Date(r.dueDate)) / (24 * 3600 * 1000));
     const remain = Number(r.amount) - Number(r.paidAmount || 0);

@@ -1,5 +1,6 @@
 // B6 多币种换算 + 信用额度管控
-const { ExchangeRate, Customer, Order, FinanceRecord } = require('../models');
+const { ExchangeRate, Customer, Order } = require('../models');
+const { findRecordsForAggregation } = require('../domains/finance/financeService');
 const { getRate } = require('./externalService');
 
 // 将指定金额换算为基准币种（默认 USD），无汇率时返回 null
@@ -13,7 +14,7 @@ async function convertTo(amount, currency, baseCurrency = 'USD') {
 // 财务汇总（按币种分组，再换算为基准币种）：应收/应付/已收/未收
 // where：数据隔离范围约束（由调用方传入 scopedWhere 结果；不传则统计全部）
 async function financeSummaryByCurrency(baseCurrency = 'USD', where = {}) {
-  const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'currency', 'amount', 'paidAmount'] });
+  const rows = await findRecordsForAggregation(where, { attributes: ['direction', 'currency', 'amount', 'paidAmount'] });
   const byCurrency = new Map();
   for (const r of rows) {
     const key = r.currency || baseCurrency;
@@ -46,10 +47,10 @@ async function financeSummaryByCurrency(baseCurrency = 'USD', where = {}) {
 
 // 客户应收未收余额（按币种）
 async function customerReceivableBalance(customerId) {
-  const rows = await FinanceRecord.findAll({
-    where: { direction: 'receivable' },
-    include: [{ model: Order, as: 'order', attributes: ['id', 'customerId'], where: { customerId } }],
-  });
+  const rows = await findRecordsForAggregation(
+    { direction: 'receivable' },
+    { include: [{ model: Order, as: 'order', attributes: ['id', 'customerId'], where: { customerId } }] }
+  );
   const byCurrency = new Map();
   for (const r of rows) {
     const key = r.currency || 'CNY';

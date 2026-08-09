@@ -3,37 +3,50 @@
 // 架构依赖方向铁律（契约文件）
 // 依据：docs/架构解耦重构方案-高内聚低耦合.md §4.3 依赖方向规则
 //
-// 启用方式（尚未安装 eslint）：
-//   cd backend && npm i -D eslint@^8
-//   然后执行：npx eslint src/  （可接入 CI / package.json scripts.lint）
-//
 // 说明：
-// - no-restricted-imports 不支持按"import 来源文件"过滤（如仅限 services/**），
-//   此处用路径模式粗拦 + code review 红线兜底；精确拦截（import/no-restricted-paths）
-//   待引入 eslint-plugin-import 后启用（F1 阶段）。
-// - 本文件为配置即契约：即使 eslint 未安装，评审与二开也以此规则为准。
+// - 用 import/no-restricted-paths 按「目录」精确拦截跨层/跨域依赖，弥补 no-restricted-imports
+//   只能按字面 import 路径匹配的不足（模型经 index 聚合导出时字面路径不含模型名，旧规则空转）。
+// - 覆盖面：依赖方向（向下）、跨域写收口（FinanceRecord/AuditLog）、报表/打印等聚合读门面。
+// - 本文件为配置即契约：即使 eslint 未接入 CI，评审与二开也以此规则为准。
 
 module.exports = {
   root: true,
   env: { node: true, es2022: true },
-  parserOptions: { ecmaVersion: 2022, sourceType: 'script' },
+  parserOptions: { ecmaVersion: 2022, sourceType: 'commonjs' },
+  plugins: ['import'],
+  settings: {
+    'import/resolver': {
+      node: { extensions: ['.js'] },
+    },
+  },
   rules: {
     'no-restricted-imports': ['error', {
       patterns: [
         // 铁律 1：禁止依赖控制器层（依赖只能向下）。services/domain/core 不得 import controllers
         { group: ['**/controllers/*'], message: '架构铁律 §4.3：禁止依赖控制器层（依赖只能向下）。控制器逻辑应下沉到 domains/*/xxxService 或 xxxDomain。' },
-        // 铁律 2（E6）：跨域写收口——除 financeService 与模型层外，任何模块禁止直接 import FinanceRecord 模型
-        { group: ['**/models/FinanceRecord'], message: '架构铁律 §4.4#2：非 finance 域不得直接写 FinanceRecord，请走 domains/finance/financeService.createRecord 或事件。' },
-        // 铁律 3（E6）：审计写收口——AuditLog.create 只允许出现在 core/auditService.js
-        { group: ['**/models/AuditLog'], message: '架构铁律 §4.4#3：AuditLog 只能经 core/auditService.record() 写入，禁止直接 import AuditLog 模型。' },
+      ],
+    }],
+    // 按目录精确收敛架构依赖方向（zone.target 为受审计的「导入方」位置，zone.from 为被禁止 Import 的位置）
+    // 语义：target 目录下的文件不得 import from 目录下的路径。
+    'import/no-restricted-paths': ['error', {
+      zones: [
+        // 铁律 2（E6）：跨域写收口——任何模块不得「直接 import FinanceRecord 模型文件」，
+        // 必须经 aggregates 索引（require('../models')）或 domains/finance/financeService。
+        // 路由/控制器/模块注册表/测试为契约例外（见 overrides）。
+        { target: './src', from: './src/models/FinanceRecord.js' },
+        // 铁律 3（E6）：审计写收口——任何模块不得「直接 import AuditLog 模型文件」，
+        // 必须经 core/auditService.record() 写入。
+        { target: './src', from: './src/models/AuditLog.js' },
       ],
     }],
   },
   overrides: [
-    // 允许的例外层：routes 挂载控制器、controllers 自身、测试、插件路由
-    { files: ['src/routes/**'], rules: { 'no-restricted-imports': 'off' } },
-    { files: ['src/controllers/**'], rules: { 'no-restricted-imports': 'off' } },
-    { files: ['src/modules/**'], rules: { 'no-restricted-imports': 'off' } },
-    { files: ['tests/**', '**/*.test.js'], rules: { 'no-restricted-imports': 'off' } },
+    // 允许的例外层：routes 挂载控制器、controllers 自身、模块注册表、测试、插件路由
+    { files: ['src/routes/**'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
+    { files: ['src/controllers/**'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
+    { files: ['src/modules/**'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
+    { files: ['tests/**', '**/*.test.js'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
+    // 模型层自身聚合导出模型，允许直接引用模型文件（含 index.js 聚合）
+    { files: ['src/models/**'], rules: { 'import/no-restricted-paths': 'off' } },
   ],
 };
