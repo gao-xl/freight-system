@@ -41,7 +41,9 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-freight}
       POSTGRES_USER: ${DB_USER:-freight}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-freight}
+      # 安全加固：不再提供弱默认密码。DB_PASSWORD 未设置/为空时 docker compose 直接报错拒绝启动，
+      # 强制在 .env 中配置高强度数据库密码（fail-closed，避免弱口令数据库裸奔）。
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请先在 .env 中设置高强度 DB_PASSWORD 后再启动}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
       # 只绑本机回环，不暴露到公网；需要外部工具连库时再改

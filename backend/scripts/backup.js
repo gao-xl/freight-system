@@ -124,6 +124,22 @@ function findEnvFile() {
   return candidates.find((c) => fs.existsSync(c.abs)) || null;
 }
 
+// 敏感环境变量键：任何含这些片的键都被视为密钥，备份时值一律脱敏为 ***
+const SENSITIVE_ENV_KEY = /(PASSWORD|PASS|SECRET|TOKEN|WEBHOOK|API[_-]?KEY|_KEY|^KEY$|HOOK)/i;
+
+// 读取 .env 并生成脱敏副本：敏感键的值替换为 ***（注释/空行/普通键原样保留）。
+// 备份包里只收录脱敏配置，满足"恢复后能看清部署结构"，又不把明文密钥带出机器。
+function sanitizeEnvFile(abs) {
+  const raw = fs.readFileSync(abs, 'utf8');
+  const lines = raw.split(/\r?\n/);
+  const out = lines.map((line) => {
+    const m = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m) return line;
+    return SENSITIVE_ENV_KEY.test(m[1]) ? `${m[1]}=***` : line;
+  });
+  return Buffer.from(out.join('\n'), 'utf8');
+}
+
 // ---------------------------------------------------------------- PostgreSQL 转储
 
 // 从环境变量读取数据库连接（与 src/config 保持一致，脚本独立可用）
@@ -249,8 +265,15 @@ async function createBackup(options = {}) {
     const envFile = findEnvFile();
     if (envFile) {
       const st = fs.statSync(envFile.abs);
-      entries.push({ name: envFile.name, type: 'file', size: st.size, mode: 0o600, mtime: st.mtimeMs, source: envFile.abs });
-      if (envFile.name.endsWith('.example')) warnings.push('未找到 .env，备份中收录的是 .env.example');
+      if (envFile.name.endsWith('.example')) {
+        // .env.example 不含真实密钥，原样收录（含部署结构参考）
+        entries.push({ name: envFile.name, type: 'file', size: st.size, mode: 0o600, mtime: st.mtimeMs, source: envFile.abs });
+      } else {
+        // 真实 .env：含明文密钥，脱敏后以内存内容收录，绝不把 JWT_SECRET/DB_PASSWORD 等带进备份包
+        const sanitized = sanitizeEnvFile(envFile.abs);
+        entries.push({ name: envFile.name, type: 'file', size: sanitized.length, mode: 0o600, mtime: st.mtimeMs, content: sanitized });
+        warnings.push('已脱敏收录 .env（敏感键值替换为 ***，不携带明文密钥进入备份包）');
+      }
     } else {
       warnings.push('未找到任何环境配置文件');
     }
@@ -383,4 +406,6 @@ module.exports = {
   pgDumpAvailable,
   buildPgDumpArgs,
   runPgDump,
+  sanitizeEnvFile,
+  SENSITIVE_ENV_KEY,
 };
