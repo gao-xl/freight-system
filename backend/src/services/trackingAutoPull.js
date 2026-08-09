@@ -13,6 +13,7 @@ const config = require('../config');
 const { Order, ShipmentTrack, IntegrationConfig } = require('../models');
 const { IntegrationClient } = require('../integrations');
 const { upsertAlert, runAllRules } = require('./alertService');
+const { trackJobResult } = require('./jobFailureAlert');
 const { logger } = require('../utils/logger');
 
 // 任务配置：适配器编码 → { cron 表达式, 配置开关 key }
@@ -210,9 +211,13 @@ async function runTrackingAutoPull() {
     if (result.created > 0) {
       runAllRules().catch((e) => logger.error('[TRACK-PULL] 规则重扫失败', { message: e.message }));
     }
+    // 成功执行：清零失败计数
+    await trackJobResult('tracking:auto-pull', null);
   } catch (e) {
     logger.error('[TRACK-PULL] 拉取任务异常', { message: e.message });
     result.errors.push(`global:${e.message}`);
+    // 失败告警：连续失败达到阈值时推送（成功时清零）
+    await trackJobResult('tracking:auto-pull', e);
   }
   logger.info(`[TRACK-PULL] 完成：订单 ${result.orders}，新增节点 ${result.created}，跳过 ${result.skipped}，耗时 ${Date.now() - t0}ms`);
   return result;
