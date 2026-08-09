@@ -1,0 +1,11 @@
+# ===========================================================================
+# 换行符统一（多平台兼容）
+#   Windows 检出若把 shell 脚本转成 CRLF，容器内 /bin/sh 会报
+#   "bad interpreter: /bin/sh^M"，这里强制所有 shell 脚本保持 LF。
+#   Docker 部署在 Windows（Docker Desktop + WSL2）下同样适用。
+# ===========================================================================
+* text=auto
+
+# 容器内会直接执行的 shell 脚本必须 LF
+*.sh    text eol=lf
+docker-entrypoint.sh text eol=lf

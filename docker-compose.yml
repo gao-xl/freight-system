@@ -16,15 +16,28 @@
 #   docker compose down                       停服（数据在 pg 数据卷里，不会丢）
 #
 # 数据库：系统仅支持 PostgreSQL，pg 为必启基础服务，backend 依赖其健康后启动。
+#
+# 多架构 / 多平台（x86 / ARM / Linux / Windows）:
+#   - 本文件不写死 platform：本地 docker compose up 会自动按当前宿主机架构
+#     拉取/构建对应镜像（Docker Desktop 在 Windows 上走 WSL2 跑 Linux 容器）。
+#   - 需要同时产出 amd64 + arm64 镜像并分发时，用仓库根目录的跨架构构建：
+#       ./build.sh --push           (Linux/macOS)
+#       .\build.ps1 -Push           (Windows)
+#     其底层是 docker buildx bake（docker-bake.hcl），构建出的多架构镜像
+#     push 到仓库后，任意 x86/ARM 主机 docker compose 都能自动选中正确架构。
+#   - 极端情况想在单平台强制指定架构，可取消下方对应服务的 platform 注释。
 
 name: freight-system
 
 services:
   # PostgreSQL 基础服务（必启）
+  # postgres:16-alpine 官方清单覆盖 amd64/arm64/arm/v7 等，无需指定架构
   pg:
     image: postgres:16-alpine
     container_name: freight-pg
     restart: unless-stopped
+    # 强制运行架构示例（取消注释并按需改）：
+    # platform: linux/amd64
     environment:
       POSTGRES_DB: ${DB_NAME:-freight}
       POSTGRES_USER: ${DB_USER:-freight}
@@ -47,6 +60,8 @@ services:
     image: freight-system-backend:latest
     container_name: freight-backend
     restart: unless-stopped
+    # 强制运行架构示例（取消注释并按需改）：
+    # platform: linux/arm64
 
     depends_on:
       # 等 PostgreSQL 健康检查通过再起，避免后端连不上库反复重试
@@ -95,6 +110,8 @@ services:
     image: freight-system-frontend:latest
     container_name: freight-frontend
     restart: unless-stopped
+    # 强制运行架构示例（取消注释并按需改）：
+    # platform: linux/arm64
     environment:
       TZ: ${TZ:-Asia/Shanghai}
     ports:
