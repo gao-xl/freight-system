@@ -1,8 +1,10 @@
 // 打印模板渲染引擎
 // 模板 JSON + 业务数据JSON → 解析字段 → 渲染 HTML → 生成 PDF/返回
+const { Op } = require('sequelize');
 const { PrintTemplate } = require('../models');
 const { logger } = require('../utils/logger');
 const { defaultContent } = require('../data/printFields');
+const { htmlToPdf } = require('./pdfRenderer');
 
 // 按点路径从数据对象取值，如 order.customer.name
 function getByPath(obj, path) {
@@ -79,7 +81,7 @@ function renderHTML(tpl, blocks, header, footer) {
   const body = blocks.map(blockToHtml).join('');
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"/>
 <style>
-  body{font-family:-apple-system,'Microsoft YaHei',sans-serif;color:#222;margin:24px;}
+  body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',-apple-system,sans-serif;color:#222;margin:24px;}
   .blk-header{margin-bottom:16px;}
   .blk-logo{margin-bottom:12px;}
   .blk-fields{margin-bottom:12px;}
@@ -92,6 +94,12 @@ function renderHTML(tpl, blocks, header, footer) {
   .blk-sign .sign-row{display:flex;gap:24px;margin:24px 0;}
   .blk-footer{color:#888;font-size:12px;margin-top:24px;border-top:1px solid #eee;padding-top:8px;}
   .page-header,.page-footer{font-size:12px;color:#888;}
+  /* 打印分页：表格跨页时表头重复、行不折断（D1） */
+  @media print {
+    .blk-table thead{display:table-header-group;}
+    .blk-table tr{page-break-inside:avoid;}
+    .blk-header,.blk-fields,.blk-sign{page-break-after:avoid;}
+  }
 </style></head><body>
 ${header ? `<div class="page-header">${header}</div>` : ''}
 ${body}
@@ -99,11 +107,12 @@ ${footer ? `<div class="page-footer">${footer}</div>` : ''}
 </body></html>`;
 }
 
-// 组装业务数据（按 docType 从库加载）
-async function loadBizData(docType, bizId) {
-  const { Order, Booking, Customer, Quotation, QuotationItem, CustomsDeclaration, FinanceRecord, Supplier } = require('../models');
+// 组装业务数据（按 docType 从库加载；opts 支持 D4 对账单客户+周期聚合：{ customerId, from, to }）
+async function loadBizData(docType, bizId, opts = {}) {
+  const { Order, Booking, Customer, Quotation, QuotationItem, CustomsDeclaration, FinanceRecord, Supplier, Invoice } = require('../models');
   const biz = {};
-  if (['bl', 'order', 'invoice', 'packing_list', 'customs', 'statement', 'settlement'].includes(docType)) {
+  // D3：debit_note 加入订单取数（DN 基于订单 + 费用明细）
+  if (['bl', 'order', 'packing_list', 'customs', 'statement', 'settlement', 'debit_note'].includes(docType)) {
     const order = await Order.findByPk(bizId, {
       include: [
         { model: Customer, as: 'customer' },
@@ -117,7 +126,18 @@ async function loadBizData(docType, bizId) {
       delete o.Bookings;
     }
   }
-  if (['invoice', 'quotation'].includes(docType)) {
+  // D3 修正：invoice 按 Invoice 模型取数（此前误走 quotation 分支，打不出发票号/税额）
+  if (docType === 'invoice') {
+    const inv = await Invoice.findByPk(bizId, {
+      include: [
+        { model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] },
+        { model: Supplier, as: 'supplier', attributes: ['id', 'code', 'name'] },
+        { model: Order, as: 'order' },
+      ],
+    });
+    if (inv) biz.invoice = inv.toJSON();
+  }
+  if (docType === 'quotation') {
     const q = await Quotation.findByPk(bizId, {
       include: [
         { model: Customer, as: 'customer' },
@@ -133,15 +153,66 @@ async function loadBizData(docType, bizId) {
     const c = await CustomsDeclaration.findByPk(bizId);
     if (c) biz.customs = c.toJSON();
   }
-  if (docType === 'statement' || docType === 'settlement') {
-    const fin = await FinanceRecord.findAll({ where: { orderId: bizId } });
-    biz.finance = (fin || []).map((f) => f.toJSON());
+  if (docType === 'statement' || docType === 'settlement' || docType === 'debit_note') {
+    if (docType === 'statement' && opts.customerId && opts.from) {
+      // D4 对账单：按客户 + 期间聚合多票（期初/本期/已收已付/未结余额 + 账单号）
+      const orders = await Order.findAll({ where: { customerId: opts.customerId }, attributes: ['id'] });
+      const orderIds = orders.map((o) => o.id);
+      const from = new Date(opts.from);
+      const to = opts.to ? new Date(`${opts.to}T23:59:59.999`) : new Date();
+      const fin = orderIds.length
+        ? await FinanceRecord.findAll({ where: { orderId: { [Op.in]: orderIds } } })
+        : [];
+      const period = fin.filter((f) => { const d = new Date(f.createdAt); return d >= from && d <= to; });
+      let openingReceivable = 0, openingPayable = 0; // 期初未结（本期前发生且未收/未付）
+      let periodReceivable = 0, periodPayable = 0;   // 本期发生
+      let received = 0, paid = 0;                    // 本期实收实付（paidAt 落在期间）
+      let receivableBalance = 0, payableBalance = 0; // 截至期末未结余额
+      for (const f of fin) {
+        const d = new Date(f.createdAt);
+        const amt = Number(f.amount), paidAmt = Number(f.paidAmount);
+        const payDate = f.paidAt ? new Date(f.paidAt) : null;
+        const inPayRange = payDate && payDate >= from && payDate <= to;
+        const isRecv = f.direction === 'receivable';
+        if (d <= to) {
+          if (d < from) {
+            if (isRecv) openingReceivable += amt - paidAmt; else openingPayable += amt - paidAmt;
+          } else {
+            if (isRecv) periodReceivable += amt; else periodPayable += amt;
+          }
+        }
+        if (isRecv) receivableBalance += (d <= to ? amt - paidAmt : 0);
+        else payableBalance += (d <= to ? amt - paidAmt : 0);
+        if (inPayRange) { if (isRecv) received += paidAmt; else paid += paidAmt; }
+      }
+      biz.finance = period.map((f) => f.toJSON());
+      biz.statementSummary = {
+        statementNo: `ST${Date.now()}`,
+        periodFrom: opts.from,
+        periodTo: opts.to || new Date().toISOString().slice(0, 10),
+        openingReceivable,
+        openingPayable,
+        periodReceivable,
+        periodPayable,
+        received,
+        paid,
+        receivableBalance,
+        payableBalance,
+        orderCount: orderIds.length,
+      };
+    } else {
+      const fin = await FinanceRecord.findAll({ where: { orderId: bizId } });
+      biz.finance = (fin || []).map((f) => f.toJSON());
+    }
   }
   return biz;
 }
 
-// 生成 PDF（使用 pdfkit，简单单据；复杂单据可换 puppeteer）
-function toPdf(html, pageSize) {
+// 生成 PDF（D1 修复：优先 puppeteer-core 无头浏览器渲染，保留完整版式与中文；
+// 无可用浏览器环境时回退 pdfkit 纯文本——仅保证"能出 PDF"，版式降级）
+async function toPdf(html, pageSize) {
+  const buf = await htmlToPdf(html, pageSize);
+  if (buf) return buf;
   const PDFDocument = require('pdfkit');
   const doc = new PDFDocument({ size: pageSize || 'A4', margin: 40 });
   const chunks = [];
@@ -160,8 +231,8 @@ function toPdf(html, pageSize) {
   return done;
 }
 
-// 主渲染入口
-async function render(templateId, docType, bizId) {
+// 主渲染入口（opts：D4 对账单聚合参数 { customerId, from, to }）
+async function render(templateId, docType, bizId, opts = {}) {
   let tpl = null;
   if (templateId) {
     tpl = await PrintTemplate.findByPk(templateId);
@@ -173,7 +244,7 @@ async function render(templateId, docType, bizId) {
     // 无模板时用默认内容
     tpl = { docType, content: JSON.stringify(defaultContent(docType)), pageSize: 'A4', header: '', footer: '' };
   }
-  const bizData = await loadBizData(tpl.docType || docType, bizId);
+  const bizData = await loadBizData(tpl.docType || docType, bizId, opts);
   const content = typeof tpl.content === 'string' ? JSON.parse(tpl.content) : tpl.content;
   const blocks = resolveFields(content.blocks || [], bizData);
   // 表格数据注入

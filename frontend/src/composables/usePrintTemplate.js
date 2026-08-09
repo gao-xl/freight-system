@@ -3,10 +3,11 @@
 // content = { blocks: [{type, ...}] }，字段 key 使用 `数据源.字段` 点路径（如 order.customer.name）
 import { printTemplateAPI } from '@/api';
 
-// 单据类型（与后端 PrintTemplate.docType ENUM 一致）
+// 单据类型（与后端 PrintTemplate.docType ENUM 一致；debit_note 为 D3 新增）
 export const PRINT_DOC_TYPES = [
   { value: 'bl', label: '提单' },
   { value: 'invoice', label: '发票' },
+  { value: 'debit_note', label: '费用通知单(DN)' },
   { value: 'packing_list', label: '装箱单' },
   { value: 'quotation', label: '报价单' },
   { value: 'customs', label: '报关单' },
@@ -64,11 +65,27 @@ const SAMPLE = {
     { name: '海运运费', direction: '应收', amount: 68000, status: '已收' },
     { name: '单证费', direction: '应收', amount: 500, status: '未收' },
   ],
+  // D3/D4 预览示例：发票自身字段 + 对账单汇总
+  invoice: {
+    invoiceNo: 'INV-2025-0001', invoiceType: '应收', amount: 68500,
+    taxRate: '6', taxAmount: 4110, totalAmount: 72610, currency: 'CNY',
+    status: '已开票', issuedAt: '2025-07-20',
+    customer: { name: '青岛海联贸易有限公司' },
+  },
+  statementSummary: {
+    statementNo: 'ST202508001', periodFrom: '2025-08-01', periodTo: '2025-08-31',
+    openingReceivable: 5000, periodReceivable: 68500, received: 68000,
+    receivableBalance: 5500, payableBalance: 3200, orderCount: 6,
+  },
 };
 
 // 预览用全量示例数据（返回超集，模板只解析自己用到的字段）
 export function sampleData() {
-  return { order: SAMPLE.order, booking: SAMPLE.booking, quotation: SAMPLE.quotation, customs: SAMPLE.customs, finance: SAMPLE.finance };
+  return {
+    order: SAMPLE.order, booking: SAMPLE.booking, quotation: SAMPLE.quotation,
+    customs: SAMPLE.customs, finance: SAMPLE.finance,
+    invoice: SAMPLE.invoice, statementSummary: SAMPLE.statementSummary,
+  };
 }
 
 // 解析 content 为 { blocks: [] }

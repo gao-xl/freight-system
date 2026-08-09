@@ -6,7 +6,7 @@ const PrintTemplate = sequelize.define('PrintTemplate', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   name: { type: DataTypes.STRING(100), allowNull: false },       // 模板名
   docType: {
-    type: DataTypes.ENUM('bl', 'invoice', 'packing_list', 'quotation', 'customs', 'statement', 'order', 'settlement'),
+    type: DataTypes.ENUM('bl', 'invoice', 'packing_list', 'quotation', 'customs', 'statement', 'order', 'settlement', 'debit_note'),
     allowNull: false,
   },
   content: { type: DataTypes.TEXT },       // 模板 JSON（区块定义）

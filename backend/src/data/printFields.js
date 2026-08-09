@@ -21,16 +21,36 @@ const FIELDS = {
     { key: 'booking.containerQty', label: '箱量', group: '订舱', type: 'number' },
     { key: 'booking.bookingNo', label: '订舱号', group: '订舱', type: 'string' },
     { key: 'booking.supplier.name', label: '承运人', group: '订舱', type: 'string' },
+    // D2 提单三要素
+    { key: 'order.shipperName', label: '发货人', group: '提单', type: 'string' },
+    { key: 'order.shipperAddress', label: '发货人地址', group: '提单', type: 'string' },
+    { key: 'order.consigneeName', label: '收货人', group: '提单', type: 'string' },
+    { key: 'order.consigneeAddress', label: '收货人地址', group: '提单', type: 'string' },
+    { key: 'order.notifyParty', label: '通知方', group: '提单', type: 'string' },
+    { key: 'order.marksNumbers', label: '唛头', group: '提单', type: 'string' },
+    { key: 'order.placeOfReceipt', label: '收货地', group: '提单', type: 'string' },
+    { key: 'order.placeOfDelivery', label: '交货地', group: '提单', type: 'string' },
+    { key: 'order.freightCharges', label: '运费条款', group: '提单', type: 'string' },
+    { key: 'order.originalBLCount', label: '正本份数', group: '提单', type: 'number' },
+    { key: 'order.telexRelease', label: '电放', group: '提单', type: 'string' },
   ],
-  invoice: [ // 发票
+  invoice: [ // 发票（D3 修正：取数改按 Invoice 模型，字段库补齐 Invoice 自身字段）
+    { key: 'invoice.invoiceNo', label: '发票号', group: '发票', type: 'string' },
+    { key: 'invoice.invoiceType', label: '发票类型', group: '发票', type: 'string' },
+    { key: 'invoice.amount', label: '开票金额(不含税)', group: '发票', type: 'money' },
+    { key: 'invoice.taxRate', label: '税率(%)', group: '发票', type: 'string' },
+    { key: 'invoice.taxAmount', label: '税额', group: '发票', type: 'money' },
+    { key: 'invoice.totalAmount', label: '含税总额', group: '发票', type: 'money' },
+    { key: 'invoice.currency', label: '币种', group: '发票', type: 'string' },
+    { key: 'invoice.status', label: '开票状态', group: '发票', type: 'string' },
+    { key: 'invoice.issuedAt', label: '开票日期', group: '发票', type: 'date' },
+    { key: 'invoice.customer.name', label: '开票客户', group: '发票', type: 'string' },
+    { key: 'invoice.supplier.name', label: '开票供应商', group: '发票', type: 'string' },
     { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
     { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
     { key: 'order.cargoDesc', label: '货描', group: '订单', type: 'string' },
-    { key: 'order.totalAmount', label: '总金额', group: '订单', type: 'money' },
-    { key: 'order.currency', label: '币种', group: '订单', type: 'string' },
-    { key: 'quotation.quoteNo', label: '报价单号', group: '报价', type: 'string' },
-    { key: 'quotation.totalAmount', label: '报价金额', group: '报价', type: 'money' },
-    { key: 'quotation.items', label: '费用明细', group: '报价', type: 'table' },
+    { key: 'order.totalAmount', label: '订单金额', group: '订单', type: 'money' },
+    { key: 'order.currency', label: '订单币种', group: '订单', type: 'string' },
   ],
   packing_list: [ // 装箱单
     { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
@@ -53,6 +73,24 @@ const FIELDS = {
     { key: 'quotation.totalAmount', label: '总额', group: '报价', type: 'money' },
     { key: 'quotation.validUntil', label: '有效期', group: '报价', type: 'date' },
   ],
+  debit_note: [ // 费用通知单（D3 新增：数据源 = order + booking + finance 明细）
+    { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
+    { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'order.originPort', label: '起运港', group: '订单', type: 'string' },
+    { key: 'order.destPort', label: '目的港', group: '订单', type: 'string' },
+    { key: 'order.cargoDesc', label: '货描', group: '订单', type: 'string' },
+    { key: 'order.packageCount', label: '件数', group: '订单', type: 'number' },
+    { key: 'order.cargoWeight', label: '重量(t)', group: '订单', type: 'number' },
+    { key: 'order.cargoVolume', label: '体积(m³)', group: '订单', type: 'number' },
+    { key: 'order.containerNo', label: '箱号', group: '订单', type: 'string' },
+    { key: 'order.totalAmount', label: '订单总额', group: '订单', type: 'money' },
+    { key: 'order.currency', label: '币种', group: '订单', type: 'string' },
+    { key: 'booking.vesselName', label: '船名', group: '订舱', type: 'string' },
+    { key: 'booking.voyageNo', label: '航次', group: '订舱', type: 'string' },
+    { key: 'booking.bookingNo', label: '订舱号', group: '订舱', type: 'string' },
+    { key: 'booking.supplier.name', label: '承运人', group: '订舱', type: 'string' },
+    { key: 'finance', label: '费用明细', group: '财务', type: 'table' },
+  ],
   customs: [ // 报关单
     { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
     { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
@@ -63,9 +101,18 @@ const FIELDS = {
     { key: 'customs.status', label: '报关状态', group: '报关', type: 'string' },
     { key: 'customs.submitDate', label: '申报日期', group: '报关', type: 'date' },
   ],
-  statement: [ // 对账单
+  statement: [ // 对账单（D4：支持按客户+周期聚合，summary 来自 statementSummary）
     { key: 'order.orderNo', label: '订单号', group: '订单', type: 'string' },
     { key: 'order.customer.name', label: '客户名称', group: '客户', type: 'string' },
+    { key: 'statementSummary.statementNo', label: '账单号', group: '汇总', type: 'string' },
+    { key: 'statementSummary.periodFrom', label: '对账期间(起)', group: '汇总', type: 'string' },
+    { key: 'statementSummary.periodTo', label: '对账期间(止)', group: '汇总', type: 'string' },
+    { key: 'statementSummary.openingReceivable', label: '期初应收(未收)', group: '汇总', type: 'money' },
+    { key: 'statementSummary.periodReceivable', label: '本期应收', group: '汇总', type: 'money' },
+    { key: 'statementSummary.received', label: '本期已收', group: '汇总', type: 'money' },
+    { key: 'statementSummary.receivableBalance', label: '未收余额', group: '汇总', type: 'money' },
+    { key: 'statementSummary.payableBalance', label: '未付余额', group: '汇总', type: 'money' },
+    { key: 'statementSummary.orderCount', label: '订单数', group: '汇总', type: 'number' },
     { key: 'finance', label: '财务明细', group: '财务', type: 'table' },
   ],
   order: [ // 订单操作单
@@ -99,7 +146,7 @@ function defaultContent(docType) {
       { type: 'footer', text: '本单由货代管理系统生成' },
     ],
   };
-  const fields = (FIELDS[docType] || []).slice(0, 8).map((f) => ({ key: f.key, label: f.label, show: true }));
+  const fields = (FIELDS[docType] || []).slice(0, 8).map((f) => ({ key: f.key, label: f.label, show: true, type: f.type }));
   base.blocks[1].fields = fields;
   return base;
 }

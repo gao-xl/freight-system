@@ -50,6 +50,9 @@
             <b>{{ detail.customer.name }}</b>
             <span class="muted">· {{ detail.month }} 对账单明细（{{ detail.records.length }} 条）</span>
           </div>
+          <el-button v-permission="'print:read'" type="primary" plain @click="printStatement">
+            <el-icon><Printer /></el-icon>打印对账单
+          </el-button>
         </div>
         <el-table :data="detail.records" v-loading="loading" stripe size="small">
           <el-table-column label="日期" width="160">
@@ -149,6 +152,17 @@ async function search() {
   } finally {
     loading.value = false;
   }
+}
+
+// D4 打印月结对账单（按客户+期间聚合，后端 /print/statement 支持 customerId/from/to）
+function printStatement() {
+  const m = query.month || currentMonth();
+  const [y, mo] = m.split('-').map(Number);
+  const lastDay = new Date(y, mo, 0).getDate();
+  const from = `${m}-01`;
+  const to = `${m}-${String(lastDay).padStart(2, '0')}`;
+  const url = `/api/print/statement/0?customerId=${query.customerId}&from=${from}&to=${to}`;
+  window.open(url, '_blank');
 }
 
 function openDetail(row) {

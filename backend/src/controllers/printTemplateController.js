@@ -68,11 +68,16 @@ const preview = asyncHandler(async (req, res) => {
 });
 
 // GET /print/:docType/:bizId?template=&format=pdf|html  渲染并下载
+// D4：statement 支持 customerId + from/to 参数（按客户+期间聚合多票月结对账单）
 const print = asyncHandler(async (req, res) => {
   const { docType, bizId } = req.params;
   const templateId = req.query.template || null;
   const format = req.query.format || 'pdf';
-  const { html, pdf, tpl } = await printService.render(templateId, docType, bizId);
+  const opts = {};
+  if (req.query.customerId) opts.customerId = req.query.customerId;
+  if (req.query.from) opts.from = req.query.from;
+  if (req.query.to) opts.to = req.query.to;
+  const { html, pdf, tpl } = await printService.render(templateId, docType, bizId, opts);
   if (format === 'html') {
     res.type('html').send(html);
     return;

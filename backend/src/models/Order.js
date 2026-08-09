@@ -19,6 +19,18 @@ const Order = sequelize.define('Order', {
   cargoVolume: { type: DataTypes.DECIMAL(12, 2) },
   packageCount: { type: DataTypes.INTEGER },
   containerNo: { type: DataTypes.STRING(50) },
+  // D2 提单三要素（提单模板数据源）
+  shipperName: { type: DataTypes.STRING(200) },       // 发货人
+  shipperAddress: { type: DataTypes.STRING(500) },    // 发货人地址
+  consigneeName: { type: DataTypes.STRING(200) },     // 收货人
+  consigneeAddress: { type: DataTypes.STRING(500) },  // 收货人地址
+  notifyParty: { type: DataTypes.STRING(500) },       // 通知方
+  marksNumbers: { type: DataTypes.TEXT },             // 唛头
+  placeOfReceipt: { type: DataTypes.STRING(100) },    // 收货地
+  placeOfDelivery: { type: DataTypes.STRING(100) },   // 交货地
+  freightCharges: { type: DataTypes.STRING(255) },    // 运费条款（如 FREIGHT PREPAID）
+  originalBLCount: { type: DataTypes.INTEGER, defaultValue: 3 }, // 正本份数
+  telexRelease: { type: DataTypes.BOOLEAN, defaultValue: false }, // 电放
   etd: { type: DataTypes.DATEONLY }, // 预计发运
   eta: { type: DataTypes.DATEONLY }, // 预计到港
   terminal: { type: DataTypes.STRING(20) },       // 青岛港码头 QQCT/QQCTU/QQCTN
