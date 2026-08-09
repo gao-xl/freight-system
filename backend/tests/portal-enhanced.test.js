@@ -84,12 +84,21 @@ describe('客户门户增强（E3）', () => {
     const u = await fetch(`${BASE}/api/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authH(adminToken) },
-      body: JSON.stringify({ username: 'portal_cust', name: '门户客户', password: '123456', role: 'customer', customerId: 1 }),
+      body: JSON.stringify({ username: 'portal_cust', name: '门户客户', password: 'Portal123456', role: 'customer', customerId: 1 }),
     });
     const uj = await u.json();
     assert.equal(u.status, 200, `创建客户账号应成功：${JSON.stringify(uj)}`);
     assert.equal(uj.code, 0);
-    customerToken = await login('portal_cust');
+    // 门户客户密码为强密码，单独登录（登录助手默认密码仅适用于 seed 内置账号）
+    const custLogin = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'portal_cust', password: 'Portal123456' }),
+    });
+    const clj = await custLogin.json();
+    assert.equal(custLogin.status, 200, `门户客户登录应成功：${JSON.stringify(clj)}`);
+    assert.equal(clj.code, 0);
+    customerToken = clj.data.token;
 
     // 4. 给订单 1（客户 1）建一张应收发票，供下载账单测试
     const inv = await fetch(`${BASE}/api/finance/invoices`, {

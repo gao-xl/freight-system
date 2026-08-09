@@ -54,6 +54,27 @@ const auth = (t) => ({ Authorization: `Bearer ${t}` });
 
 describe('Onboarding 引导系统', () => {
   before(async () => {
+    // 空库前置：onboarding 的「空态判定」依赖业务表为空。测试共享同一个 freight_test 库，
+    // 其他测试（notification 等）会残留业务数据，故先重置 schema 保证空态在任何顺序下成立。
+    await new Promise((resolve, reject) => {
+      const reset = spawn(process.execPath, ['-e', `
+        const { Client } = require('pg');
+        (async () => {
+          const c = new Client({
+            host: process.env.DB_HOST, port: process.env.DB_PORT,
+            user: process.env.DB_USER, password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME,
+          });
+          await c.connect();
+          await c.query('DROP SCHEMA public CASCADE');
+          await c.query('CREATE SCHEMA public');
+          await c.query('GRANT ALL ON SCHEMA public TO public');
+          await c.end();
+        })().catch((e) => { console.error(e); process.exit(1); });
+      `], { cwd: BACKEND, env });
+      reset.on('close', (code) => (code === 0 ? resolve() : reject(new Error('重置空库失败 code=' + code))));
+    });
+
     // 空库启动：server.js 自动迁移 + sync + bootstrap（RBAC/基准汇率）→ setup-admin 创建管理员
     serverProc = spawn(process.execPath, ['src/server.js'], { cwd: BACKEND, env });
     serverProc.stderr.on('data', (d) => { serverStderr += d.toString(); });
@@ -62,7 +83,7 @@ describe('Onboarding 引导系统', () => {
     const r = await fetch(`${BASE}/api/system/setup-admin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: '123456', name: '测试管理员' }),
+      body: JSON.stringify({ username: 'admin', password: 'Admin123456', name: '测试管理员' }),
     });
     const raw = await r.text();
     assert.equal(r.status, 200, `setup-admin 应成功：${raw}`);

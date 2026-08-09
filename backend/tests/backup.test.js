@@ -56,11 +56,31 @@ async function api(method, p, body, t, headers) {
 
 describe('备份/恢复端点（AC-22）', () => {
   before(async () => {
+    // 空库前置：setup-admin 仅在没有用户时可用。测试共享 freight_test 库，先重置 schema 保证幂等。
+    await new Promise((resolve, reject) => {
+      const reset = spawn(process.execPath, ['-e', `
+        const { Client } = require('pg');
+        (async () => {
+          const c = new Client({
+            host: process.env.DB_HOST, port: process.env.DB_PORT,
+            user: process.env.DB_USER, password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME,
+          });
+          await c.connect();
+          await c.query('DROP SCHEMA public CASCADE');
+          await c.query('CREATE SCHEMA public');
+          await c.query('GRANT ALL ON SCHEMA public TO public');
+          await c.end();
+        })().catch((e) => { console.error(e); process.exit(1); });
+      `], { cwd: BACKEND, env });
+      reset.on('close', (code) => (code === 0 ? resolve() : reject(new Error('重置空库失败 code=' + code))));
+    });
+
     serverProc = spawn(process.execPath, ['src/server.js'], { cwd: BACKEND, env });
     serverProc.stderr.on('data', (d) => { serverStderr += d.toString(); });
     await waitForHealth();
 
-    const setup = await api('POST', '/api/system/setup-admin', JSON.stringify({ username: 'admin', password: '123456', name: '备份测试' }), null, { 'Content-Type': 'application/json' });
+    const setup = await api('POST', '/api/system/setup-admin', JSON.stringify({ username: 'admin', password: 'Backup123456', name: '备份测试' }), null, { 'Content-Type': 'application/json' });
     assert.equal(setup.status, 200, `setup-admin 应成功：${JSON.stringify(setup.body)}`);
     token = setup.body.data.token;
     assert.ok(token && token.length > 20, 'token 应为非空长串');
