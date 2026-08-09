@@ -121,7 +121,8 @@ describe('通知推送（E2）', () => {
     });
 
     const channels = records.map((r) => r.channel).sort();
-    assert.deepEqual(channels, ['email', 'wechat_webhook', 'webhook'], '三个已配置渠道均应推送');
+    // 字典序：'webhook' < 'wechat_webhook'（第 3 字符 b < c），不可手写期望顺序
+    assert.deepEqual(channels, ['email', 'webhook', 'wechat_webhook'], '三个已配置渠道均应推送');
     for (const r of records) {
       assert.equal(r.status, 'sent', `${r.channel} 应推送成功`);
       assert.ok(r.payload && r.payload.includes('ETA 临近'), `${r.channel} 应记录内容摘要`);
@@ -162,14 +163,24 @@ describe('通知推送（E2）', () => {
         payload: { title: '失败场景', message: '模拟上游不可达' },
       });
       assert.equal(r.length, 3, '三渠道都应尝试');
+      // email 走 nodemailer mock 恒成功（sent）；webhook/企微走 fetch mock（ok:false → failed）
+      const emailRec = r.find((rec) => rec.channel === 'email');
+      assert.equal(emailRec.status, 'sent', 'email mock 恒成功');
       for (const rec of r) {
-        assert.equal(rec.status, 'failed', '失败应记录 failed');
-        assert.ok(rec.error && rec.error.length > 0, '应记录失败原因');
+        if (rec.channel === 'email') continue;
+        assert.equal(rec.status, 'failed', `${rec.channel} 失败应记录 failed`);
+        assert.ok(rec.error && rec.error.length > 0, `${rec.channel} 应记录失败原因`);
       }
       // 落库可查
       const rows = await NotificationRecord.findAll({ where: { targetId: 999 } });
       assert.equal(rows.length, 3, '失败记录应落库');
-      for (const row of rows) assert.equal(row.status, 'failed');
+      for (const row of rows) {
+        if (row.channel === 'email') {
+          assert.equal(row.status, 'sent', 'email mock 恒成功');
+        } else {
+          assert.equal(row.status, 'failed', `${row.channel} 失败应落库为 failed`);
+        }
+      }
     } finally {
       fetchBehavior = { ok: true, errcode: 0 };
     }
