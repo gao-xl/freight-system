@@ -2,13 +2,14 @@
 'use strict';
 
 /**
- * 一键恢复：从 backup.js 产出的 .tar.gz 还原数据库、上传文件与配置。
+ * 一键恢复：从 backup.js 产出的 .tar.gz 还原 PostgreSQL 业务库、上传文件与配置。
  *
  * 恢复是不可逆操作，所以流程固定为四步：
  *   1. 预检   校验归档能完整解开、manifest 合法，先解到临时目录，不碰现网数据
  *   2. 快照   把当前 data/uploads/配置 打成 freight-prerestore-*.tar.gz，恢复错了还能退回来
  *   3. 替换   清空并写入 data/ 与 uploads/
- *   4. 报告   打印恢复内容与回退命令
+ *   4. 数据库 若归档含 pg_dump（pg/dump.pg_dump），用 pg_restore 还原业务库（默认执行，--no-pg 跳过）
+ *   5. 报告   打印恢复内容与回退命令
  *
  * 用法:
  *   node scripts/restore.js --list                     列出可用备份
@@ -16,14 +17,16 @@
  *   node scripts/restore.js <backup.tar.gz> --with-env 同时覆盖当前 .env
  *   node scripts/restore.js <backup.tar.gz> --yes      跳过交互确认（供自动化调用）
  *   node scripts/restore.js <backup.tar.gz> --dry-run  只预检和打印，不落盘
+ *   node scripts/restore.js <backup.tar.gz> --no-pg    跳过数据库还原（仅还原文件/配置）
  */
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+const { spawn, spawnSync } = require('child_process');
 const { extractGzip } = require('./lib/tar');
-const { createBackup, humanSize, parseArgs } = require('./backup');
+const { createBackup, humanSize, parseArgs, dbConfigFromEnv } = require('./backup');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 const SNAPSHOT_PREFIX = 'freight-prerestore';
@@ -36,6 +39,10 @@ const HELP = `一键恢复 - 从备份 .tar.gz 还原数据库、上传文件与
   node scripts/restore.js <backup.tar.gz> --with-env 同时覆盖当前 .env
   node scripts/restore.js <backup.tar.gz> --yes      跳过交互确认（供自动化调用）
   node scripts/restore.js <backup.tar.gz> --dry-run  只预检和打印，不落盘
+  node scripts/restore.js <backup.tar.gz> --no-pg    跳过数据库还原（仅还原文件/配置）
+
+数据库：归档含 pg/dump.pg_dump 时默认用 pg_restore 还原（--clean --if-exists，需 PostgreSQL
+客户端，Docker 镜像已内置）。数据库还原会清空并重建当前库，交互确认后再执行。
 
 恢复前会自动把当前状态打成 ${SNAPSHOT_PREFIX}-*.tar.gz 快照，可用它原路退回。
 恢复完成后需重启后端服务使新数据生效。`;
@@ -89,6 +96,57 @@ function countTree(dir) {
     else n += 1;
   }
   return n;
+}
+
+// ---------------------------------------------------------------- PostgreSQL 还原
+
+function pgRestoreAvailable() {
+  try {
+    const r = spawnSync('pg_restore', ['--version'], { stdio: 'ignore' });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+// 构造 pg_restore 参数：--clean --if-exists 先清掉现有对象再重建，完成全量还原
+function buildPgRestoreArgs(cfg, dumpFile) {
+  const args = [
+    '--host', cfg.host,
+    '--port', String(cfg.port),
+    '--username', cfg.user,
+    '--dbname', cfg.name,
+    '--no-owner',
+    '--no-privileges',
+    '--no-password',
+    '--clean',
+    '--if-exists',
+    dumpFile,
+  ];
+  if (cfg.ssl) args.push('--sslmode=require');
+  return args;
+}
+
+// 执行 pg_restore，成功返回 { dbName, host }，失败 reject
+function runPgRestore(dumpFile) {
+  return new Promise((resolve, reject) => {
+    const cfg = dbConfigFromEnv();
+    const args = buildPgRestoreArgs(cfg, dumpFile);
+    const child = spawn('pg_restore', args, {
+      env: { ...process.env, PGPASSWORD: cfg.password || '' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let errOut = '';
+    child.stderr.on('data', (d) => { errOut += d.toString(); });
+    child.on('error', (e) => reject(new Error(`无法启动 pg_restore：${e.message}`)));
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`pg_restore 失败(exit=${code})：${String(errOut).trim().slice(0, 500) || '未知错误'}`));
+        return;
+      }
+      resolve({ dbName: cfg.name, host: cfg.host });
+    });
+  });
 }
 
 async function main() {
@@ -157,7 +215,9 @@ async function main() {
     console.log(`  备份时间  ${new Date(manifest.createdAt).toLocaleString('zh-CN')}`);
     console.log(`  数据方言  ${manifest.dbDialect}`);
     console.log(`  条目      ${entries.filter((e) => e.type === 'file').length} 个文件 / ${humanSize(manifest.totalBytes || 0)}`);
-    console.log(`  数据库    ${countTree(stageData)} 个文件`);
+    const hasDbDump = fs.existsSync(path.join(stage, 'pg', 'dump.pg_dump'));
+    console.log(`  业务库    ${hasDbDump ? `含 pg_dump（${humanSize((manifest.dbBackup && manifest.dbBackup.size) || fs.statSync(path.join(stage, 'pg', 'dump.pg_dump')).size)}）` : '无数据库转储，仅还原文件/配置'}`);
+    console.log(`  本地 data ${countTree(stageData)} 个文件`);
     console.log(`  上传文件  ${countTree(stageUploads)} 个文件`);
     console.log(`  配置      ${fs.existsSync(stageEnv) ? '含 .env' : '不含 .env'}`);
 
@@ -169,28 +229,44 @@ async function main() {
     // --- 2. 确认 ---
     const targetData = path.join(BACKEND_ROOT, 'data');
     const targetUploads = path.join(BACKEND_ROOT, 'uploads');
+    const stagePgDump = path.join(stage, 'pg', 'dump.pg_dump');
+    const doDbRestore = hasDbDump && !args.flags.has('no-pg');
+    const dbCfg = dbConfigFromEnv();
+    if (doDbRestore && !pgRestoreAvailable()) {
+      throw new Error('归档含数据库转储，但未找到 pg_restore（PostgreSQL 客户端）。Docker 镜像已内置；本机请安装 postgresql-client，或用 --no-pg 只还原文件/配置');
+    }
     console.log('');
     console.log(`将覆盖 ${targetData}（当前 ${countTree(targetData)} 个文件）`);
     console.log(`将覆盖 ${targetUploads}（当前 ${countTree(targetUploads)} 个文件）`);
+    if (doDbRestore) {
+      console.log(`将用 pg_restore 覆盖业务库 ${dbCfg.name}@${dbCfg.host}:${dbCfg.port}（--clean 清空重建，务必确认目标正确）`);
+    }
 
     if (!args.flags.has('yes')) {
       if (!process.stdin.isTTY) {
         console.error('[错误] 非交互环境请显式加 --yes 确认。');
         process.exit(1);
       }
-      const answer = await ask('确认恢复？此操作会覆盖现有数据，输入 yes 继续: ');
+      const scope = doDbRestore ? '此操作会覆盖本地文件并清空重建业务库' : '此操作会覆盖现有数据';
+      const answer = await ask(`确认恢复？${scope}，输入 yes 继续: `);
       if (answer.toLowerCase() !== 'yes') {
         console.log('已取消，未做任何修改。');
         return;
       }
     }
 
-    // --- 3. 快照当前状态 ---
+    // --- 3. 快照当前状态（含当前业务库，便于回退；业务库 dump 失败则退化为仅文件快照，不阻塞恢复）---
     console.log('[快照] 备份当前状态，便于恢复失败时退回 ...');
-    const snapshot = await createBackup({ outDir: dir, keep: 5, prefix: SNAPSHOT_PREFIX });
+    let snapshot;
+    try {
+      snapshot = await createBackup({ outDir: dir, keep: 5, prefix: SNAPSHOT_PREFIX, noPg: !doDbRestore });
+    } catch (e) {
+      console.log(`  [提示] 快照含业务库失败（${e.message}），改用仅文件快照（数据库回退不保证）`);
+      snapshot = await createBackup({ outDir: dir, keep: 5, prefix: SNAPSHOT_PREFIX, noPg: true });
+    }
     console.log(`  已生成 ${snapshot.file}（${humanSize(snapshot.size)}）`);
 
-    // --- 4. 替换 ---
+    // --- 4. 替换文件 ---
     if (fs.existsSync(stageData)) {
       emptyDir(targetData);
       copyTree(stageData, targetData);
@@ -209,14 +285,20 @@ async function main() {
       }
     }
 
+    // --- 5. 还原业务库 ---
+    let dbRestored = 'skip';
+    if (doDbRestore) {
+      console.log('[数据库] pg_restore 还原业务库 ...');
+      await runPgRestore(stagePgDump);
+      dbRestored = `${dbCfg.name}@${dbCfg.host}`;
+    }
+
     console.log('');
     console.log('[恢复完成]');
-    console.log(`  数据库    ${countTree(targetData)} 个文件 -> ${targetData}`);
+    console.log(`  本地 data ${countTree(targetData)} 个文件 -> ${targetData}`);
     console.log(`  上传文件  ${countTree(targetUploads)} 个文件 -> ${targetUploads}`);
     console.log(`  配置      ${envRestored === 'skip' ? '未覆盖当前 .env（如需覆盖加 --with-env）' : `已写入 ${envRestored}`}`);
-    if (manifest.dbDialect) {
-      console.log(`  注意      备份来自 ${manifest.dbDialect}，业务数据不在本地文件里，需另行用数据库工具恢复`);
-    }
+    console.log(`  业务库    ${dbRestored === 'skip' ? (hasDbDump ? '已按 --no-pg 跳过数据库还原' : '归档不含数据库转储，未操作') : `已还原 ${dbRestored}`}`);
     console.log('');
     console.log('请重启后端服务使数据生效: npm start（或 docker compose restart backend）');
     console.log(`恢复错了要退回: node scripts/restore.js "${snapshot.file}" --with-env`);
@@ -233,4 +315,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { listBackups };
+module.exports = { listBackups, pgRestoreAvailable, buildPgRestoreArgs, runPgRestore };

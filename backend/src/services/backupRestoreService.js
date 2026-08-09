@@ -7,7 +7,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createBackup } = require('../../scripts/backup');
+const { createBackup, pgDumpAvailable } = require('../../scripts/backup');
 const { extractGzip } = require('../../scripts/lib/tar');
 const { logger } = require('../utils/logger');
 
@@ -60,8 +60,9 @@ function overlayFromStage(stageDir, targetDir, liveDb) {
 }
 
 // 执行一次备份，返回给前端展示的元数据
+// Web 端为便捷入口：pg_dump 不可用时退化为仅文件备份（不抛错），完整含业务库备份请用 CLI
 async function createApiBackup() {
-  const r = await createBackup({ outDir: backupDir(), keep: 7 });
+  const r = await createBackup({ outDir: backupDir(), keep: 7, noPg: !pgDumpAvailable() });
   return {
     filename: path.basename(r.file),
     size: r.size,
@@ -117,8 +118,8 @@ async function restoreApiArchive(archivePath, opts = {}) {
       return { ok: true, dryRun: true, message: '预检通过（dry-run，未修改任何数据）', details };
     }
 
-    // --- 2. 快照当前状态（恢复失败可退回） ---
-    const snapshot = await createBackup({ outDir: backupDir(), keep: 5, prefix: SNAPSHOT_PREFIX });
+    // --- 2. 快照当前状态（恢复失败可退回；pg_dump 不可用时退化为仅文件快照）---
+    const snapshot = await createBackup({ outDir: backupDir(), keep: 5, prefix: SNAPSHOT_PREFIX, noPg: !pgDumpAvailable() });
 
     // --- 3. 替换 data/ 与 uploads/（非破坏性覆盖，不覆盖 .env 防止密钥被替换） ---
     // 只把归档中出现的文件覆盖到目标，归档之外的文件一律保留——避免运行中的 data/ 里其它库文件被误删

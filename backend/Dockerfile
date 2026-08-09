@@ -43,10 +43,11 @@ ENV NODE_ENV=production \
 # tini    以 PID 1 接管信号，docker stop 能真正优雅停服而不是被 SIGKILL
 # su-exec 入口脚本修好挂载卷属主后降权到 node 用户运行
 # tzdata  预警时间、审计日志要按本地时区记录，Alpine 默认只有 UTC
+# postgresql-client：提供 pg_dump/pg_restore，供备份/恢复脚本转储业务库
 # chromium + font-noto-cjk：D1 PDF 渲染（puppeteer-core 无头浏览器），
 #   Alpine 默认无中文字体，不装 CJK 字体 PDF 中文会缺字形；
 #   chromium 在容器内需 --no-sandbox（pdfRenderer args 已带）
-RUN apk add --no-cache tini su-exec tzdata chromium font-noto-cjk \
+RUN apk add --no-cache tini su-exec tzdata postgresql-client chromium font-noto-cjk \
     && ln -sf /usr/bin/chromium-browser /usr/local/bin/chromium
 
 COPY --from=deps /app/node_modules ./node_modules
