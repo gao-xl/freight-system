@@ -24,7 +24,7 @@
           {{ result.ready ? '自动查询' : '待人工确认' }}
         </el-tag>
       </div>
-      <el-descriptions :column="3" border>
+      <el-descriptions :column="cols" border>
         <el-descriptions-item label="箱号">{{ result.containerNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="提单号">{{ result.billNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="场站">{{ result.yardName || '-' }}</el-descriptions-item>
@@ -93,6 +93,9 @@
 import { ref, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { yardAPI } from '@/api';
+import { useResponsiveColumns } from '@/composables/useResponsive';
+
+const cols = useResponsiveColumns(3, 1);
 
 const query = ref({ containerNo: '', billNo: '', yardCode: '' });
 const yards = ref([]);
@@ -155,4 +158,9 @@ onMounted(() => { loadYards(); loadRecords(); });
 .result-title { font-weight: 600; font-size: 15px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; }
 .records-card { margin-top: 8px; }
+
+/* 窄屏：卡片头部换行，避免筛选框溢出 */
+@media (max-width: 768px) {
+  .card-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
 </style>

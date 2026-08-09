@@ -110,6 +110,11 @@ onMounted(load);
 </script>
 
 <style scoped>
-.toolbar { margin-bottom: 14px; display: flex; align-items: center; gap: 12px; }
-.tip { flex: 1; }
+.toolbar { margin-bottom: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tip { flex: 1; min-width: 200px; }
+
+@media (max-width: 768px) {
+  .toolbar .el-select { width: 100% !important; flex: 1 1 100%; }
+  .toolbar .tip { flex: 1 1 100%; }
+}
 </style>

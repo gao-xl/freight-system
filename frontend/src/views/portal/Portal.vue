@@ -63,8 +63,8 @@
       </el-tabs>
     </div>
 
-    <el-dialog v-model="detailVisible" title="订单详情" width="760px" v-if="orderDetail">
-      <el-descriptions :column="3" border size="small">
+    <el-dialog v-model="detailVisible" title="订单详情" width="min(760px, 92vw)" v-if="orderDetail">
+      <el-descriptions :column="detailCols" border size="small">
         <el-descriptions-item label="订单号">{{ orderDetail.order.orderNo }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ dictText(ORDER_TYPE, orderDetail.order.type) }}</el-descriptions-item>
         <el-descriptions-item label="运输方式">{{ dictText(MODE, orderDetail.order.mode) }}</el-descriptions-item>
@@ -92,7 +92,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue';
+import { reactive, ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { portalAPI } from '@/api';
 import { ORDER_STATUS, ORDER_TYPE, MODE, TRACK_STAGE, FIN_CATEGORY, FIN_STATUS, dictText, statusOf, money } from '@/utils/dicts';
@@ -109,6 +109,12 @@ const detailVisible = ref(false);
 const orderDetail = ref(null);
 const query = reactive({ page: 1, pageSize: 8, keyword: '', status: '' });
 const billQuery = reactive({ page: 1, pageSize: 8 });
+
+const detailCols = computed(() => (window.innerWidth < 768 ? 1 : 3));
+function onResize() { /* 响应式依赖于 computed 惰性求值，无需主动刷新 */ }
+function initResize() {
+  window.addEventListener('resize', onResize);
+}
 
 const formatTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '-');
 
@@ -140,26 +146,31 @@ function logout() {
   router.push('/login');
 }
 
-onMounted(() => { loadOverview(); loadOrders(1); loadBills(1); });
+onMounted(() => { initResize(); loadOverview(); loadOrders(1); loadBills(1); });
+onUnmounted(() => window.removeEventListener('resize', onResize));
 </script>
 
 <style scoped>
 .portal { min-height: 100vh; background: #f5f7fa; }
-.portal-header { background: #1f2d3d; color: #fff; padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; }
-.brand { display: flex; align-items: center; gap: 12px; }
+.portal-header { background: #1f2d3d; color: #fff; padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .logo { width: 30px; height: 30px; }
 .brand-name { font-size: 18px; font-weight: 700; }
 .brand-sub { font-size: 13px; opacity: .8; }
 .head-right a { color: #fff; }
 .portal-body { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
 .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-.stat-card { background: #fff; border: 1px solid var(--primary); border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.stat-card { background: #fff; border: 1px solid var(--brand); border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); min-width: 0; }
 .label { color: var(--text-sub); font-size: 13px; }
-.value { font-size: 26px; font-weight: 700; margin-top: 6px; }
+.value { font-size: 26px; font-weight: 700; margin-top: 6px; overflow-wrap: anywhere; }
 .portal-tabs { background: #fff; border-radius: 10px; padding: 16px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-.page-card { }
-.table-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.left { display: flex; gap: 10px; align-items: center; }
+.table-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.left { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
-@media (max-width: 768px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) {
+  .portal-header { padding: 14px 16px; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .portal-tabs { padding: 12px 12px 16px; }
+  .left > .el-input, .left > .el-select { width: 100% !important; flex: 1 1 100%; }
+}
 </style>

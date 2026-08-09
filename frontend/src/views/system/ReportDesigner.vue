@@ -326,6 +326,10 @@ onMounted(async () => {
 .pager { margin-top: 12px; justify-content: flex-end; }
 .muted { color: var(--el-text-color-secondary); }
 .measures, .filters { width: 100%; }
-.measure-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.measure-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
 .result-mode { margin-bottom: 12px; }
+
+@media (max-width: 768px) {
+  .measure-row > * { flex: 1 1 100%; width: 100% !important; }
+}
 </style>

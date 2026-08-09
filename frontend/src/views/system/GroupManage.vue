@@ -135,7 +135,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.toolbar { margin-bottom: 14px; display: flex; align-items: center; gap: 12px; }
-.tip { flex: 1; }
-.member-add { display: flex; gap: 10px; margin-bottom: 12px; }
+.toolbar { margin-bottom: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tip { flex: 1; min-width: 200px; }
+.member-add { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 </style>

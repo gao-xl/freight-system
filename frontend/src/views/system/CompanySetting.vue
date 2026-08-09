@@ -308,4 +308,9 @@ onMounted(async () => {
 
 <style scoped>
 .section-head { margin-bottom: 14px; }
+
+/* 窄屏：收窄表单标签宽度，避免输入框被挤压 */
+@media (max-width: 768px) {
+  .el-form { --el-form-label-width: 88px !important; }
+}
 </style>

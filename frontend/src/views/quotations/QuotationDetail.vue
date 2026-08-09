@@ -18,7 +18,7 @@
           <el-tag v-if="detail" :type="statusOf(QUOTATION_STATUS, detail.status).type" size="small">{{ statusOf(QUOTATION_STATUS, detail.status).text }}</el-tag>
         </div>
       </template>
-      <el-descriptions v-if="detail" :column="3" border>
+      <el-descriptions v-if="detail" :column="cols" border>
         <el-descriptions-item label="客户">{{ detail.customer?.name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="贸易类型">{{ ORDER_TYPE[detail.type] }}</el-descriptions-item>
         <el-descriptions-item label="运输方式">{{ MODE[detail.mode] }} · {{ SERVICE_TYPE[detail.serviceType] }}</el-descriptions-item>
@@ -58,6 +58,9 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useQuotationStore } from '@/stores/quotation';
 import { MODE, SERVICE_TYPE, ORDER_TYPE, QUOTATION_STATUS, QUO_ITEM_CATEGORY, QUO_ITEM_DIRECTION, statusOf, money } from '@/utils/dicts';
+import { useResponsiveColumns } from '@/composables/useResponsive';
+
+const cols = useResponsiveColumns(3, 1);
 
 const route = useRoute();
 const router = useRouter();
@@ -92,8 +95,13 @@ onMounted(load);
 </script>
 
 <style scoped>
-.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
 .head h3 { margin: 0; }
+.head > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .sec { margin-bottom: 16px; }
 .sec-head { display: flex; align-items: center; gap: 10px; }
+
+@media (max-width: 768px) {
+  .head { flex-direction: column; align-items: flex-start; }
+}
 </style>

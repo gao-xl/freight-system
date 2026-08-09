@@ -109,18 +109,19 @@ onMounted(load);
 <style scoped>
 .intro-alert { margin-bottom: 16px; }
 .intro-alert code { background: #eef2f7; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-.int-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; border-top: 3px solid transparent; transition: all .2s; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 16px; }
+.int-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; border-top: 3px solid transparent; transition: all .2s; overflow: hidden; min-width: 0; }
 .int-card.disabled { opacity: .65; }
 .int-card.disabled { border-top-color: #cbd5e1; }
 .int-card { border-top-color: var(--brand); }
 .int-head { display: flex; align-items: center; gap: 12px; }
-.int-ico { width: 44px; height: 44px; border-radius: 10px; color: #fff; font-size: 20px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.int-ico { width: 44px; height: 44px; border-radius: 10px; color: #fff; font-size: 20px; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+.int-info { min-width: 0; flex: 1; }
 .int-name { font-size: 16px; font-weight: 600; }
 .int-code { font-size: 12px; color: var(--text-sub); font-family: monospace; }
 .int-body { margin: 16px 0; }
-.int-body .row { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; color: var(--text-sub); }
-.int-body .mono { font-family: monospace; color: var(--text-main); }
-.int-remark { background: #f7f9fc; border-radius: 6px; padding: 8px 10px; font-size: 12px; color: var(--text-sub); }
-.int-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.int-body .row { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; color: var(--text-sub); gap: 10px; flex-wrap: wrap; }
+.int-body .mono { font-family: monospace; color: var(--text-main); overflow-wrap: anywhere; word-break: break-all; text-align: right; min-width: 0; }
+.int-remark { background: #f7f9fc; border-radius: 6px; padding: 8px 10px; font-size: 12px; color: var(--text-sub); overflow-wrap: anywhere; }
+.int-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 </style>

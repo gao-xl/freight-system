@@ -343,3 +343,77 @@ a { color: var(--brand); text-decoration: none; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .stat-card .value { font-size: 22px; }
 }
+
+/* ============================================================
+   全局窄屏适配（弹窗 / 表格 / 工具条 / 分页 / 表单）
+   统一兜底，避免逐页重复编写
+   ============================================================ */
+@media (max-width: 768px) {
+  /* 弹窗窄屏兜底：所有硬编码 width 的对话框收缩进视口
+     （Element Plus 用 inline style 设置宽度，需 !important 覆盖） */
+  .el-dialog {
+    width: 92vw !important;
+    max-width: 92vw !important;
+    --el-dialog-margin-top: 4vh;
+  }
+  .el-dialog__body { padding: 12px 16px; }
+  .el-message-box { width: 92vw !important; max-width: 92vw !important; }
+
+  /* 表格：窄屏下由 .el-table 自身承担横向滚动容器，列保持自然宽度；
+     切勿用 max-width/overflow:hidden 压缩，否则列会被裁剪只剩 fixed 列。 */
+  .el-table {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .el-table__header-wrapper,
+  .el-table__body-wrapper {
+    min-width: max-content;
+  }
+  /* 表格内部自绘滚动条在窄屏改用原生横向滚动，隐藏以免错位 */
+  .el-table .el-scrollbar__bar { display: none; }
+
+  /* 工具条：内容换行，避免横向溢出 */
+  .page-toolbar, .table-topbar, .topbar, .toolbar,
+  .page-toolbar .left, .page-toolbar .right-btn,
+  .table-topbar .left, .table-topbar .right-btn,
+  .topbar .left, .topbar .right-btn,
+  .toolbar .left, .toolbar .right-btn {
+    flex-wrap: wrap !important;
+  }
+  .page-toolbar .left, .page-toolbar .right-btn,
+  .table-topbar .left, .table-topbar .right-btn,
+  .topbar .left, .topbar .right-btn,
+  .toolbar .left, .toolbar .right-btn { width: 100%; }
+  /* 工具条内固定宽度输入框/下拉收缩为弹性均分 */
+  .page-toolbar .left > .el-input,
+  .page-toolbar .left > .el-select,
+  .table-topbar .left > .el-input,
+  .table-topbar .left > .el-select,
+  .topbar .left > .el-input,
+  .topbar .left > .el-select,
+  .toolbar .left > .el-input,
+  .toolbar .left > .el-select,
+  .toolbar > .el-input,
+  .toolbar > .el-select {
+    width: auto !important;
+    flex: 1 1 45%;
+    min-width: 0;
+  }
+
+  /* 表单栅格窄屏降为整行，避免挤压溢出 */
+  .el-form .el-row .el-col {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 0 0 100% !important;
+  }
+  .el-form-item { margin-right: 0; }
+
+  /* 分页窄屏收缩居中 */
+  .pager { justify-content: center; }
+  .el-pagination { flex-wrap: wrap; justify-content: center; row-gap: 8px; }
+  .el-pagination .el-pagination__sizes { display: none; }
+
+  /* 表格操作列：含按钮的单元格窄屏允许换行，避免超宽操作按钮被裁剪 */
+  .el-table .cell:has(.el-button) { white-space: normal; }
+}
