@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { User } = require('../models');
+const { User } = require('../services/dataAccess');
 const config = require('../config');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { getPermissions } = require('../services/permissionService');

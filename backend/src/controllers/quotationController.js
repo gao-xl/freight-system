@@ -1,4 +1,4 @@
-const { Quotation, QuotationItem, Customer, Supplier } = require('../models');
+const { Quotation, QuotationItem, Customer, Supplier } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { scopedWhere, scopedFindOne, attachOwnership } = require('../middleware/dataScope');

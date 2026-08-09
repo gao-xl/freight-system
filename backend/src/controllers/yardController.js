@@ -1,7 +1,7 @@
 // 场站信息查询控制器
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { crudController } = require('../controllers/baseController');
-const { YardMeta } = require('../models');
+const { YardMeta } = require('../services/dataAccess');
 const svc = require('../services/yardService');
 
 // 场站名录 CRUD（复用通用 CRUD）

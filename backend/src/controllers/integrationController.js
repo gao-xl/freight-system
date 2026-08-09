@@ -1,4 +1,4 @@
-const { IntegrationConfig } = require('../models');
+const { IntegrationConfig } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { IntegrationClient, adapters } = require('../integrations');
 const { ok, fail, asyncHandler } = require('../utils/response');

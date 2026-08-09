@@ -1,4 +1,4 @@
-const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack, FinanceRecord, Document, User, Invoice, FreightRate } = require('../models');
+const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack, FinanceRecord, Document, User, Invoice, FreightRate } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { Op } = require('sequelize');
 const printService = require('../services/printService');

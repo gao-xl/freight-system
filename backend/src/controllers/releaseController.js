@@ -1,4 +1,4 @@
-const { Order, ReleaseRecord, FinanceRecord } = require('../models');
+const { Order, ReleaseRecord, FinanceRecord } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { withTransaction } = require('../services/transaction');
 

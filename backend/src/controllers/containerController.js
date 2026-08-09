@@ -1,4 +1,4 @@
-const { OrderContainer, Order } = require('../models');
+const { OrderContainer, Order } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const events = require('../services/eventBus');

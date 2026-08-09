@@ -1,4 +1,4 @@
-const { CompanyProfile, Department, CompanyAccount, InvoiceTitle, User } = require('../models');
+const { CompanyProfile, Department, CompanyAccount, InvoiceTitle, User } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
 

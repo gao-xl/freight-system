@@ -1,4 +1,4 @@
-const { Group, User, UserGroup } = require('../models');
+const { Group, User, UserGroup } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
 const { invalidate } = require('../services/permissionService');

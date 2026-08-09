@@ -1,4 +1,4 @@
-const { CustomField } = require('../models');
+const { CustomField } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { scopedFindOne } = require('../middleware/dataScope');
 

@@ -1,7 +1,7 @@
 // 全局搜索：跨客户/供应商/订单/报价，按关键字模糊检索业务数据
 // 权限：各模块按用户权限点分别过滤（无权限模块不出结果）；数据范围沿用 dataScope 隔离
 const { Op } = require('sequelize');
-const { Customer, Supplier, Order, Quotation } = require('../models');
+const { Customer, Supplier, Order, Quotation } = require('../services/dataAccess');
 const { ok, asyncHandler } = require('../utils/response');
 const { scopedWhere } = require('../middleware/dataScope');
 const { getPermissions } = require('../services/permissionService');

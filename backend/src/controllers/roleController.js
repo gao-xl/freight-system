@@ -1,4 +1,4 @@
-const { Role, Permission, UserRole, RolePermission } = require('../models');
+const { Role, Permission, UserRole, RolePermission } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { invalidate } = require('../services/permissionService');
 
@@ -59,7 +59,7 @@ const assignPermissions = asyncHandler(async (req, res) => {
 });
 
 // 轻量事务封装，避免循环依赖 models 的 sequelize 导出
-const { sequelize } = require('../models');
+const { sequelize } = require('../services/dataAccess');
 async function sequelizeTx(fn) {
   return sequelize.transaction(fn);
 }

@@ -1,4 +1,4 @@
-const { PaymentTransaction, FinanceRecord } = require('../models');
+const { PaymentTransaction, FinanceRecord } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { IntegrationClient } = require('../integrations');
 const { assertRecordEditable, assertOrderEditable } = require('../services/periodGuard');

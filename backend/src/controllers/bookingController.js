@@ -1,4 +1,4 @@
-const { Booking, Order, Supplier } = require('../models');
+const { Booking, Order, Supplier } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 
 const base = crudController({

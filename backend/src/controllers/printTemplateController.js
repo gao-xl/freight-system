@@ -2,7 +2,7 @@
 // 模板管理 + 字段库 + 预览 + PDF 渲染
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { crudController } = require('./baseController');
-const { PrintTemplate } = require('../models');
+const { PrintTemplate } = require('../services/dataAccess');
 const { FIELDS, defaultContent } = require('../data/printFields');
 const printService = require('../services/printService');
 

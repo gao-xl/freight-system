@@ -1,4 +1,4 @@
-const { ShipmentTrack, Order } = require('../models');
+const { ShipmentTrack, Order } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 
 const base = crudController({

@@ -1,4 +1,4 @@
-const { BusinessRule } = require('../models');
+const { BusinessRule } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { executors, FIELD_WHITELIST, runRule, validateBizType } = require('../services/ruleEngineService');
 const { Op } = require('sequelize');

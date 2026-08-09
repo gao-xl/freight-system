@@ -1,4 +1,4 @@
-const { FlowNode, OrderNode, Order } = require('../models');
+const { FlowNode, OrderNode, Order } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 
 // 进出口默认流程模板

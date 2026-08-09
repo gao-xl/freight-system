@@ -2,7 +2,7 @@
 // 职责：路由入口编排 —— 校验 biz -> 解析 xlsx -> 逐行校验 -> 事务写入 -> 汇总报告。
 // 具体业务规则（表头/示例/唯一性/日期校验）在 services/importBizService.js 中按类型配置。
 const { Op } = require('sequelize');
-const { User, Customer, sequelize } = require('../models');
+const { User, Customer, sequelize } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { requirePermission } = require('../middleware/auth');
 const { parseExcel } = require('../services/importService');

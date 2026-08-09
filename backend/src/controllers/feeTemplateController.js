@@ -1,5 +1,5 @@
 // N1 费用模板控制器：常用费用组合（多行费用一键套用）
-const { FeeTemplate } = require('../models');
+const { FeeTemplate } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { scopedWhere } = require('../middleware/dataScope');

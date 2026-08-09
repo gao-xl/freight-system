@@ -11,8 +11,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { User, Role } = require('../models');
-const UserRole = require('../models/UserRole');
+const { User, Role, UserRole } = require('../services/dataAccess');
 const config = require('../config');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { validatePassword } = require('../utils/passwordPolicy');

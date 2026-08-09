@@ -1,4 +1,4 @@
-const { Order, Customer, Supplier, Booking, CustomsDeclaration, FinanceRecord, User, Quotation } = require('../models');
+const { Order, Customer, Supplier, Booking, CustomsDeclaration, FinanceRecord, User, Quotation } = require('../services/dataAccess');
 const { ok, asyncHandler } = require('../utils/response');
 const { Op, fn, col } = require('sequelize');
 const { scopedWhere } = require('../middleware/dataScope');

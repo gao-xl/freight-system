@@ -1,4 +1,4 @@
-const { Order, Booking, CustomsDeclaration, FinanceRecord, Customer, AlertRecord, QingdaoNode } = require('../models');
+const { Order, Booking, CustomsDeclaration, FinanceRecord, Customer, AlertRecord, QingdaoNode } = require('../services/dataAccess');
 const { ok, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
 

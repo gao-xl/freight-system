@@ -1,4 +1,4 @@
-const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack } = require('../models');
+const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack } = require('../services/dataAccess');
 const { Op } = require('sequelize');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
@@ -191,7 +191,7 @@ const create = asyncHandler(async (req, res) => {
   const body = { ...req.body };
   delete body.id;
   // B2 自动归属：未指定则取用户默认组/本人
-  const me = await require('../models').User.findByPk(req.user.id);
+  const me = await require('../services/dataAccess').User.findByPk(req.user.id);
   if (!body.groupId) body.groupId = me?.groupId || null;
   if (!body.ownerId) body.ownerId = req.user.id;
   body.orderNo = body.orderNo || require('../utils/response').genCode('SO');
@@ -239,7 +239,7 @@ const detail = asyncHandler(async (req, res) => {
     CustomsDeclaration.findAll({ where: { orderId: order.id } }),
     ShipmentTrack.findAll({ where: { orderId: order.id }, order: [['eventTime', 'ASC']] }),
     finance.findRecordsByOrderId(order.id),
-    require('../models').Document.findAll({ where: { orderId: order.id } }),
+    require('../services/dataAccess').Document.findAll({ where: { orderId: order.id } }),
   ]);
   ok(res, { order, bookings, customs, tracks, finance: financeData, documents });
 });
@@ -253,7 +253,7 @@ const timeline = asyncHandler(async (req, res) => {
     CustomsDeclaration.findAll({ where: { orderId: order.id } }),
     ShipmentTrack.findAll({ where: { orderId: order.id }, order: [['eventTime', 'ASC']] }),
     finance.findRecordsByOrderId(order.id),
-    require('../models').ReleaseRecord.findAll({ where: { orderId: order.id } }),
+    require('../services/dataAccess').ReleaseRecord.findAll({ where: { orderId: order.id } }),
   ]);
 
   const nodes = [];

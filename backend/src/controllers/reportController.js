@@ -1,4 +1,4 @@
-const { ReportDefinition } = require('../models');
+const { ReportDefinition } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { runReport, FIELD_WHITELIST, AGGS } = require('../services/reportService');
 const { Op } = require('sequelize');

@@ -1,4 +1,4 @@
-const { Customer, Order, FinanceRecord, CustomerFollow, User, Invoice, Quotation } = require('../models');
+const { Customer, Order, FinanceRecord, CustomerFollow, User, Invoice, Quotation } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');

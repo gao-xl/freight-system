@@ -32,18 +32,23 @@ module.exports = {
       zones: [
         // 铁律 2（E6）：跨域写收口——任何模块不得「直接 import FinanceRecord 模型文件」，
         // 必须经 aggregates 索引（require('../models')）或 domains/finance/financeService。
-        // 路由/控制器/模块注册表/测试为契约例外（见 overrides）。
+        // 控制器/模块注册表/测试为契约例外（见 overrides）。
         { target: './src', from: './src/models/FinanceRecord.js' },
         // 铁律 3（E6）：审计写收口——任何模块不得「直接 import AuditLog 模型文件」，
         // 必须经 core/auditService.record() 写入。
         { target: './src', from: './src/models/AuditLog.js' },
+        // 铁律 4（E8）：全量收敛——controllers 层不得直接从 models 层取模型，
+        // 一律经 services/dataAccess 数据访问服务层（依赖方向 controllers → services → models）。
+        { target: './src/controllers', from: './src/models' },
       ],
     }],
   },
   overrides: [
-    // 允许的例外层：routes 挂载控制器、controllers 自身、模块注册表、测试、插件路由
+    // 允许的例外层：routes 挂载控制器、模块注册表、测试、插件路由
     { files: ['src/routes/**'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
-    { files: ['src/controllers/**'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
+    // controllers 层：不可从 models 层直取模型（import/no-restricted-paths 的 E8 铁律 4 生效），
+    // 但允许依赖同层 baseController、子层 services/domains 及 utils/middleware（放行 no-restricted-imports 的"禁依赖控制器层"）。
+    { files: ['src/controllers/**'], rules: { 'no-restricted-imports': 'off' } },
     { files: ['src/modules/**'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
     { files: ['tests/**', '**/*.test.js'], rules: { 'no-restricted-imports': 'off', 'import/no-restricted-paths': 'off' } },
     // 模型层自身聚合导出模型，允许直接引用模型文件（含 index.js 聚合）

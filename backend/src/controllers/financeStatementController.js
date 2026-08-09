@@ -3,7 +3,7 @@
 // - 传 customerId：返回该客户当月明细 { customer, month, receivable, payable, balance, records }
 // - 不传 customerId：按客户分组返回列表（每组含 customer/receivable/payable/balance）
 // 归属规则：优先取记录所属订单的 customerId；无订单的应收记录用 counterpartyId 兜底（往来单位即客户）
-const { FinanceRecord, Order, Customer } = require('../models');
+const { FinanceRecord, Order, Customer } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
 const { scopedWhere } = require('../middleware/dataScope');

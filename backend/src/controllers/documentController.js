@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const { Document, Order, Customer, Booking } = require('../models');
+const { Document, Order, Customer, Booking } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { scopedWhere, scopedFindOne } = require('../middleware/dataScope');
@@ -151,7 +151,7 @@ const generate = asyncHandler(async (req, res) => {
   let printHtml = null;
   try {
     const printService = require('../services/printService');
-    const { PrintTemplate } = require('../models');
+    const { PrintTemplate } = require('../services/dataAccess');
     const tpl = await PrintTemplate.findOne({ where: { docType, isDefault: true } });
     if (tpl) {
       const bizData = await printService.loadBizData(docType, order.id);

@@ -1,4 +1,4 @@
-const { CustomsDeclaration, Order, Supplier } = require('../models');
+const { CustomsDeclaration, Order, Supplier } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 
 const base = crudController({

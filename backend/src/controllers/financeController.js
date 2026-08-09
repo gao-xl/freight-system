@@ -1,10 +1,10 @@
-const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod, PaymentRecord } = require('../models');
+const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod, PaymentRecord } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');
 const { scopedWhere, scopedFindOne } = require('../middleware/dataScope');
 const { exportBuffer } = require('../services/exportService');
-const { sequelize } = require('../models');
+const { sequelize } = require('../services/dataAccess');
 const { financeSummaryByCurrency, checkCustomerCredit } = require('../services/currencyService');
 const finance = require('../domains/finance/financeService');
 const {
@@ -158,7 +158,7 @@ const createInvoice = asyncHandler(async (req, res) => {
     cid = order.customerId;
   }
   await assertOrderEditable(orderId);
-  const me = await require('../models').User.findByPk(req.user.id);
+  const me = await require('../services/dataAccess').User.findByPk(req.user.id);
   // D13：发票号唯一约束冲突时重试生成新号（最多 3 次）
   let inv = null;
   for (let attempt = 0; attempt < 3 && !inv; attempt++) {
@@ -211,7 +211,7 @@ const createInvoiceFromFees = asyncHandler(async (req, res) => {
     const cur = f.currency || 'USD';
     (byCurrency[cur] = byCurrency[cur] || []).push(f);
   }
-  const me = await require('../models').User.findByPk(req.user.id);
+  const me = await require('../services/dataAccess').User.findByPk(req.user.id);
   const prefix = invoiceType === 'receivable' ? 'AR' : 'AP';
   const created = [];
   const t = await sequelize.transaction();

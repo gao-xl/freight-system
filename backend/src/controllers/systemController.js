@@ -1,4 +1,4 @@
-const { User, Role, Permission, UserRole, AuditLog, CompanyProfile } = require('../models');
+const { User, Role, Permission, UserRole, AuditLog, CompanyProfile } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { validatePassword } = require('../utils/passwordPolicy');
 const { invalidate } = require('../services/permissionService');

@@ -1,4 +1,4 @@
-const { WorkflowConfig } = require('../models');
+const { WorkflowConfig } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { transition, STATUS_OPTIONS } = require('../services/workflowService');
 const { Op } = require('sequelize');

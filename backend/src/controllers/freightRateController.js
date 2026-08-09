@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { FreightRate } = require('../models');
+const { FreightRate } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { scopedWhere } = require('../middleware/dataScope');

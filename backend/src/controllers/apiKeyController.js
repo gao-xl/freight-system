@@ -1,7 +1,7 @@
 'use strict';
 
 // 接口密钥管理：参数校验 + 调 service + 组装响应，业务逻辑在 services/apiKeyService.js
-const { User, Role } = require('../models');
+const { User, Role } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const apiKeyService = require('../services/apiKeyService');
 

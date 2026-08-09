@@ -1,4 +1,4 @@
-const { Supplier, User } = require('../models');
+const { Supplier, User } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { parseExcel, buildTemplate, cleanStr } = require('../services/importService');
