@@ -18,14 +18,10 @@ backend/public/docs/
 # 数据库文件（含用户/客户/订单及密码哈希）
 data/*.db
 data/*.db-journal
-data/*.sqlite
-data/*.sqlite3
 **/data/*.txt
 **/data/*.json
 *.db
 *.db-journal
-*.sqlite
-*.sqlite3
 
 # 上传文件（含用户业务单证）
 uploads/

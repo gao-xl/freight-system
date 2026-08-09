@@ -2,7 +2,7 @@
 
 // 接口密钥表：面向脚本 / 定时任务 / 第三方系统的非交互式认证凭据
 // 字段与 src/models/ApiKey.js 一一对应，改模型必须同步改本迁移。
-// SQLite 与 PostgreSQL 均可执行：只用 createTable + addIndex，未使用方言专有语法。
+// PostgreSQL 执行：只用 createTable + addIndex，未使用方言专有语法。
 module.exports = {
   async up(queryInterface, Sequelize) {
     // 幂等：本地开发常先跑过 sequelize.sync() 建好表，重复建表会直接报错

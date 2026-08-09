@@ -11,14 +11,17 @@ const os = require('node:os');
 const BACKEND = path.resolve(__dirname, '..');
 const PORT = '3067';
 const BASE = `http://localhost:${PORT}`;
-const DB_STORAGE = `./data/_backup_test_${Date.now()}.db`;
 
 const env = {
   ...process.env,
   NODE_ENV: 'test',
   JWT_SECRET: 'backup-test-secret-' + Math.random().toString(36).slice(2),
-  DB_DIALECT: 'sqlite',
-  DB_STORAGE,
+  DB_DIALECT: 'postgres',
+  DB_HOST: process.env.TEST_DB_HOST || '127.0.0.1',
+  DB_PORT: process.env.TEST_DB_PORT || '5432',
+  DB_NAME: process.env.TEST_DB_NAME || 'freight_test',
+  DB_USER: process.env.TEST_DB_USER || 'freight',
+  DB_PASSWORD: process.env.TEST_DB_PASSWORD || '',
   PORT,
   AUTO_MIGRATE: 'true',
   PORT_SVC_URL: '', CUSTOMS_SVC_URL: '', FINANCE_SVC_URL: '',
@@ -118,7 +121,7 @@ describe('备份/恢复端点（AC-22）', () => {
     assert.equal(r.body.code, 0);
     assert.equal(r.body.data.ok, true);
     assert.equal(r.body.data.dryRun, false);
-    // 运行中 SQLite 库文件显式保留，并在响应中提示
+    // 数据库（PostgreSQL）不随文件归档覆盖，响应应提示数据库处理方式
     assert.match(r.body.data.message, /数据库|重启|CLI/, `恢复消息应提示数据库处理方式：${r.body.data.message}`);
     // 恢复后系统仍可服务
     const st = await api('GET', '/api/onboarding/status', null, token);

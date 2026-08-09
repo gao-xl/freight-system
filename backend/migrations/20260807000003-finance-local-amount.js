@@ -1,7 +1,7 @@
 'use strict';
 
 // P2.4 财务本币折算：为 FinanceRecords 追加 exchangeRate（本币折算汇率）与 localAmount（本币折算金额）
-// 只追加列不重建表；SQLite/PostgreSQL 兼容；幂等：describeTable 检查列已存在则跳过。
+// 只追加列不重建表；PostgreSQL 兼容；幂等：describeTable 检查列已存在则跳过。
 // 与 src/models/FinanceRecord.js 字段一一对应，改模型必须同步改本迁移。
 module.exports = {
   async up(queryInterface, Sequelize) {

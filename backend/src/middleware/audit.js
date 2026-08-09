@@ -1,7 +1,6 @@
 // 操作审计中间件：记录关键写操作（谁、何时、对什么资源做了什么）
 // 写操作落库到 AuditLog 表，供系统管理检索
-const { AuditLog } = require('../models');
-const { mask } = require('../utils/logger');
+const { record: auditRecord } = require('../core/auditService');
 
 // 从路径推断模块名
 function inferModule(path) {
@@ -23,7 +22,7 @@ function audit(req, res, next) {
       const segs = req.originalUrl.split('?')[0].split('/').filter((s) => /^\d+$/.test(s));
       const targetId = segs.length ? segs[segs.length - 1] : null;
       const action = method === 'POST' ? 'create' : method === 'PUT' || method === 'PATCH' ? 'update' : 'delete';
-      await AuditLog.create({
+      await auditRecord({
         userId: req.user?.id || null,
         username: actor,
         module,
@@ -33,7 +32,7 @@ function audit(req, res, next) {
         targetId,
         summary: `${action} ${module}${targetId ? ` #${targetId}` : ''}`,
         ip: req.ip,
-        userAgent: (req.get('user-agent') || '').slice(0, 255),
+        userAgent: req.get('user-agent'),
       });
     } catch (e) {
       // 审计失败不影响主流程

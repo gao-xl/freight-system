@@ -69,13 +69,13 @@
 - packages 物理拆分延后到 Phase 3（社区有真实二开需求时再做）。
 - 理由：Monorepo 大重构风险高、收益后置；小团队二开者更需要"目录清晰、协议统一"，而不是构建复杂度。
 
-### 决策 3：数据库 —— SQLite 为默认，PostgreSQL 为可选 profile
+### 决策 3：数据库 —— PostgreSQL-only（2026-08-09 定稿）
 
-《数据库稳定性改造方案》目标是迁移 PG。**建议修订为双支持**：
+《数据库稳定性改造方案》目标是迁移 PG。**最终决策为固定 PostgreSQL-only**（用户明确选择，已落地）：
 
-- SQLite 默认（零运维 = OPC 的命根），所有迁移脚本同时验证两个方言。
-- `docker-compose.pg.yml` 提供 PostgreSQL profile，给有并发需求的团队。
-- 落实方式：`config` 按 `DB_DIALECT` 环境变量切换，CI 双跑。
+- 移除 `sqlite3` 依赖，`config`/`db` 固定 `postgres` 方言，测试默认 PostgreSQL。
+- 部署经 docker-compose 的 `pg` 基础服务（或云 RDS）提供，OPC 小团队由一键编排保证零运维。
+- 落实方式：`config` 按 `DB_DIALECT`（默认 postgres）切换主机参数，CI 连 PostgreSQL 测试库单跑。
 
 ### 决策 4：青岛港专项 —— 降为"官方示例插件"，不进核心
 

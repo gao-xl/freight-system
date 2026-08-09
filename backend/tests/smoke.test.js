@@ -10,14 +10,12 @@ const BACKEND = path.resolve(__dirname, '..');
 const PORT = '3050';
 const BASE = `http://localhost:${PORT}`;
 
-// 测试库连接参数：默认 SQLite（项目定位 SQLite 默认，本地零依赖可跑）；
-// CI/有 PostgreSQL 环境可用 TEST_DB_DIALECT=postgres + TEST_DB_* 覆盖（向后兼容）。
+// 测试库连接参数：默认 PostgreSQL（与生产方言一致）；如需覆盖用 TEST_DB_* 环境变量。
 const env = {
   ...process.env,
   NODE_ENV: 'test',
   JWT_SECRET: 'test-secret-do-not-use-in-prod-' + Math.random().toString(36).slice(2),
-  DB_DIALECT: process.env.TEST_DB_DIALECT || 'sqlite',
-  DB_STORAGE: process.env.TEST_DB_STORAGE || './data/test.db',
+  DB_DIALECT: 'postgres',
   DB_HOST: process.env.TEST_DB_HOST || '127.0.0.1',
   DB_PORT: process.env.TEST_DB_PORT || '5432',
   DB_NAME: process.env.TEST_DB_NAME || 'freight_test',

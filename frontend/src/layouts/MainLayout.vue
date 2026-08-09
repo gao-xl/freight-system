@@ -59,20 +59,21 @@
             filterable
             remote
             :remote-method="searchMenu"
+            :loading="searchLoading"
             :teleported="true"
-            placeholder="搜索功能…"
+            placeholder="搜索功能 / 客户 / 订单 / 报价…"
             class="quick-search"
             @change="goSearch"
           >
             <template #prefix><el-icon><Search /></el-icon></template>
             <el-option
               v-for="m in searchResults"
-              :key="m.path"
+              :key="m.path + m.kind"
               :label="m.title"
               :value="m.path"
             >
               <span class="opt-label"><el-icon class="opt-icon"><component :is="m.icon" /></el-icon>{{ m.title }}</span>
-              <span class="opt-group">{{ groupOf(m.path) }}</span>
+              <span class="opt-group">{{ m.group }}</span>
             </el-option>
           </el-select>
 
@@ -135,7 +136,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
-import { changePasswordAPI, alertAPI } from '@/api';
+import { changePasswordAPI, alertAPI, globalSearchAPI } from '@/api';
 import HelpCenterDrawer from '@/components/HelpCenterDrawer.vue';
 
 const route = useRoute();
@@ -149,6 +150,8 @@ let alertTimer = null;
 
 const quickSearch = ref('');
 const searchResults = ref([]);
+const searchLoading = ref(false);
+let searchTimer = null;
 
 const roleMap = { admin: '管理员', manager: '经理', operator: '操作员', finance: '财务', viewer: '只读' };
 
@@ -240,10 +243,34 @@ const groupOf = (path) => {
   return g[0]?.label || '';
 };
 
-/* ============ 全局搜索 ============ */
+/* ============ 全局搜索（菜单 + 业务数据） ============ */
+function menuHits(q) {
+  if (!q) return allFlat.value.slice(0, 8);
+  return allFlat.value.filter((m) => m.title.includes(q)).slice(0, 8);
+}
 function searchMenu(q) {
-  if (!q) { searchResults.value = allFlat.value.slice(0, 8); return; }
-  searchResults.value = allFlat.value.filter((m) => m.title.includes(q)).slice(0, 8);
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    if (!q) { searchResults.value = menuHits(''); return; }
+    searchLoading.value = true;
+    try {
+      const [menu, biz] = await Promise.all([
+        Promise.resolve(menuHits(q)),
+        globalSearchAPI({ keyword: q, limit: 5 }),
+      ]);
+      const items = menu.map((m) => ({ kind: 'menu', path: m.path, title: m.title, icon: m.icon, group: groupOf(m.path) }));
+      const pushBiz = (list, fn) => list.forEach((r) => items.push(fn(r)));
+      pushBiz(biz.customers, (r) => ({ kind: 'customer', path: `/customers/${r.id}`, title: r.name, icon: 'User', group: '客户' }));
+      pushBiz(biz.suppliers, (r) => ({ kind: 'supplier', path: `/suppliers/${r.id}`, title: r.name, icon: 'OfficeBuilding', group: '供应商' }));
+      pushBiz(biz.orders, (r) => ({ kind: 'order', path: `/orders/${r.id}`, title: `${r.orderNo} · ${r.cargoDesc || '订单'}`, icon: 'Document', group: '订单' }));
+      pushBiz(biz.quotations, (r) => ({ kind: 'quotation', path: `/quotations/${r.id}`, title: `${r.quoteNo} · ${r.cargoDesc || '报价'}`, icon: 'PriceTag', group: '报价' }));
+      searchResults.value = items.slice(0, 20);
+    } catch (e) {
+      searchResults.value = menuHits(q);
+    } finally {
+      searchLoading.value = false;
+    }
+  }, 250);
 }
 function goSearch(path) {
   if (path) router.push(path);

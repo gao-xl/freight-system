@@ -64,10 +64,10 @@
             </template>
           </el-table-column>
           <el-table-column label="金额（原币）" width="150" align="right">
-            <template #default="{ row }">{{ fmt(row.amount) }}</template>
+            <template #default="{ row }">{{ money(row.amount) }}</template>
           </el-table-column>
           <el-table-column label="折合本币" width="150" align="right">
-            <template #default="{ row }">{{ row.localAmount == null ? '-' : fmt(row.localAmount) }}</template>
+            <template #default="{ row }">{{ row.localAmount == null ? '-' : money(row.localAmount) }}</template>
           </el-table-column>
           <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
         </el-table>
@@ -137,7 +137,6 @@ const query = reactive({ month: currentMonth(), customerId: null });
 const balanceColor = computed(() => ((detail.value?.balance ?? 0) >= 0 ? 'var(--danger)' : 'var(--success)'));
 
 const dirOf = (d) => FIN_DIRECTION[d] || { text: d, type: 'info' };
-const fmt = (v) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
 const formatDate = (v) => (v ? String(v).slice(0, 10) : '-');
 
 async function search() {

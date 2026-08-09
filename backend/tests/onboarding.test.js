@@ -9,15 +9,17 @@ const path = require('node:path');
 const BACKEND = path.resolve(__dirname, '..');
 const PORT = '3060';
 const BASE = `http://localhost:${PORT}`;
-// 每次运行用独立空库文件（避免污染/复用旧状态；data/*.db 已 gitignore）
-const DB_STORAGE = `./data/_onboarding_test_${Date.now()}.db`;
 
 const env = {
   ...process.env,
   NODE_ENV: 'test',
   JWT_SECRET: 'onboarding-test-secret-' + Math.random().toString(36).slice(2),
-  DB_DIALECT: 'sqlite',
-  DB_STORAGE,
+  DB_DIALECT: 'postgres',
+  DB_HOST: process.env.TEST_DB_HOST || '127.0.0.1',
+  DB_PORT: process.env.TEST_DB_PORT || '5432',
+  DB_NAME: process.env.TEST_DB_NAME || 'freight_test',
+  DB_USER: process.env.TEST_DB_USER || 'freight',
+  DB_PASSWORD: process.env.TEST_DB_PASSWORD || '',
   PORT,
   AUTO_MIGRATE: 'true',
   PORT_SVC_URL: '', CUSTOMS_SVC_URL: '', FINANCE_SVC_URL: '',

@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
-const { sequelize, Quotation, QuotationItem, Order, FinanceRecord } = require('../models');
+const { sequelize, Quotation, QuotationItem, Order } = require('../models');
+const { createRecord: financeCreateRecord } = require('../domains/finance/financeService');
 const { genCode } = require('../utils/response');
 const events = require('./eventBus');
 
@@ -139,9 +140,9 @@ async function convertOrder(id, extra = {}) {
       },
       { transaction: t }
     );
-    // 落财务应收应付
+    // 落财务应收应付（走财务域门面，E6 跨域写收口）
     for (const it of quotation.items) {
-      await FinanceRecord.create(
+      await financeCreateRecord(
         {
           orderId: order.id,
           direction: it.direction === 'revenue' ? 'receivable' : 'payable',

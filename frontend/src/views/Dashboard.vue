@@ -120,6 +120,7 @@ import { dashboardAPI, orderStatusDistAPI, modeDistAPI, recentOrdersAPI, dashboa
 import OnboardingChecklist from '@/components/OnboardingChecklist.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useOnboardingStore } from '@/stores/onboarding';
+import { money } from '@/utils/dicts';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -142,7 +143,6 @@ const statusMap = {
 const modeMap = { sea: '海运', air: '空运', land: '陆运', rail: '铁路' };
 const statusText = (s) => statusMap[s]?.[0] || s;
 const statusType = (s) => statusMap[s]?.[1] || 'info';
-const money = (v) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const goDetail = (row) => router.push(`/orders/${row.id}`);
 function greeting() {
   const h = new Date().getHours();

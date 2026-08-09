@@ -31,8 +31,7 @@ module.exports = {
   jwtSecret,
   jwtExpiresIn: '12h',
   db: {
-    storage: process.env.DB_STORAGE || './data/freight.db',
-    dialect: process.env.DB_DIALECT || 'sqlite',
+    dialect: process.env.DB_DIALECT || 'postgres',
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 5432,
     name: process.env.DB_NAME || 'freight',

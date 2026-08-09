@@ -63,4 +63,11 @@ export const QUO_ITEM_DIRECTION = { revenue: '收入', cost: '成本' };
 
 export const dictText = (map, key) => map[key] ?? key;
 export const statusOf = (map, key) => map[key] || { text: key, type: 'info' };
-export const money = (v, currency = 'USD') => `${Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })} ${currency}`;
+// 统一金额格式化（唯一出口）：千分位 + 最多 2 位小数；
+// 传入 currency 时追加币种后缀，未传时仅返回数字（避免对账单"折合本币"等列误标币种）
+export const money = (v, currency = '') => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  const text = n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return currency ? `${text} ${currency}` : text;
+};

@@ -10,7 +10,7 @@ module.exports = {
         type: Sequelize.STRING(60),
         allowNull: true, // 先允许空，回填后再建唯一索引
       });
-      // 回填：code = module:action（SQLite 与 PostgreSQL 均支持 || 拼接）
+      // 回填：code = module:action（PostgreSQL 支持 || 拼接）
       await queryInterface.sequelize.query(
         "UPDATE `Permissions` SET code = module || ':' || action WHERE code IS NULL OR code = ''"
       );

@@ -7,10 +7,9 @@ const net = require('net');
 const config = require('../config');
 const { sequelize } = require('../models');
 
-// 数据目录（SQLite 存库目录 / PG 场景为逻辑数据目录），仅内部使用，不对外输出
+// 数据目录（逻辑数据目录，非数据库文件位置），仅内部使用，不对外输出
 function resolveDataDir() {
-  if (config.db.dialect !== 'sqlite' || !config.db.storage) return path.resolve(__dirname, '../../data');
-  return path.resolve(__dirname, '../../', String(config.db.storage).replace('./', '').replace(/[\\/][^\\/]+\.db$/, ''));
+  return path.resolve(__dirname, '../../data');
 }
 
 async function checkNode() {

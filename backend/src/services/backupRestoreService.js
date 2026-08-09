@@ -71,13 +71,12 @@ async function createApiBackup() {
 }
 
 // 恢复归档（与 scripts/restore.js 流程一致，跳过交互确认；HTTP 场景做非破坏性覆盖）
-// 运行中后端会锁住自身 SQLite 库文件：data/ 覆盖时显式排除当前库文件，避免删/写打开文件
-// （Windows 会 EBUSY；Linux 虽可删但会丢失对新 inode 的写入），并在响应中提示用 CLI 恢复数据库。
+// 数据库（PostgreSQL）不由本服务替换：恢复 data/ 与 uploads/，数据库恢复请使用 CLI：node scripts/restore.js <备份> --yes
 const config = require('../config');
 
+// PostgreSQL 数据库不随文件归档覆盖，保留 null 以走"无需跳过数据库文件"的分支
 function liveDbFilename() {
-  if (!config || config.db.dialect !== 'sqlite' || !config.db.storage) return null;
-  return path.basename(String(config.db.storage).replace(/\\/g, '/'));
+  return null;
 }
 
 async function restoreApiArchive(archivePath, opts = {}) {

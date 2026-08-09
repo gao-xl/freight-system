@@ -5,7 +5,7 @@
 // 2. 9 张业务表补 isDemo 列（Customers/Suppliers/Quotations/QuotationItems/Orders/Bookings/
 //    CustomsDeclarations/FinanceRecords/FreightRates）——演示数据标记，支持按标记一键清空
 // 3. CompanyProfiles 补 defaultCurrency 列（默认币种，向导第 3 步数据源，默认 CNY）
-// 全程幂等（showAllTables/describeTable 检查），SQLite 与 PostgreSQL 双方言可用。
+// 全程幂等（showAllTables/describeTable 检查），PostgreSQL 执行。
 // 注意：Quotations/QuotationItems/CompanyProfiles 由 sequelize.sync 创建，空库迁移时可能尚不存在，
 //       用 try/catch 跳过（模型已带新列，sync 阶段会自动补齐）；不提供回滚。
 
@@ -49,7 +49,6 @@ module.exports = {
         }
       } catch (e) {
         // 表不存在（空库迁移时 sync 尚未创建）则跳过，不阻塞迁移链
-        // 兼容 SQLite/PG 的不同报错文案
         const msg = (e && (e.message || '')) || '';
         if (!/no such table|no description found|does not exist/i.test(msg)) throw e;
       }

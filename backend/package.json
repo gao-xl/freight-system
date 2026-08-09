@@ -13,9 +13,11 @@
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
     "test": "node --test --test-concurrency=1 tests/smoke.test.js tests/pdf.test.js tests/onboarding.test.js tests/tracking-auto.test.js tests/notification.test.js tests/portal-enhanced.test.js tests/orderDomain.test.js",
-    "test:backup": "node --test --test-concurrency=1 tests/backup.test.js"
+    "test:backup": "node --test --test-concurrency=1 tests/backup.test.js",
+    "lint": "eslint src/ scripts/ migrations/"
   },
   "devDependencies": {
+    "eslint": "^8.57.1",
     "sequelize-cli": "^6.6.5"
   },
   "dependencies": {
@@ -40,7 +42,6 @@
     "proxy-agent": "^6.5.0",
     "puppeteer-core": "^22.15.0",
     "sequelize": "^6.37.3",
-    "sqlite3": "^5.1.7",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^9.0.1",

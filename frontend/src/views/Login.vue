@@ -35,9 +35,6 @@
             登 录
           </el-button>
         </el-form>
-        <div class="tips">
-          <span>演示账号：admin / 123456</span>
-        </div>
       </div>
     </div>
   </div>
@@ -49,12 +46,26 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { User, Lock } from '@element-plus/icons-vue';
 import { useAuthStore } from '@/stores/auth';
+import { safeHome } from '@/router';
 
 const router = useRouter();
 const route = useRoute();
 const auth = useAuthStore();
-const form = reactive({ username: 'admin', password: '123456' });
+const form = reactive({ username: '', password: '' });
 const loading = ref(false);
+
+// 校验 redirect 目标对当前用户是否可访问，避免跳到无权限页造成 403 死循环
+function resolveHome() {
+  const redirect = route.query.redirect;
+  if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')) {
+    const target = router.resolve(redirect);
+    if (target.matched.length) {
+      const need = target.meta.permission;
+      if (!need || auth.hasPermission(need)) return redirect;
+    }
+  }
+  return safeHome(auth);
+}
 
 async function submit() {
   if (!form.username || !form.password) return ElMessage.warning('请输入用户名和密码');
@@ -62,8 +73,7 @@ async function submit() {
   try {
     await auth.login(form.username, form.password);
     ElMessage.success('登录成功');
-    const fallback = auth.role === 'customer' ? '/portal' : '/dashboard';
-    router.push(route.query.redirect || fallback);
+    router.push(resolveHome());
   } finally {
     loading.value = false;
   }
@@ -139,10 +149,6 @@ async function submit() {
 .form-head h2 { font-size: 24px; font-weight: 700; margin: 0 0 6px; color: var(--text-main); }
 .form-head p { font-size: 14px; color: var(--text-muted); margin: 0; }
 .login-btn { width: 100%; margin-top: 6px; height: 44px; font-size: 15px; }
-.tips {
-  margin-top: 22px; text-align: center; font-size: 13px; color: var(--text-muted);
-  padding-top: 16px; border-top: 1px dashed var(--border);
-}
 
 /* ============ 窄屏：隐藏品牌区，仅保留登录 ============ */
 @media (max-width: 768px) {

@@ -5,7 +5,7 @@
 //       财务应收应付视图（direction+status）、账龄（dueDate）；各子表 orderId 归属过滤。
 // 注意：仅对迁移链中建的表加索引（Quotations 等由模型 sync 建表的资源不在本迁移内，
 //       避免纯迁移路径下 addIndex 报"表不存在"）。
-// 幂等：addIndex 若已存在由 migrateRunner 容错跳过（SQLite/PG 通用）。
+// 幂等：addIndex 若已存在由 migrateRunner 容错跳过（PostgreSQL）。
 module.exports = {
   async up(queryInterface) {
     // Orders（中枢表，列表/筛选/归属/统计最高频）

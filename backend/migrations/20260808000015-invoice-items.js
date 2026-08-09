@@ -12,7 +12,7 @@ module.exports = {
         await queryInterface.addColumn('Invoices', 'items', { type: Sequelize.TEXT, allowNull: true });
       }
     } catch (e) {
-      // 表不存在：跳过，sync 阶段由模型补齐（兼容 SQLite/PG 的不同报错文案）
+      // 表不存在：跳过，sync 阶段由模型补齐
       const msg = (e && (e.message || '')) || '';
       if (/no such table|no description found|does not exist/i.test(msg)) {
         // skip

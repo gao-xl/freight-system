@@ -10,14 +10,12 @@ const path = require('node:path');
 const BACKEND = path.resolve(__dirname, '..');
 const PORT = '3070';
 const BASE = `http://localhost:${PORT}`;
-const DB_STORAGE = `./data/_portal_enhanced_test_${Date.now()}.db`;
 
 const env = {
   ...process.env,
   NODE_ENV: 'test',
   JWT_SECRET: 'portal-enhanced-test-secret-' + Math.random().toString(36).slice(2),
-  DB_DIALECT: process.env.TEST_DB_DIALECT || 'sqlite',
-  DB_STORAGE: process.env.TEST_DB_STORAGE || DB_STORAGE,
+  DB_DIALECT: 'postgres',
   DB_HOST: process.env.TEST_DB_HOST || '127.0.0.1',
   DB_PORT: process.env.TEST_DB_PORT || '5432',
   DB_NAME: process.env.TEST_DB_NAME || 'freight_test',

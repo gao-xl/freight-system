@@ -1,8 +1,10 @@
 const { Op } = require('sequelize');
 const {
-  Order, Booking, CustomsDeclaration, ShipmentTrack, FinanceRecord, AuditLog,
+  Order, Booking, CustomsDeclaration, ShipmentTrack,
 } = require('../models');
-const { advanceOne, computeReached } = require('../controllers/orderController');
+const { advanceOne, computeReached } = require('./orderService');
+const { autoCreateReceivable: financeAutoCreateReceivable } = require('../domains/finance/financeService');
+const { record: auditRecord } = require('../core/auditService');
 const { logger } = require('../utils/logger');
 
 // 自动化动作引擎：把"检测→报警"的规则引擎升级为"检测→自动执行动作"。
@@ -11,24 +13,22 @@ const { logger } = require('../utils/logger');
 //  - 独立容错：单个动作失败不影响其他动作（与 alertService.runAllRules 一致）。
 //  - 可审计：每个动作写入 AuditLog（username=SYSTEM），可追溯"什么被自动做了"。
 //  - 零迁移：复用现有表；财务幂等以 description 中的 #auto 标记区分（后续建议加 source 列）。
+//
+// 架构解耦（F2/E6）：审计走 core/auditService.record()；财务写走 domains/finance/financeService，
+// 本文件不再直连 AuditLog / FinanceRecord（跨域写收口）。
 
-const AUTO_MARKER = '#auto';
 const OPERATOR = 'SYSTEM(自动化)';
 
-// 审计留痕
-async function logAudit(action, targetId, summary) {
-  try {
-    await AuditLog.create({
-      username: 'SYSTEM',
-      module: 'automation',
-      action,
-      method: 'AUTO',
-      targetId: String(targetId),
-      summary,
-    });
-  } catch (e) {
-    logger.error('[AUTOMATION] 审计写入失败', { message: e.message });
-  }
+// 审计留痕（统一走 auditService 门面）
+function logAudit(action, targetId, summary) {
+  return auditRecord({
+    username: 'SYSTEM',
+    module: 'automation',
+    action,
+    method: 'AUTO',
+    targetId,
+    summary,
+  });
 }
 
 // 取订单当前已到达节点集合（复用 orderController 的 computeReached，单一事实来源）
@@ -84,36 +84,25 @@ async function autoAdvanceFromCustoms() {
 }
 
 // 动作3：订单已确认且有金额 → 自动生成应收财务记录（消除财务双录）
+// F2/E6：财务写已收口到 domains/finance/financeService.autoCreateReceivable，本方法不再直连 FinanceRecord。
+// 审计语义保持：对每个新生成的应收订单逐单留痕（username=SYSTEM）。
 async function autoCreateReceivable() {
+  const created = await financeAutoCreateReceivable();
+  const { FinanceRecord } = require('../models');
   const orders = await Order.findAll({
     where: {
       status: { [Op.in]: ['confirmed', 'in_progress', 'completed'] },
       totalAmount: { [Op.gt]: 0 },
     },
   });
-  let count = 0;
   for (const o of orders) {
-    // 幂等：已存在本自动化生成的应收则跳过
     const exist = await FinanceRecord.findOne({
-      where: { orderId: o.id, direction: 'receivable', description: { [Op.like]: `%${AUTO_MARKER}%` } },
+      where: { orderId: o.id, direction: 'receivable', description: { [Op.like]: `%#auto%` } },
     });
-    if (exist) continue;
-    const due = o.eta ? new Date(new Date(o.eta).getTime() + 30 * 24 * 3600 * 1000) : null;
-    await FinanceRecord.create({
-      orderId: o.id,
-      counterpartyId: o.customerId,
-      direction: 'receivable',
-      category: 'ocean_freight',
-      description: `订单${o.orderNo}确认自动生成应收 ${AUTO_MARKER}`,
-      amount: o.totalAmount,
-      currency: o.currency || 'USD',
-      status: 'unpaid',
-      dueDate: due ? due.toISOString().slice(0, 10) : null,
-    });
-    count += 1;
+    if (!exist) continue;
     await logAudit('auto_finance', o.id, `订单${o.orderNo}确认，自动生成应收 ${o.currency || 'USD'} ${o.totalAmount}`);
   }
-  return count;
+  return created;
 }
 
 // 执行全部自动化动作

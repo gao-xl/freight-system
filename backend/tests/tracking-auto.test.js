@@ -4,12 +4,15 @@
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert');
 
-// 独立测试库文件（data/*.db 已 gitignore），须在 require 模型前设置
-const DB_STORAGE = `./data/_tracking_test_${Date.now()}.db`;
+// 独立测试库（PostgreSQL，与生产方言一致），须在 require 模型前设置
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'tracking-test-secret-' + Math.random().toString(36).slice(2);
-process.env.DB_DIALECT = process.env.TEST_DB_DIALECT || 'sqlite';
-process.env.DB_STORAGE = process.env.TEST_DB_STORAGE || DB_STORAGE;
+process.env.DB_DIALECT = 'postgres';
+process.env.DB_HOST = process.env.TEST_DB_HOST || '127.0.0.1';
+process.env.DB_PORT = process.env.TEST_DB_PORT || '5432';
+process.env.DB_NAME = process.env.TEST_DB_NAME || 'freight_test';
+process.env.DB_USER = process.env.TEST_DB_USER || 'freight';
+process.env.DB_PASSWORD = process.env.TEST_DB_PASSWORD || '';
 
 const config = require('../src/config');
 const { sequelize, Customer, Order, ShipmentTrack, AlertRecord, IntegrationConfig } = require('../src/models');

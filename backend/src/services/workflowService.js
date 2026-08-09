@@ -4,7 +4,8 @@
 // 流程：校验规则（WorkflowConfig）→ 校验角色（fromRole）→ 执行动作 → 审计 → 事件
 // 设计：不改变既有"派生式"状态推导，本服务负责"显式状态变更"的配置化与审计。
 
-const { WorkflowConfig, Order, Booking, CustomsDeclaration, FinanceRecord, AuditLog } = require('../models');
+const { WorkflowConfig, Order, Booking, CustomsDeclaration, FinanceRecord } = require('../models');
+const { record: auditRecord } = require('../core/auditService');
 
 // 对象类型 → 模型映射
 const MODEL_MAP = {
@@ -22,20 +23,16 @@ const STATUS_OPTIONS = {
   finance: ['unpaid', 'partial', 'paid', 'waived'],
 };
 
-// 审计留痕
+// 审计留痕（统一走 core/auditService 门面）
 async function logAudit(username, bizType, targetId, from, to, summary) {
-  try {
-    await AuditLog.create({
-      username: username || 'SYSTEM',
-      module: 'workflow',
-      action: 'transition',
-      method: 'TRANSITION',
-      targetId: String(targetId),
-      summary: summary || `[${bizType}] ${from} → ${to}`,
-    });
-  } catch (e) {
-    // 审计失败不阻断主流程
-  }
+  return auditRecord({
+    username: username || 'SYSTEM',
+    module: 'workflow',
+    action: 'transition',
+    method: 'TRANSITION',
+    targetId,
+    summary: summary || `[${bizType}] ${from} → ${to}`,
+  });
 }
 
 /**

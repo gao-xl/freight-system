@@ -41,6 +41,7 @@ const freightRate = require('../controllers/freightRateController');
 const businessRule = require('../controllers/businessRuleController');
 const workflow = require('../controllers/workflowController');
 const report = require('../controllers/reportController');
+const searchCtrl = require('../controllers/searchController');
 
 const router = express.Router();
 
@@ -135,6 +136,9 @@ router.post('/system/restore', authRequired, requirePermission('system', '*'), r
 // 数据隔离：所有业务路由统一注入 req.dataScope（范围：all/group/self）
 // 控制器通过 scopedWhere/scopedFindOne 等辅助函数消费该范围，实现行级数据隔离
 router.use(authRequired, dataScope);
+
+// 全局搜索：跨客户/供应商/订单/报价（各模块按权限点过滤，数据范围沿用 dataScope）
+router.get('/search', searchCtrl.search);
 
 // RBAC 系统管理（admin）
 router.get('/roles', authRequired, requirePermission('system', 'role'), role.list);

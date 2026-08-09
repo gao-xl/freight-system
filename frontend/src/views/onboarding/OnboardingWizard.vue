@@ -77,7 +77,7 @@ const prepare = ref('manual');
 
 const steps = computed(() => {
   const list = [];
-  if (auth.user?.mustChangePassword) list.push({ id: 'password', label: '改密', title: '设置管理员密码', desc: '系统默认账号 admin/123456 已初始化，请设置新密码后继续。' });
+  if (auth.user?.mustChangePassword) list.push({ id: 'password', label: '改密', title: '设置管理员密码', desc: '系统默认管理员账号已初始化，请设置新密码后继续。' });
   list.push(
     { id: 'company', label: '公司', title: '公司信息', desc: '公司全称会显示在报价单、对账单等单据上。' },
     { id: 'currency', label: '币种', title: '默认币种', desc: '单据金额将按默认币种显示，可后续在设置中修改。' },

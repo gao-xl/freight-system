@@ -12,8 +12,8 @@ const routes = [
   {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
-    // U12：角色化首页——admin/manager 进经营看板、finance 进财务、其余进待办
-    redirect: () => roleHome(useAuthStore().role),
+    // 按权限返回安全首页（避免落到无权限页触发 403 死循环）
+    redirect: () => safeHome(useAuthStore()),
     children: [
       { path: 'tasks', name: 'tasks', component: () => import('@/views/tasks/TodoWorkbench.vue'), meta: { title: '待办工作台', icon: 'Memo', permission: undefined } },
       { path: 'dashboard', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '经营看板', icon: 'Odometer', permission: 'dashboard:read' } },
@@ -53,7 +53,7 @@ const routes = [
   },
   { path: '/portal', name: 'portal', component: () => import('@/views/portal/Portal.vue'), meta: { title: '客户自助门户' } },
   { path: '/403', name: 'forbidden', component: () => import('@/views/Forbidden.vue'), meta: { title: '无权限' } },
-  { path: '/:pathMatch(.*)*', redirect: () => roleHome(useAuthStore().role) },
+  { path: '/:pathMatch(.*)*', redirect: () => safeHome(useAuthStore()) },
 ];
 
 const router = createRouter({
@@ -61,11 +61,12 @@ const router = createRouter({
   routes,
 });
 
-// U12：按角色返回默认首页
-function roleHome(role) {
-  if (role === 'admin' || role === 'manager') return '/dashboard';
-  if (role === 'finance') return '/finance';
-  return '/tasks';
+// 按权限返回可访问的默认首页（替代仅按角色，避免落到无权限页触发 403 死循环）
+export function safeHome(auth) {
+  if (auth.role === 'customer') return '/portal';
+  if (auth.hasPermission('dashboard:read')) return '/dashboard';
+  if (auth.hasPermission('finance:read')) return '/finance';
+  return '/tasks'; // 待办工作台无需权限，作为兜底
 }
 
 // AC-01：首次登录且系统未配置公司 → 重定向 /onboarding（可跳过；完成/跳过标记后不再出现）
@@ -96,7 +97,7 @@ router.beforeEach(async (to) => {
     return { path: '/login', query: { redirect: to.fullPath } };
   }
   if (to.path === '/login' && token) {
-    return { path: auth.role === 'customer' ? '/portal' : roleHome(auth.role) };
+    return { path: safeHome(auth) };
   }
   // Onboarding：默认账号首登强制改密（customer 门户账号除外），改密前拦在系统外
   if (token && auth.user?.mustChangePassword && auth.role !== 'customer' && to.path !== '/setup-password') {
@@ -108,7 +109,7 @@ router.beforeEach(async (to) => {
   }
   // U11：非客户角色访问门户 → 重定向回主系统（避免空 customerId 白闪报错）
   if (to.path === '/portal' && auth.role && auth.role !== 'customer') {
-    return { path: roleHome(auth.role) };
+    return { path: safeHome(auth) };
   }
   // AC-01：首次登录 → /onboarding（引导完成后不再出现；customer 门户不参与）
   if (token && auth.role && auth.role !== 'customer'

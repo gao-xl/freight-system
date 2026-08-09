@@ -2,7 +2,7 @@
 
 // 本地运价小库：FreightRates 表（P2.7）
 // 字段与 src/models/FreightRate.js 一一对应，改模型必须同步改本迁移。
-// SQLite 与 PostgreSQL 均可执行：只用 createTable + addIndex，未使用方言专有语法。
+// PostgreSQL 执行：只用 createTable + addIndex，未使用方言专有语法。
 // 幂等：本地开发常先跑过 sequelize.sync() 建好表，重复建表会直接报错（参照 0002 写法）。
 module.exports = {
   async up(queryInterface, Sequelize) {

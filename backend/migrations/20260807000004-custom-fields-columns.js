@@ -4,7 +4,7 @@
 // 背景：P1.2 只改了 Sequelize 模型定义（DataTypes.JSON），漏写了迁移；
 // sequelize.sync() 不会给已存在表加列 → 开发库/生产升级都会 schema 漂移
 //（冒烟测试用 seed 的 sync({force:true}) 重建掩盖了此问题）。
-// 本迁移只追加列不重建表；SQLite/PostgreSQL 兼容；幂等：describeTable 检查列已存在则跳过。
+// 本迁移只追加列不重建表；PostgreSQL 兼容；幂等：describeTable 检查列已存在则跳过。
 // 与 src/models/{Booking,Customer,FinanceRecord,Order}.js 的 customFields 字段一一对应。
 module.exports = {
   async up(queryInterface, Sequelize) {

@@ -234,8 +234,8 @@ submitted ──► processing ──► completed
 1. **门户一切读接口的服务端强制归属**：一律用 `req.user.customerId`，不接受 body/query 传入客户 ID。这是与内部接口（走 group 隔离）不同的第二道闸门，二者缺一不可。
 2. **PDF 为简化排版**：当前 `printService.toPdf` 用 pdfkit 渲染剥离标签后的纯文本（L144-161），**不是 HTML 精确排版**——无表格边框、无 logo 水印。v1 对账单 PDF 接受"结构化文本流"形态，正式版式走 P2 精排升级。需在门户 UI 上明示"下载版为简化格式"。
 3. **customer 角色走 `scopedWhere` 会因组归属被拒**：门户下载/账单/单证接口必须独立做 customerId 校验，不能直接调内部 `/documents/:id/download`（`scopedFindOne` 按 groupId 过滤，customer 用户大概率无组）。
-4. **迁移链**：现链 0000→0010（11 个），新迁移编号续 0011/0012，`npm test` 与迁移链验证需通过。
-5. **SQLite 默认 + PG 兼容**：新模型/迁移沿用现有 Sequelize 定义风格，不引入方言。
+4. **迁移链**：现链已至 20260809000002（24 个迁移），新迁移编号须全局唯一（避免撞号），`npm test` 与迁移链验证需通过。
+5. **PostgreSQL-only**：系统固定 PostgreSQL 方言，新模型/迁移沿用现有 Sequelize 定义风格，不引入方言。
 
 ---
 
