@@ -46,6 +46,7 @@ const Order = sequelize.define('Order', {
   customFields: { type: DataTypes.TEXT }, // B4 自定义字段扩展（JSON 字符串）
   remark: { type: DataTypes.TEXT },
   version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
+  isDemo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding 演示数据标记（可一键清空）
 }, { timestamps: true, paranoid: true });
 
 module.exports = Order;

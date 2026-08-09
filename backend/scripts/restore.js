@@ -214,7 +214,7 @@ async function main() {
     console.log(`  数据库    ${countTree(targetData)} 个文件 -> ${targetData}`);
     console.log(`  上传文件  ${countTree(targetUploads)} 个文件 -> ${targetUploads}`);
     console.log(`  配置      ${envRestored === 'skip' ? '未覆盖当前 .env（如需覆盖加 --with-env）' : `已写入 ${envRestored}`}`);
-    if (manifest.dbDialect && manifest.dbDialect !== 'sqlite') {
+    if (manifest.dbDialect) {
       console.log(`  注意      备份来自 ${manifest.dbDialect}，业务数据不在本地文件里，需另行用数据库工具恢复`);
     }
     console.log('');

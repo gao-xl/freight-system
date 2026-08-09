@@ -1,4 +1,4 @@
-const { Order, Customer, Supplier, Booking, CustomsDeclaration, FinanceRecord, User } = require('../models');
+const { Order, Customer, Supplier, Booking, CustomsDeclaration, FinanceRecord, User, Quotation } = require('../models');
 const { ok, asyncHandler } = require('../utils/response');
 const { Op, fn, col } = require('sequelize');
 const { scopedWhere } = require('../middleware/dataScope');
@@ -6,7 +6,8 @@ const { scopedWhere } = require('../middleware/dataScope');
 // 看板统计数据（B2 数据隔离：所有业务统计均限制在当前用户可见范围，admin=all 不受限）
 const dashboard = asyncHandler(async (req, res) => {
   const [orderTotal, orderInProgress, orderCompleted, customerTotal, supplierTotal,
-    bookingWait, customsPending, receivableBalance, payableBalance, userTotal] = await Promise.all([
+    bookingWait, customsPending, receivableBalance, payableBalance, userTotal,
+    quotationTotal, bookingTotal, customsTotal] = await Promise.all([
     Order.count({ where: await scopedWhere(req, {}) }),
     Order.count({ where: await scopedWhere(req, { status: { [Op.in]: ['confirmed', 'in_progress'] } }) }),
     Order.count({ where: await scopedWhere(req, { status: 'completed' }) }),
@@ -17,6 +18,10 @@ const dashboard = asyncHandler(async (req, res) => {
     FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'receivable' }), attributes: ['amount', 'paidAmount'] }),
     FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'payable' }), attributes: ['amount', 'paidAmount'] }),
     User.count({ where: { status: 'active' } }),
+    // Onboarding Checklist 进度派生：报价/订舱/报关总数（向后兼容，原有字段不变）
+    Quotation.count({ where: await scopedWhere(req, {}) }),
+    Booking.count({ where: await scopedWhere(req, {}) }),
+    CustomsDeclaration.count({ where: await scopedWhere(req, {}) }),
   ]);
   const recv = receivableBalance.reduce((s, r) => s + (Number(r.amount) - Number(r.paidAmount)), 0);
   const pay = payableBalance.reduce((s, r) => s + (Number(r.amount) - Number(r.paidAmount)), 0);
@@ -25,6 +30,8 @@ const dashboard = asyncHandler(async (req, res) => {
     customerTotal, supplierTotal, userTotal,
     bookingWait, customsPending,
     receivableBalance: recv, payableBalance: pay,
+    // Onboarding Checklist 数据源
+    quotationTotal, bookingTotal, customsTotal,
   });
 });
 

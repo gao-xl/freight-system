@@ -148,16 +148,14 @@ async function createBackup(options = {}) {
   const uploadsDir = path.join(BACKEND_ROOT, 'uploads');
   const entries = [];
 
-  // 数据库文件先拷到临时目录再打包。SQLite 运行中随时可能被写入，
-  // 直接流式读取有概率打出一个大小对不上的坏包；先做一次快照拷贝把这个窗口压到最小。
+  // 业务数据位于外部 PostgreSQL，本脚本只打包上传文件与运行配置。
+  // data/ 目录仅保留历史遗留文件，不再作为数据库备份来源。
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'freight-backup-'));
   try {
     if (fs.existsSync(dataDir)) {
       copyTree(dataDir, path.join(stage, 'data'));
       entries.push({ name: 'data/', type: 'directory', size: 0, mode: 0o755, mtime: Date.now() });
       walk(path.join(stage, 'data'), 'data', entries);
-    } else {
-      warnings.push('未找到 backend/data 目录，本次备份不含数据库');
     }
 
     if (fs.existsSync(uploadsDir)) {
@@ -176,10 +174,8 @@ async function createBackup(options = {}) {
       warnings.push('未找到任何环境配置文件');
     }
 
-    const dialect = process.env.DB_DIALECT || 'sqlite';
-    if (dialect !== 'sqlite') {
-      warnings.push(`当前 DB_DIALECT=${dialect}，业务数据在外部数据库中，本脚本只备份上传文件与配置；数据库请用 pg_dump 另行备份`);
-    }
+    const dialect = process.env.DB_DIALECT || 'postgres';
+    warnings.push(`业务数据在外部 ${dialect} 数据库中，本脚本只备份上传文件与配置；数据库请用 pg_dump 另行备份`);
 
     const fileEntries = entries.filter((e) => e.type === 'file');
     const totalBytes = fileEntries.reduce((s, e) => s + e.size, 0);

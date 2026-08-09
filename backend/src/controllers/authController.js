@@ -29,13 +29,13 @@ const login = asyncHandler(async (req, res) => {
   const permissions = await getPermissions(user.id);
   ok(res, {
     token,
-    user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions },
+    user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: !!user.mustChangePassword },
   }, '登录成功');
 });
 
 const me = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.user.id, {
-    attributes: ['id', 'username', 'name', 'role', 'email', 'phone', 'lastLoginAt', 'customerId'],
+    attributes: ['id', 'username', 'name', 'role', 'email', 'phone', 'lastLoginAt', 'customerId', 'mustChangePassword'],
   });
   const permissions = await getPermissions(user.id);
   ok(res, { ...user.toJSON(), permissions });
@@ -48,6 +48,8 @@ const changePassword = asyncHandler(async (req, res) => {
   user.password = await bcrypt.hash(newPassword, 10);
   // D8：改密后递增版本号，使该用户此前签发的所有 token 失效
   user.tokenVersion = (user.tokenVersion || 0) + 1;
+  // Onboarding：改密成功即清除强制改密标记
+  user.mustChangePassword = false;
   await user.save();
   ok(res, null, '密码修改成功，其他设备需重新登录');
 });

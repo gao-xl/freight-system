@@ -14,6 +14,9 @@ const { ModuleRegistry } = require('./core/moduleRegistry');
 const { startAlertScheduler } = require('./services/alertScheduler');
 const { subscribeEvents: subscribeAlertEvents } = require('./services/alertService');
 const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
+// Onboarding 地基：启动自动迁移 + 启动自检（bootstrap）
+const { runMigrations } = require('./services/migrateRunner');
+const { ensureBootstrap } = require('./services/bootstrapService');
 
 const app = express();
 
@@ -80,8 +83,18 @@ app.use((err, req, res, next) => {
 });
 
 async function start() {
+  // Onboarding 地基：先 sync 补齐模型表（老库补新模型表/新库建全表）→ 自动迁移增量修补
+  // （AUTO_MIGRATE 默认开；顺序依赖：部分存量迁移依赖模型表已存在，如 invoice-items 依赖 Invoices 表由 sync 创建）
   await sequelize.sync();
   logger.info('[DB] 数据库同步完成');
+  if (config.autoMigrate) {
+    const applied = await runMigrations();
+    if (applied.length) logger.info(`[DB] 自动迁移完成：新增 ${applied.length} 个迁移`);
+  }
+  const boot = await ensureBootstrap();
+  if (boot.needsSetup) {
+    logger.info('[BOOT] 系统待初始化：访问 /setup-admin 创建首个管理员');
+  }
   // 扫描 src/modules 下的模块目录，登记元信息（模型/菜单/事件）
   // 只做发现与校验，不挂载路由：业务路由的唯一权威来源仍是 src/routes/index.js
   ModuleRegistry.load(path.join(__dirname, 'modules'));

@@ -24,6 +24,10 @@ module.exports = {
   port: process.env.PORT || 3000,
   env: process.env.NODE_ENV || 'development',
   isProd,
+  // 启动自动迁移：默认开启（OPC 零命令友好）；AUTO_MIGRATE=false 关闭（大客户/超大生产库自控锁表风险）
+  autoMigrate: process.env.AUTO_MIGRATE !== 'false',
+  // 无人值守部署备选：设置后 Bootstrap 直接创建 admin（mustChangePassword=true 强制首登改密）
+  adminInitPassword: process.env.ADMIN_INIT_PASSWORD || '',
   jwtSecret,
   jwtExpiresIn: '12h',
   db: {

@@ -1,23 +1,28 @@
 // 冒烟测试：启动真实后端 → 登录 → 业务接口 → 自动化幂等
 // 使用 Node 22 内置 node:test + 全局 fetch，零额外依赖
-// 运行：npm test  （需先 npm install）
+// 运行：npm test  （需先连上 PostgreSQL，并 npm install）
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { spawn } = require('node:child_process');
-const fs = require('node:fs');
 const path = require('node:path');
 
 const BACKEND = path.resolve(__dirname, '..');
-const TEST_DB = path.join(BACKEND, 'data', 'test.db');
 const PORT = '3050';
 const BASE = `http://localhost:${PORT}`;
 
+// 测试库连接参数：默认 SQLite（项目定位 SQLite 默认，本地零依赖可跑）；
+// CI/有 PostgreSQL 环境可用 TEST_DB_DIALECT=postgres + TEST_DB_* 覆盖（向后兼容）。
 const env = {
   ...process.env,
   NODE_ENV: 'test',
   JWT_SECRET: 'test-secret-do-not-use-in-prod-' + Math.random().toString(36).slice(2),
-  DB_STORAGE: TEST_DB,
-  DB_DIALECT: 'sqlite',
+  DB_DIALECT: process.env.TEST_DB_DIALECT || 'sqlite',
+  DB_STORAGE: process.env.TEST_DB_STORAGE || './data/test.db',
+  DB_HOST: process.env.TEST_DB_HOST || '127.0.0.1',
+  DB_PORT: process.env.TEST_DB_PORT || '5432',
+  DB_NAME: process.env.TEST_DB_NAME || 'freight_test',
+  DB_USER: process.env.TEST_DB_USER || 'freight',
+  DB_PASSWORD: process.env.TEST_DB_PASSWORD || '',
   PORT,
   // 测试环境关闭外部对接默认地址，避免启动时网络等待
   PORT_SVC_URL: '', CUSTOMS_SVC_URL: '', FINANCE_SVC_URL: '',
@@ -55,10 +60,7 @@ const authH = (t) => ({ Authorization: `Bearer ${t}` });
 
 describe('冒烟测试', () => {
   before(async () => {
-    // 清理旧测试库
-    try { fs.unlinkSync(TEST_DB); } catch { /* 不存在即可 */ }
-
-    // 1. 种子数据（force sync + 演示数据）
+    // 1. 种子数据（force sync + 演示数据，写入 PostgreSQL 测试库）
     await new Promise((resolve, reject) => {
       const s = spawn(process.execPath, ['src/seed.js'], { cwd: BACKEND, env, stdio: 'inherit' });
       s.on('close', (code) => (code === 0 ? resolve() : reject(new Error('seed 失败 code=' + code))));
@@ -75,7 +77,6 @@ describe('冒烟测试', () => {
     if (serverProc) {
       try { serverProc.kill('SIGTERM'); } catch { /* ignore */ }
     }
-    try { fs.unlinkSync(TEST_DB); } catch { /* ignore */ }
   });
 
   test('未登录访问受保护接口返回 401', async () => {

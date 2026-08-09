@@ -25,6 +25,7 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
   ownerId: { type: DataTypes.INTEGER },     // 数据隔离：归属操作员（负责人）
   customFields: { type: DataTypes.TEXT },   // B4 自定义字段扩展（JSON 字符串）
   version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
+  isDemo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding 演示数据标记（可一键清空）
 }, { timestamps: true, indexes: [{ fields: ['settleMonth'] }] });
 
 // P2.4 本币折算金额：localAmount = amount * exchangeRate
