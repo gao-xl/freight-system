@@ -30,4 +30,21 @@ function mask(str) {
     .replace(/\b\d{10,}\b/g, '***');
 }
 
-module.exports = { logger, mask };
+// 带请求上下文的日志器：reqLog(req).info(...) 自动带上 reqId
+// 用法：reqLog(req).error('[AUTH] 校验异常', { message: e.message })
+function reqLog(req) {
+  const reqId = req && (req.id || req.headers && req.headers['x-request-id']);
+  const wrap = (level) => (...args) => {
+    const [msg, meta = {}] = args;
+    const enriched = reqId ? { ...meta, reqId } : meta;
+    logger.log(level, msg, enriched);
+  };
+  return {
+    error: wrap('error'),
+    warn: wrap('warn'),
+    info: wrap('info'),
+    debug: wrap('debug'),
+  };
+}
+
+module.exports = { logger, mask, reqLog };
