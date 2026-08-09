@@ -66,7 +66,7 @@ const result = await withTransaction(async (t) => {
 
 - **生产改表用迁移**，不用 `seed.js`（后者 force 清库）
 - **迁移必须幂等**：`showAllTables` / `describeTable` 判断后再操作
-- **SQLite → PostgreSQL**：量大建议切 PostgreSQL（JSONB 索引），迁移脚本通用
+- **数据库仅 PostgreSQL**：JSONB 索引提升字段检索性能
 
 ## 8. 安全
 

@@ -15,7 +15,7 @@ hero:
 features:
   - icon: 🚀
     title: 零运维开箱
-    details: SQLite 默认 + Docker 一键部署 + 一键备份恢复。OPC 没有 DBA，装完就跑、坏了能救。
+    details: PostgreSQL + Docker 一键部署 + 一键备份恢复。装完就跑、坏了能救。
   - icon: 🧩
     title: 充分二开
     details: 配置 > 代码。自定义字段、业务规则、流程配置、报表定义全部 Web UI 可配；插件协议加一个目录即是一个模块。

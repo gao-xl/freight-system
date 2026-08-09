@@ -61,10 +61,10 @@ node scripts/backup.js --keep=14 --out=/mnt/nas/freight
 
 **关键设计**：
 
-- 数据库先快照拷贝再打包，避免运行中直接读 SQLite 打出坏包
+- 备份打包上传文件与运行配置，不含数据库
 - 保留策略：默认保留 7 份，自动清理过期
 - 备份内嵌 `manifest.json`（时间、文件清单、dbDialect、warnings）
-- 若 `DB_DIALECT` 非 sqlite（如 PostgreSQL），脚本提示业务数据需用 `pg_dump` 另行备份
+- 业务数据在 PostgreSQL，需用 `pg_dump` 另行备份
 
 > 详细用法见 [备份恢复](/deploy/backup)。
 

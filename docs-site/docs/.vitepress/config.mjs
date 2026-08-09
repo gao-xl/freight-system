@@ -5,6 +5,11 @@ export default defineConfig({
   description: '面向 OPC 与小团队的开源货代系统 — 开箱即用核心链路 + 干净代码基座 + 插件化二开体系',
   lang: 'zh-CN',
   lastUpdated: false,
+  // 文档挂载在主系统 /docs 下，由后端 Express 统一输出，不再占用独立端口
+  base: '/docs/',
+  // 构建产物直接落到后端静态目录，后端启动即可对外输出，无需二次拷贝
+  // outDir 相对 VitePress 根目录（docs/）解析，故用 ../../ 回到仓库根再进 backend
+  outDir: '../../backend/public/docs',
   themeConfig: {
     logo: '/favicon.svg',
     nav: [

@@ -12,13 +12,7 @@ docker compose up -d --build
 
 启动后访问 `http://localhost:8080`，默认账号 `admin / 123456`（**上线前必须改密**）。
 
-包含：前端（Nginx）+ 后端（Node）+ SQLite 数据卷，数据持久化在 `backend/data/`。
-
-需要 PostgreSQL 的团队：
-
-```bash
-docker compose --profile pg up -d
-```
+包含：前端（Nginx）+ 后端（Node）+ PostgreSQL，数据持久化在 `pg-data` 命名卷。
 
 ## 方式二：源码运行（开发）
 

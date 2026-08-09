@@ -26,7 +26,7 @@ next: false
 └──────────────────┬──────────────────────────┘
                    │ Sequelize
 ┌──────────────────▼──────────────────────────┐
-│  数据库（默认 SQLite，可选 PostgreSQL）        │
+│  数据库（PostgreSQL）                          │
 └─────────────────────────────────────────────┘
 ```
 
@@ -54,7 +54,7 @@ next: false
 - **配置化**：自定义字段 / 业务规则 / 流程 / 模板 / 报表，全部 Web UI 可配
 - **事件驱动**：领域事件可被订阅，解耦挂接（见 [事件订阅](/dev/events)）
 - **适配器层**：外部系统对接统一接口，自动发现（见 [外部对接适配器](/dev/adapters)）
-- **数据层**：模型统一走 Sequelize，SQLite 与 PostgreSQL 可切换
+- **数据层**：模型统一走 Sequelize，仅支持 PostgreSQL
 
 ## 5. 演进边界：二开 vs 架构演进
 
@@ -67,10 +67,9 @@ next: false
 
 ## 6. 数据层演进
 
-- **默认 SQLite**：单用户/单机，零运维
-- **切 PostgreSQL**：多团队并发、JSONB 索引、高可用要求时
-- 迁移：`backend/migrations/` 增量迁移，两种库通用（见 [数据库迁移](/dev/migration)）
-- 决策参考：量大、并发高、需要更强查询能力 → PostgreSQL
+- **PostgreSQL 为唯一数据库**：多团队并发、JSONB 索引、高可用
+- 迁移：`backend/migrations/` 增量迁移（见 [数据库迁移](/dev/migration)）
+- 决策参考：结构变更走 `db:migrate`，演示/重置走 `npm run seed`
 
 ## 7. 标准如何演进
 

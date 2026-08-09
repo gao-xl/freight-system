@@ -65,6 +65,38 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 }));
 app.get('/openapi.json', (req, res) => res.json(swaggerSpec));
 
+// 开发文档（VitePress 构建产物）
+// 与 /api-docs 一样挂在业务命名空间之外、公开提供，不占独立端口。
+// 产物由 docs-site 构建直接输出到 backend/public/docs（见 docs-site 配置 outDir）。
+function mountDocs() {
+  const fs = require('fs');
+  const docsRoot = path.resolve(__dirname, '..', 'public', 'docs');
+  if (!fs.existsSync(docsRoot)) {
+    logger.warn('[DOCS] 未找到文档构建产物，/docs 不可用。请先在 docs-site 执行 npm run build');
+    return;
+  }
+  // 静态资源（assets/*.js|css、favicon 等）直接命中
+  app.use('/docs', express.static(docsRoot, { index: false }));
+  // 漂亮 URL 回退：/docs/dev/index → /docs/dev/index.html，/docs/ → index.html
+  app.get('/docs/*', (req, res) => {
+    const clean = req.path.replace(/\/+$/, '').replace(/^\/docs\/?/, '');
+    // 防御性校验：拒绝包含路径穿越的请求
+    if (clean.includes('..')) return res.status(400).send('非法路径');
+    const candidates = [
+      clean || 'index.html',
+      `${clean}.html`,
+      path.join(clean, 'index.html'),
+    ];
+    for (const c of candidates) {
+      const f = path.join(docsRoot, c);
+      if (fs.existsSync(f) && fs.statSync(f).isFile()) return res.sendFile(f);
+    }
+    res.status(404).send('文档页面不存在');
+  });
+  logger.info('[DOCS] 开发文档已挂载: /docs');
+}
+mountDocs();
+
 // 业务路由
 app.use('/api', routes);
 

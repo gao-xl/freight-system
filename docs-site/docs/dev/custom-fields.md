@@ -103,7 +103,7 @@ module.exports = {
 ## 7. 性能提示
 
 - `isSearch` 只对标记的字段参与检索，避免全表 JSON 扫描
-- SQLite 下 JSON 列检索走应用层过滤；**量大建议切 PostgreSQL**（JSONB 索引更快、更稳）
+- PostgreSQL JSONB 索引提升检索性能，量大时对 `isSearch` 字段建索引更快、更稳
 
 ## 下一步
 

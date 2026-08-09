@@ -11,7 +11,7 @@
 
 - **不做**：不对标东胜 DS7/DS8、海管家的功能全覆盖。中小货代不会为"免费"放弃成熟商业软件。
 - **做**：开箱即用的货代核心链路 + 干净好读的代码基座 + 插件化二开体系。
-- **三条铁律**：① 零运维优先（SQLite 默认、一键部署）② 二开优先（定制 80% 靠加文件/加配置）③ 安全先行。
+- **三条铁律**：① 稳定优先（PostgreSQL 一键部署）② 二开优先（定制 80% 靠加文件/加配置）③ 安全先行。
 
 ---
 
@@ -21,7 +21,7 @@
 | --- | --- |
 | 前端 | Vue 3 · Vite · Element Plus · Pinia · Vue Router · Axios · ECharts |
 | 后端 | Node.js · Express · Sequelize ORM · JWT · Helmet · 限流 |
-| 数据库 | SQLite（默认，零配置）／ PostgreSQL（多并发团队可选） |
+| 数据库 | PostgreSQL 16+ |
 | 鉴权 | JWT + bcrypt + RBAC 四表（角色/权限/用户-角色/角色-权限） |
 
 ---
@@ -52,7 +52,7 @@
 │  └─────────────────────────────┘  └─────────────────────────────┘          │
 └───────────────────────────────────────────────────────────────────────────┘
                                      │
-                              SQLite 文件 / PostgreSQL
+                              PostgreSQL
 ```
 
 ---
@@ -105,8 +105,7 @@ npm run dev                       # 访问 http://localhost:5173 （已代理 /a
 | 全新部署 / 开发重置 | `npm run seed` | force sync 建表 + 演示数据，**会清库**，仅首次用 |
 | 版本升级（保留数据） | `npm run db:migrate` | 增量迁移，生产/有真实数据时**只能用这个** |
 
-- 默认 SQLite（`backend/data/freight.db`，零运维）。
-- 切 PostgreSQL：`.env` 设 `DB_DIALECT=postgres` 并填连接信息（已内置 `pg` 驱动）。
+- 系统仅支持 PostgreSQL：`.env` 填 `DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD`（已内置 `pg` 驱动）。
 
 ---
 
@@ -149,7 +148,24 @@ npm run dev                       # 访问 http://localhost:5173 （已代理 /a
 
 - **前端**：`cd frontend && npm run build`，产物在 `frontend/dist/`，交 Nginx 托管并代理 `/api`。
 - **后端**：`node src/server.js`，可用 `pm2` 守护；生产务必设 `NODE_ENV=production` 与 `JWT_SECRET`。
-- **Docker 一键部署**：`docker-compose up`（默认 SQLite）或 `docker-compose -f docker-compose.pg.yml up`（PostgreSQL）。
+- **Docker 一键部署**：`docker compose up -d`（内置 PostgreSQL 服务，自动拉起）。
+- **部署前检查（AC-21）**：`cd backend && node scripts/check-env.js`，逐项核对 Node / Docker / 端口 / 磁盘 / 内存 / .env 密钥，详见文档站部署文档。
+- **备份 / 恢复（AC-22）**：`cd backend && npm run backup`（归档到 `backend/backups/`，保留最近 7 份），恢复用 `npm run restore`；系统管理页亦可在线备份 / 恢复。
+
+---
+
+## 新手引导与帮助中心（onboarding）
+
+首次部署后登录 admin（默认 `123456`，首登强制改密），系统按数据空态自动进入引导：
+
+- **6 步快速开始向导** `/onboarding`：公司信息 → 币种 → 示例数据 → 安全设置 → 使用偏好 → 完成；可跳过，完成 / 跳过标记存于本地。
+- **空状态引导**：客户 / 报价 / 订单等核心页面数据为空时给出就近引导（录报价 / 录客户 / 生成示例数据）。
+- **帮助中心**：页面右上角帮助入口，含字段说明与术语词典（`frontend/src/assets/glossary.json`）。
+- **示例数据管理**：系统管理 → 示例数据，一键生成 / 清空演示数据（事务 + isDemo 批次；非空库拒绝生成以保护真实数据）。
+- **系统健康**：系统管理 → 系统健康，聚合 Node / 磁盘 / 端口 / 数据目录 / 数据库 / 迁移六项检查（`GET /api/system/health`）。
+- **备份与恢复**：系统管理 → 备份恢复，在线打包 / 下载 / 恢复（`POST /api/system/backup`、`POST /api/system/restore`）。
+
+后端模块：`onboardingController` / `demoDataService` / `healthCheck` / `backupController` / `backupRestoreService`，路由注册见 `backend/src/routes/index.js`（`/api/onboarding/*`、`/api/system/health`、`/api/system/backup`）。
 
 ---
 
@@ -161,8 +177,9 @@ npm run dev                       # 访问 http://localhost:5173 （已代理 /a
 | --- | --- | --- |
 | `NODE_ENV` | 运行环境 | development |
 | `JWT_SECRET` | JWT 密钥（生产必填） | 开发随机生成 |
-| `DB_DIALECT` | 数据库方言 sqlite/postgres | sqlite |
-| `DB_STORAGE` | SQLite 文件路径 | ./data/freight.db |
+| `DB_DIALECT` | 数据库方言（仅 postgres） | postgres |
+| `DB_HOST` | PostgreSQL 主机 | 127.0.0.1 |
+| `DB_NAME` | PostgreSQL 库名 | freight |
 | `CORS_ORIGIN` | 跨域白名单（逗号分隔） | localhost:5173 |
 | `RATE_LIMIT_LOGIN_MAX` | 登录限流次数/15min | 20 |
 
@@ -170,7 +187,7 @@ npm run dev                       # 访问 http://localhost:5173 （已代理 /a
 
 ## 文档
 
-- **文档站**（VitePress）：`cd docs-site && npm install && npm run dev`，构建产物 `docs-site/docs/.vitepress/dist`
+- **文档站**（VitePress）：`cd docs-site && npm install && npm run build`，构建产物输出到 `backend/public/docs/`，后端启动后访问 `/docs`（Docker 部署已并入后端镜像，无独立端口）。
 - [`docs/文档总览索引.md`](docs/文档总览索引.md) — 全部规划文档索引
 - [`docs/项目设计方案.md`](docs/项目设计方案.md) — 总体设计
 - [`docs/二开指南.md`](docs/二开指南.md) — 二次开发实战
