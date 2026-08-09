@@ -487,8 +487,9 @@ router.get('/portal/orders/:id', authRequired, requireRole('customer', 'admin', 
  * /api/portal/orders/{id}/invoices/{invoiceId}/download:
  *   get:
  *     tags: [客户门户]
- *     summary: 下载账单 PDF（发票）
- *     description: 仅本客户订单的发票可下载，非本客户订单/账单返回 404。
+ *     summary: 下载账单 PDF（发票/费用通知单）
+ *     description: 仅本客户订单的账单可下载。invoiceId 可为发票（Invoice）或应收费用行（FinanceRecord），
+ *       分别渲染发票/费用通知单 PDF；非本客户订单/账单返回 404。
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { name: id, in: path, required: true, schema: { type: integer }, description: 订单 id }
@@ -526,7 +527,7 @@ router.get('/portal/orders/:id/documents/:docId/download', authRequired, require
  *   post:
  *     tags: [客户门户]
  *     summary: 在线补料（SI）提交
- *     description: 客户提交提单补料字段（shipper/consignee/notifyParty/marks 等），写入订单并记录补料状态，操作员可见。
+ *     description: 客户提交提单补料字段，写入订单并记录补料状态，操作员可见。契约字段：shipper/consignee/notifyParty/marksNumbers/cargoDesc/remark。
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { name: id, in: path, required: true, schema: { type: integer }, description: 订单 id }
@@ -537,10 +538,12 @@ router.get('/portal/orders/:id/documents/:docId/download', authRequired, require
  *           schema:
  *             type: object
  *             properties:
- *               shipperName: { type: string, description: 发货人 }
- *               consigneeName: { type: string, description: 收货人 }
+ *               shipper: { type: string, description: 发货人（名称与地址） }
+ *               consignee: { type: string, description: 收货人（名称与地址） }
  *               notifyParty: { type: string, description: 通知方 }
- *               marksNumbers: { type: string, description: 唛头 }
+ *               marksNumbers: { type: string, description: 唛头/件数 }
+ *               cargoDesc: { type: string, description: 货描 }
+ *               remark: { type: string, description: 备注 }
  *     responses:
  *       200:
  *         description: 补料已提交

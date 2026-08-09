@@ -60,6 +60,12 @@ async function login(username) {
 
 const authH = (t) => ({ Authorization: `Bearer ${t}` });
 
+// PDF 渲染（puppeteer）单次可达 10-30s，兜底 120s 超时，避免渲染卡住时 fetch 无限挂起
+const PDF_TIMEOUT_MS = 120000;
+async function pdfFetch(url, token) {
+  return fetch(url, { headers: authH(token), signal: AbortSignal.timeout(PDF_TIMEOUT_MS) });
+}
+
 describe('客户门户增强（E3）', () => {
   before(async () => {
     // 1. 种子数据（demo：客户 1-5、订单 1-5、单证、财务）
@@ -124,7 +130,7 @@ describe('客户门户增强（E3）', () => {
   });
 
   test('下载账单 PDF：200 + Content-Type pdf + PDF 魔数', async () => {
-    const r = await fetch(`${BASE}/api/portal/orders/1/invoices/${invoiceId}/download`, { headers: authH(customerToken) });
+    const r = await pdfFetch(`${BASE}/api/portal/orders/1/invoices/${invoiceId}/download`, customerToken);
     assert.equal(r.status, 200, `下载账单应 200：server stderr:\n${serverStderr.slice(-800)}`);
     assert.match(r.headers.get('content-type') || '', /application\/pdf/i);
     const buf = Buffer.from(await r.arrayBuffer());
@@ -132,8 +138,17 @@ describe('客户门户增强（E3）', () => {
     assert.equal(buf.slice(0, 4).toString('latin1'), '%PDF', '应以 PDF 魔数 %PDF 开头');
   });
 
+  test('下载账单 PDF（应收费用行）：FinanceRecord id → 费用通知单 PDF', async () => {
+    // 前端按费用行下载：传入 FinanceRecord id（订单 1 应收行 id=1）
+    const r = await pdfFetch(`${BASE}/api/portal/orders/1/invoices/1/download`, customerToken);
+    assert.equal(r.status, 200, `按费用行下载账单应 200：server stderr:\n${serverStderr.slice(-800)}`);
+    assert.match(r.headers.get('content-type') || '', /application\/pdf/i);
+    const buf = Buffer.from(await r.arrayBuffer());
+    assert.equal(buf.slice(0, 4).toString('latin1'), '%PDF', '应以 PDF 魔数 %PDF 开头');
+  });
+
   test('下载提单 PDF：200 + Content-Disposition attachment + PDF 魔数', async () => {
-    const r = await fetch(`${BASE}/api/portal/orders/1/documents/1/download`, { headers: authH(customerToken) });
+    const r = await pdfFetch(`${BASE}/api/portal/orders/1/documents/1/download`, customerToken);
     assert.equal(r.status, 200, `下载提单应 200：server stderr:\n${serverStderr.slice(-800)}`);
     assert.match(r.headers.get('content-type') || '', /application\/pdf/i);
     assert.match(r.headers.get('content-disposition') || '', /attachment/i);
@@ -141,15 +156,14 @@ describe('客户门户增强（E3）', () => {
     assert.equal(buf.slice(0, 4).toString('latin1'), '%PDF', '应以 PDF 魔数 %PDF 开头');
   });
 
-  test('SI 补料提交成功：写入订单且操作员可见', async () => {
+  test('SI 补料提交成功：写入订单且操作员可见（契约字段 shipper/consignee）', async () => {
     const si = {
-      shipperName: '华茂国际贸易有限公司',
-      shipperAddress: '上海市浦东新区世纪大道100号',
-      consigneeName: 'EURO TRADING BV',
+      shipper: '华茂国际贸易有限公司\n上海市浦东新区世纪大道100号',
+      consignee: 'EURO TRADING BV\nROTTERDAM',
       notifyParty: 'SAME AS CONSIGNEE',
       marksNumbers: 'HM2026 / ROTTERDAM / C/NO.1-420',
       cargoDesc: '纺织服装',
-      containerNo: 'COSU1234567',
+      remark: '请按此补料制单',
     };
     const r = await fetch(`${BASE}/api/portal/orders/1/si`, {
       method: 'POST',
@@ -160,14 +174,15 @@ describe('客户门户增强（E3）', () => {
     assert.equal(r.status, 200, `SI 提交应 200：${JSON.stringify(j)}`);
     assert.equal(j.code, 0);
     assert.equal(j.data.siStatus, 'submitted', '补料状态应为 submitted');
-    assert.equal(j.data.applied.shipperName, si.shipperName);
+    assert.equal(j.data.applied.shipperName, si.shipper, 'shipper 应写入订单 shipperName');
 
     // 操作员可见：订单详情携带补料状态与补料原文
     const od = await fetch(`${BASE}/api/orders/1`, { headers: authH(operatorToken) });
     assert.equal(od.status, 200);
     const odj = await od.json();
     assert.equal(odj.data.siStatus, 'submitted', '操作员应看到 siStatus=submitted');
-    assert.equal(odj.data.shipperName, si.shipperName, '提单发货人字段应被补料更新');
+    assert.equal(odj.data.shipperName, si.shipper, '提单发货人字段应被补料更新');
+    assert.equal(odj.data.consigneeName, si.consignee, '提单收货人字段应被补料更新');
     const raw = JSON.parse(odj.data.siData);
     assert.equal(raw.marksNumbers, si.marksNumbers, '补料原文应含提交的唛头');
     assert.ok(odj.data.siSubmittedAt, '应记录补料提交时间');
