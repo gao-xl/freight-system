@@ -6,63 +6,10 @@ const { exportBuffer } = require('../services/exportService');
 const { buildOrderScopeWhere } = require('../middleware/dataScope');
 const { checkCustomerCredit } = require('../services/currencyService');
 const events = require('../services/eventBus');
+const { ORDER_NODES, NODE_TRACK_STAGE, computeReached, deriveOrderStatus, statusMapText, dict } = require('../domains/order/orderDomain');
 
-// A6 订单业务状态机：按进出口定义业务节点流转
-const ORDER_NODES = {
-  export: [
-    { key: 'booked', label: '订舱' },
-    { key: 'gate_in', label: '进港' },
-    { key: 'customs', label: '报关' },
-    { key: 'loaded', label: '装船' },
-    { key: 'arrived', label: '到港' },
-    { key: 'cleared', label: '清关' },
-    { key: 'delivered', label: '送达' },
-  ],
-  import: [
-    { key: 'booked', label: '订舱' },
-    { key: 'arrived', label: '到港' },
-    { key: 'customs', label: '报关' },
-    { key: 'cleared', label: '清关' },
-    { key: 'delivered', label: '送达' },
-  ],
-};
-
-// 节点 → 运输跟踪阶段映射（用于手动推进）
-const NODE_TRACK_STAGE = {
-  booked: 'booked',
-  gate_in: 'received',
-  loaded: 'loaded',
-  arrived: 'arrived',
-  cleared: 'cleared',
-  delivered: 'delivered',
-};
-
-// 根据实际业务数据推导已到达的节点集合
-function computeReached(order, bookings, customs, tracks) {
-  const reached = new Set();
-  if (bookings.length) reached.add('booked');
-  if (customs.length) reached.add('customs');
-  const stages = tracks.map((t) => t.stage);
-  if (stages.includes('picked_up') || stages.includes('received')) reached.add('gate_in');
-  if (stages.includes('loaded')) reached.add('loaded');
-  if (stages.includes('in_transit')) reached.add('loaded');
-  if (stages.includes('arrived')) reached.add('arrived');
-  if (stages.includes('cleared')) reached.add('cleared');
-  if (stages.includes('delivered')) reached.add('delivered');
-  // 报关放行视同清关完成（出口）
-  if (customs.some((c) => c.status === 'released' || c.status === 'closed')) reached.add('cleared');
-  return reached;
-}
-
-// 由节点到达情况推导订单状态
-function deriveOrderStatus(order, reached, nodes) {
-  const keys = nodes.map((n) => n.key);
-  const reachedCount = keys.filter((k) => reached.has(k)).length;
-  if (order.status === 'cancelled') return 'cancelled';
-  if (reachedCount === 0) return 'draft';
-  if (reachedCount >= keys.length) return 'completed';
-  return 'in_progress';
-}
+// 订单状态机等纯函数已迁至 domains/order/orderDomain.js（架构解耦 F0），
+// 本文件只保留 HTTP 编排；advanceOne 事务外壳留待 F1 orderService 落位。
 
 // A6 订单流转查询：GET /orders/:id/flow
 const flow = asyncHandler(async (req, res) => {
@@ -230,10 +177,6 @@ const batchStatus = asyncHandler(async (req, res) => {
   ok(res, { ok: okList.length, failed: failedList.length, failedList, status },
     `已更新 ${okList.length} 张订单${failedList.length ? `，失败 ${failedList.length} 张` : ''}`);
 });
-
-function statusMapText(s) {
-  return { draft: '草稿', confirmed: '已确认', in_progress: '进行中', completed: '已完成', cancelled: '已取消' }[s] || s;
-}
 
 const base = crudController({
   name: 'order',
@@ -405,10 +348,6 @@ const timeline = asyncHandler(async (req, res) => {
   nodes.sort((a, b) => (a.time ? a.time : 0) - (b.time ? b.time : 0));
   ok(res, { order: { id: order.id, orderNo: order.orderNo, status: order.status }, nodes });
 });
-
-function dict(stage) {
-  return { booked: '已订舱', picked_up: '已提货', received: '已收货', loaded: '已装船', in_transit: '运输中', arrived: '已到港', cleared: '已清关', delivered: '已送达' }[stage] || stage;
-}
 
 // Excel 导出订单列表（U2 修复：复用 list 的筛选条件，导出=所见，不再全量导出）
 const exportExcel = asyncHandler(async (req, res) => {
