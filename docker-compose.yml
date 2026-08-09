@@ -4,25 +4,54 @@
 #   1. cp .env.example .env        并在 .env 里填一个高强度 JWT_SECRET
 #   2. docker compose run --rm backend npm run seed    建表 + 演示数据（仅首次，会清库）
 #   3. docker compose up -d
-#   浏览器访问 http://localhost:8080
+#   浏览器访问 http://localhost:8080  （开发文档并入后端，访问 http://localhost:8080/docs，无独立端口）
+#
+# 注意：后端镜像会封入开发文档。构建后端镜像前需先在本机生成文档产物：
+#   cd docs-site && npm install && npm run build   （产物落到 backend/public/docs）
+# 否则后端镜像缺 /docs，需在 docs-site 构建后重新 docker compose build backend。
 #
 # 日常运维:
 #   docker compose logs -f backend            看日志
 #   docker compose exec backend npm run backup   立即备份
-#   docker compose down                       停服（数据在宿主机目录里，不会丢）
+#   docker compose down                       停服（数据在 pg 数据卷里，不会丢）
 #
-# 切 PostgreSQL: 在 .env 里设 DB_DIALECT=postgres 与 DB_HOST=pg，然后
-#   docker compose --profile pg up -d
+# 数据库：系统仅支持 PostgreSQL，pg 为必启基础服务，backend 依赖其健康后启动。
 
 name: freight-system
 
 services:
+  # PostgreSQL 基础服务（必启）
+  pg:
+    image: postgres:16-alpine
+    container_name: freight-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-freight}
+      POSTGRES_USER: ${DB_USER:-freight}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-freight}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 只绑本机回环，不暴露到公网；需要外部工具连库时再改
+      - "127.0.0.1:${PG_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-freight} -d ${DB_NAME:-freight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ./backend
     image: freight-system-backend:latest
     container_name: freight-backend
     restart: unless-stopped
+
+    depends_on:
+      # 等 PostgreSQL 健康检查通过再起，避免后端连不上库反复重试
+      pg:
+        condition: service_healthy
 
     # .env 里的变量整体注入，二开新增的适配器密钥等自定义项无需改本文件
     env_file: .env
@@ -33,8 +62,10 @@ services:
       NODE_ENV: production
       # 容器内端口固定 3000，对外映射由下面的 ports 决定，改 .env 的 PORT 不影响
       PORT: "3000"
-      # 相对于 WORKDIR /app，即 /app/data/freight.db，正好落在下面挂载的数据卷里
-      DB_STORAGE: ./data/freight.db
+      # 容器内连本人自己的 pg 服务，服务名固定 pg
+      DB_DIALECT: postgres
+      DB_HOST: pg
+      DB_PORT: "5432"
       TZ: ${TZ:-Asia/Shanghai}
 
     ports:
@@ -42,8 +73,7 @@ services:
       - "${BACKEND_PORT:-3000}:3000"
 
     volumes:
-      # 数据落在宿主机目录里，容器重建/升级镜像都不会丢
-      - ./backend/data:/app/data
+      # 上传文件与备份落在宿主机目录里，容器重建/升级镜像都不会丢
       - ./backend/uploads:/app/uploads
       - ./backend/logs:/app/logs
       - ./backend/backups:/app/backups
@@ -73,31 +103,6 @@ services:
       # 等后端健康检查通过再起，避免 nginx 因解析不到 backend 上游而启动失败
       backend:
         condition: service_healthy
-
-  # 可选：多人并发场景改用 PostgreSQL。默认不启动，加 --profile pg 才拉起。
-  # 这里刻意不给 backend 加 depends_on: pg —— 带 profile 的服务被无 profile 的服务依赖时，
-  # 不启用该 profile 就会直接报编排校验错误，反而让默认的 SQLite 路径跑不起来。
-  # pg 起来前后端连不上会退出，由 restart: unless-stopped 自动重试，几秒内自愈。
-  pg:
-    profiles: ["pg"]
-    image: postgres:16-alpine
-    container_name: freight-pg
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME:-freight}
-      POSTGRES_USER: ${DB_USER:-freight}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-freight}
-      TZ: ${TZ:-Asia/Shanghai}
-    ports:
-      # 只绑本机回环，不暴露到公网；需要外部工具连库时再改
-      - "127.0.0.1:${PG_PORT:-5432}:5432"
-    volumes:
-      - pg-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-freight} -d ${DB_NAME:-freight}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
 volumes:
   pg-data:

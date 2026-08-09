@@ -8,8 +8,23 @@ on:
 
 jobs:
   backend:
-    name: 后端测试 (SQLite)
+    name: 后端测试 (PostgreSQL)
     runs-on: ubuntu-latest
+    services:
+      # 冒烟测试连接 PostgreSQL 测试库
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: freight_test
+          POSTGRES_USER: freight
+          POSTGRES_PASSWORD: freight
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U freight -d freight_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
@@ -27,6 +42,12 @@ jobs:
 
       - name: 冒烟测试（启动 → 登录 → 业务接口 → 自动化幂等）
         run: npm test
+        env:
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: 5432
+          TEST_DB_NAME: freight_test
+          TEST_DB_USER: freight
+          TEST_DB_PASSWORD: freight
 
   frontend:
     name: 前端构建
@@ -48,3 +69,27 @@ jobs:
 
       - name: 构建
         run: npm run build
+
+  docs:
+    name: 开发文档构建
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 构建（产物落到 backend/public/docs）
+        run: npm run build
+
+      - name: 校验文档产物已生成且导航链接有效
+        run: node -e "const fs=require('fs');const p='../backend/public/docs';if(!fs.existsSync(p)){throw new Error('文档构建产物缺失: '+p)};const files=fs.readdirSync(p);console.log('[DOCS] 产物目录:',p,'文件数:',files.length)"
