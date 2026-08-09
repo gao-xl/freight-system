@@ -11,6 +11,25 @@ function getByPath(obj, path) {
   return path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
 }
 
+// HTML 实体转义：阻断打印模板中的存储型 XSS（业务字段/用户配置值在渲染前必须转义）
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// 对用于属性值的 URL 做协议白名单校验，仅允许 http/https 与相对路径，阻断 javascript: 类攻击
+function safeUrl(value) {
+  if (value == null) return '';
+  const s = String(value).trim();
+  if (/^(https?:)?\/\//i.test(s) || /^\/(?!\/)/.test(s) || /^[^/\\:]+$/.test(s)) return escapeHtml(s);
+  return '';
+}
+
 // 值格式化
 function formatValue(value, type) {
   if (value === null || value === undefined || value === '') return '-';
@@ -44,16 +63,18 @@ function resolveFields(blocks, bizData) {
 function blockToHtml(block) {
   switch (block.type) {
     case 'header':
-      return `<div class="blk-header" style="text-align:${block.align || 'center'};font-size:${block.fontSize || 18}px;font-weight:${block.bold ? 'bold' : 'normal'};">${block.title || ''}</div>`;
+      // bold 为模板配置的布尔值：先判布尔再输出，避免转义后 String(false)='false' 恒真导致误加粗
+      const fontWeight = block.bold === true ? 'bold' : 'normal';
+      return `<div class="blk-header" style="text-align:${escapeHtml(block.align) || 'center'};font-size:${escapeHtml(block.fontSize) || 18}px;font-weight:${fontWeight};">${escapeHtml(block.title)}</div>`;
     case 'logo':
-      return block.url ? `<div class="blk-logo"><img src="${block.url}" style="width:${block.width || 160}px"/></div>` : '';
+      return safeUrl(block.url) ? `<div class="blk-logo"><img src="${safeUrl(block.url)}" style="width:${escapeHtml(block.width) || 160}px"/></div>` : '';
     case 'fields': {
       const rows = [];
       const cols = block.columns || 2;
       let row = [];
       for (const f of block.fields || []) {
         if (!f.show) continue;
-        row.push(`<div class="field" style="flex:${100 / cols}%;"><span class="label">${f.label || ''}：</span><span class="val">${f.value || ''}</span></div>`);
+        row.push(`<div class="field" style="flex:${100 / cols}%;"><span class="label">${escapeHtml(f.label)}：</span><span class="val">${escapeHtml(f.value)}</span></div>`);
         if (row.length >= cols) { rows.push(row); row = []; }
       }
       if (row.length) rows.push(row);
@@ -61,16 +82,16 @@ function blockToHtml(block) {
     }
     case 'table': {
       const cols = block.columns || [];
-      const head = cols.map((c) => `<th>${c.label || c.key}</th>`).join('');
+      const head = cols.map((c) => `<th>${escapeHtml(c.label || c.key)}</th>`).join('');
       // 从 bizData 聚合取行（quotation.items）
       const rowsData = block.data || [];
-      const body = rowsData.map((r) => `<tr>${cols.map((c) => `<td>${getByPath(r, c.key) ?? '-'}</td>`).join('')}</tr>`).join('');
+      const body = rowsData.map((r) => `<tr>${cols.map((c) => `<td>${escapeHtml(getByPath(r, c.key) ?? '-')}</td>`).join('')}</tr>`).join('');
       return `<div class="blk-table"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
     }
     case 'sign':
-      return `<div class="blk-sign"><div class="sign-row">${(block.columns || []).map((c) => `<div class="sign-item">${c}：______________</div>`).join('')}</div></div>`;
+      return `<div class="blk-sign"><div class="sign-row">${(block.columns || []).map((c) => `<div class="sign-item">${escapeHtml(c)}：______________</div>`).join('')}</div></div>`;
     case 'footer':
-      return `<div class="blk-footer" style="text-align:${block.align || 'center'};">${block.text || ''}</div>`;
+      return `<div class="blk-footer" style="text-align:${escapeHtml(block.align) || 'center'};">${escapeHtml(block.text)}</div>`;
     default:
       return '';
   }
@@ -109,7 +130,8 @@ ${footer ? `<div class="page-footer">${footer}</div>` : ''}
 
 // 组装业务数据（按 docType 从库加载；opts 支持 D4 对账单客户+周期聚合：{ customerId, from, to }）
 async function loadBizData(docType, bizId, opts = {}) {
-  const { Order, Booking, Customer, Quotation, QuotationItem, CustomsDeclaration, FinanceRecord, Supplier, Invoice } = require('../models');
+  const { Order, Booking, Customer, Quotation, QuotationItem, CustomsDeclaration, Supplier, Invoice } = require('../models');
+  const { findRecordsByOrderId, findRecordsByOrderIds } = require('../domains/finance/financeService');
   const biz = {};
   // D3：debit_note 加入订单取数（DN 基于订单 + 费用明细）
   if (['bl', 'order', 'packing_list', 'customs', 'statement', 'settlement', 'debit_note'].includes(docType)) {
@@ -161,7 +183,7 @@ async function loadBizData(docType, bizId, opts = {}) {
       const from = new Date(opts.from);
       const to = opts.to ? new Date(`${opts.to}T23:59:59.999`) : new Date();
       const fin = orderIds.length
-        ? await FinanceRecord.findAll({ where: { orderId: { [Op.in]: orderIds } } })
+        ? await findRecordsByOrderIds(orderIds)
         : [];
       const period = fin.filter((f) => { const d = new Date(f.createdAt); return d >= from && d <= to; });
       let openingReceivable = 0, openingPayable = 0; // 期初未结（本期前发生且未收/未付）
@@ -201,7 +223,7 @@ async function loadBizData(docType, bizId, opts = {}) {
         orderCount: orderIds.length,
       };
     } else {
-      const fin = await FinanceRecord.findAll({ where: { orderId: bizId } });
+      const fin = await findRecordsByOrderId(bizId);
       biz.finance = (fin || []).map((f) => f.toJSON());
     }
   }
@@ -260,4 +282,4 @@ async function render(templateId, docType, bizId, opts = {}) {
   return { html, pdf, tpl };
 }
 
-module.exports = { render, resolveFields, renderHTML, loadBizData, getByPath, formatValue };
+module.exports = { render, resolveFields, renderHTML, loadBizData, getByPath, formatValue, escapeHtml, safeUrl };
