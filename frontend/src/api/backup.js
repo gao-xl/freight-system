@@ -1,9 +1,12 @@
 // 系统备份/恢复 API 封装（AC-22）
-// 契约（与 be-onboarding backupController 对齐）：
-//   POST /api/system/backup                    → { filename, size, warnings }（JSON 元数据）
-//   GET  /api/system/backup/download/:filename → 备份文件流（.tar.gz）
-//   POST /api/system/restore                   → multipart(file) 恢复（支持 ?dryRun=1 预检）
-// fail-open：端点未就绪（后端开发中）→ 调用方捕获 404 后禁用并提示"备份服务初始化中"，不弹错不阻塞。
+// 契约（与备份恢复 backupController 对齐）：
+//   POST   /api/system/backup                → { filename, size, warnings }（生成）
+//   GET    /api/system/backup/list           → { items: [{ filename, size, sizeText, mtime, kind }] }
+//   DELETE /api/system/backup/:filename      → 删除服务器备份
+//   POST   /api/system/backup/inspect        → 检查备份内容（{filename} 或 multipart file）
+//   GET    /api/system/backup/download/:filename → 备份文件流（.tar.gz）
+//   POST   /api/system/restore               → 全量/部分恢复（服务器 filename 或 multipart file）
+// fail-open：端点未就绪（后端开发中）→ 调用方捕获 404 后禁用并提示，不弹错不阻塞。
 import axios from 'axios';
 
 const silent = axios.create({ baseURL: '/api', timeout: 60000 });
@@ -31,6 +34,29 @@ export function createBackup() {
   return silent.post('/system/backup', null, { timeout: 120000 });
 }
 
+// 列出服务器上的备份：GET /api/system/backup/list → { items }
+export function listBackups() {
+  return silent.get('/system/backup/list');
+}
+
+// 删除服务器上的备份：DELETE /api/system/backup/:filename
+export function deleteBackup(filename) {
+  return silent.delete(`/system/backup/${encodeURIComponent(filename)}`);
+}
+
+// 检查备份内容：POST /api/system/backup/inspect（JSON { filename } 或 FormData file）
+export function inspectBackup(payload) {
+  if (payload instanceof FormData || payload instanceof File) {
+    const form = new FormData();
+    form.append('file', payload);
+    return silent.post('/system/backup/inspect', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
+  }
+  return silent.post('/system/backup/inspect', { filename: payload.filename }, { timeout: 120000 });
+}
+
 // 下载备份文件：GET /api/system/backup/download/:filename → { blob, filename }
 export async function downloadBackup(filename) {
   const response = await silent.get(`/system/backup/download/${encodeURIComponent(filename)}`, {
@@ -45,12 +71,25 @@ export async function downloadBackup(filename) {
   return { blob: response.data, filename: name };
 }
 
-// 上传备份文件恢复（multipart，字段名 file）
-export function restoreBackup(file) {
+// 全量/部分恢复（multipart：file 或 filename 二选一，另带 scope/tables/includeData/includeUploads/dryRun）
+export function restoreBackup(payload) {
   const form = new FormData();
-  form.append('file', file);
+  if (payload.file) form.append('file', payload.file);
+  if (payload.filename) form.append('filename', payload.filename);
+  form.append('scope', payload.scope || 'full');
+  if (payload.scope === 'partial' && Array.isArray(payload.tables) && payload.tables.length) {
+    form.append('tables', JSON.stringify(payload.tables));
+  }
+  if (payload.includeData === false) form.append('includeData', '0');
+  if (payload.includeUploads === false) form.append('includeUploads', '0');
+  if (payload.dryRun) form.append('dryRun', '1');
   return silent.post('/system/restore', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 300000,
   });
+}
+
+// 仅预检（更换新备份预检入口，供前端二次确认）
+export function previewRestore(payload) {
+  return restoreBackup({ ...payload, dryRun: true });
 }

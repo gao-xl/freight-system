@@ -17,6 +17,7 @@
     "restore": "node scripts/restore.js",
     "test": "node --test --test-concurrency=1 tests/smoke.test.js tests/pdf.test.js tests/onboarding.test.js tests/tracking-auto.test.js tests/notification.test.js tests/portal-enhanced.test.js tests/orderDomain.test.js tests/printSecurity.test.js tests/financeService.test.js",
     "test:backup": "node --test --test-concurrency=1 tests/backup.test.js",
+    "test:backuprestore": "node --test --test-concurrency=1 tests/backupRestore.test.js",
     "lint": "eslint src/ scripts/ migrations/"
   },
   "devDependencies": {

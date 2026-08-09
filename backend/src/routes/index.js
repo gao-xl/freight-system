@@ -135,6 +135,9 @@ const restoreUpload = multer({
   limits: { fileSize: 512 * 1024 * 1024 },
 });
 router.post('/system/backup', authRequired, requirePermission('system', '*'), backupCtrl.backup);
+router.get('/system/backup/list', authRequired, requirePermission('system', '*'), backupCtrl.list);
+router.delete('/system/backup/:filename', authRequired, requirePermission('system', '*'), backupCtrl.remove);
+router.post('/system/backup/inspect', authRequired, requirePermission('system', '*'), restoreUpload.single('file'), backupCtrl.inspect);
 router.get('/system/backup/download/:filename', authRequired, requirePermission('system', '*'), backupCtrl.download);
 router.post('/system/restore', authRequired, requirePermission('system', '*'), restoreUpload.single('file'), backupCtrl.restore);
 
