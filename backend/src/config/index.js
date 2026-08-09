@@ -59,4 +59,11 @@ module.exports = {
     customs: process.env.CUSTOMS_SVC_URL || 'http://localhost:4002',
     finance: process.env.FINANCE_SVC_URL || 'http://localhost:4003',
   },
+  // E1 外部跟踪自动拉取：默认开启；适配器无 IntegrationConfig 密钥（未启用/无 apiKey）时自动跳过（fail-open）
+  trackAutoPull: {
+    enabled: process.env.TRACK_AUTO_PULL !== 'off', // 总开关，默认开
+    schedule: process.env.TRACK_AUTO_PULL_SCHEDULE !== 'off', // 船期同步（每 6h）
+    ais: process.env.TRACK_AUTO_PULL_AIS !== 'off', // AIS 船位（每 2h）
+    yard: process.env.TRACK_AUTO_PULL_YARD !== 'off', // 场站状态（每 4h）
+  },
 };
