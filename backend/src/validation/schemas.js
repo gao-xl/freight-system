@@ -2,6 +2,7 @@
 // 约定：createSchema 校验必填；updateSchema 全部可选但校验类型/枚举
 // 均 .unknown(true) 允许额外字段，避免误伤扩展字段
 const Joi = require('joi');
+const { joiPassword } = require('../utils/passwordPolicy');
 
 const id = Joi.number().integer().positive();
 const str = (max) => Joi.string().trim().max(max).allow('', null);
@@ -19,7 +20,7 @@ const login = Joi.object({
 
 const changePassword = Joi.object({
   oldPassword: Joi.string().max(255).required(),
-  newPassword: Joi.string().min(6).max(255).required(),
+  newPassword: joiPassword(true),
 }).unknown(true);
 
 // M3 刷新会话：校验 refresh token 存在
@@ -210,7 +211,7 @@ const followUpdate = followBase;
 const userCreate = Joi.object({
   username: Joi.string().trim().min(2).max(50).required(),
   name: Joi.string().trim().max(50).required(),
-  password: Joi.string().min(6).max(255).required(),
+  password: joiPassword(true),
   role: enumVal(['admin', 'manager', 'operator', 'finance', 'viewer', 'customer']),
   email: Joi.string().email().max(100).allow('', null),
   phone: str(30),
@@ -222,7 +223,7 @@ const userUpdate = Joi.object({
   email: Joi.string().email().max(100).allow('', null),
   phone: str(30),
   status: enumVal(['active', 'disabled']),
-  password: Joi.string().min(6).max(255).allow(''),
+  password: joiPassword(false),
   roleIds: Joi.array().items(id),
 }).unknown(true);
 

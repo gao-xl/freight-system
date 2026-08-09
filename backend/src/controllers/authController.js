@@ -7,6 +7,41 @@ const { ok, fail, asyncHandler } = require('../utils/response');
 const { getPermissions } = require('../services/permissionService');
 const sessionService = require('../services/sessionService');
 
+// P0-2 token 安全：refresh token（30 天长期凭证）经 httpOnly Cookie 承载，
+// 前端 JS 无法读取，阻断 XSS 窃取长期会话。access token 保持短效 header。
+const REFRESH_COOKIE = 'ft_refresh';
+const COOKIE_MAX_AGE = sessionService.exprToMs(config.jwtRefreshExpiresIn);
+
+// 解析请求 Cookie 头（不引入 cookie-parser 依赖，仅需读取一个名值对）
+function parseCookies(header) {
+  const out = {};
+  if (!header) return out;
+  for (const part of String(header).split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    if (k) out[k] = decodeURIComponent(v);
+  }
+  return out;
+}
+
+// 设置 httpOnly refresh cookie（SameSite=Lax：同源受保护，跨站无法携带；生产可加 Secure）
+function setRefreshCookie(res, refreshToken) {
+  res.cookie(REFRESH_COOKIE, refreshToken, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.isProd,
+    path: '/',
+    maxAge: COOKIE_MAX_AGE,
+  });
+}
+
+// 清除 refresh cookie
+function clearRefreshCookie(res) {
+  res.clearCookie(REFRESH_COOKIE, { httpOnly: true, sameSite: 'lax', secure: config.isProd, path: '/' });
+}
+
 // 占位密码哈希：用户不存在时也执行一次 bcrypt 比较，保持耗时一致，防时序侧信道枚举用户名
 const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 10);
 
@@ -51,6 +86,8 @@ const login = asyncHandler(async (req, res) => {
   const session = await sessionService.createSession(user, deviceInfo(req));
   const token = signAccessToken(user, session.sessionId);
   const permissions = await getPermissions(user.id);
+  // P0-2：refresh token 同时经 httpOnly cookie 下发（body 仍返回，兼容存量调用方/测试）
+  setRefreshCookie(res, session.refreshToken);
   ok(res, {
     token,
     refreshToken: session.refreshToken,
@@ -60,8 +97,11 @@ const login = asyncHandler(async (req, res) => {
 });
 
 // 刷新：校验 refresh token → 轮换（撤销旧会话、签发全新 access+refresh）→ 返回新对
+// P0-2：token 优先取自 httpOnly cookie（前端 JS 不可读），body 为兼容回退
 const refresh = asyncHandler(async (req, res) => {
-  const { refreshToken } = req.body || {};
+  const fromCookie = parseCookies(req.headers.cookie)[REFRESH_COOKIE];
+  const { refreshToken: bodyToken } = req.body || {};
+  const refreshToken = fromCookie || bodyToken;
   const session = refreshToken ? await sessionService.findValidSessionByToken(refreshToken) : null;
   // 无效/过期/已撤销统一文案，不暴露具体原因
   if (!session) return fail(res, '登录会话已失效，请重新登录', 1, 401);
@@ -84,6 +124,7 @@ const refresh = asyncHandler(async (req, res) => {
   });
   const token = signAccessToken(user, newSession.sessionId);
   const permissions = await getPermissions(user.id);
+  setRefreshCookie(res, newSession.refreshToken);
   ok(res, {
     token,
     refreshToken: newSession.refreshToken,
@@ -97,6 +138,7 @@ const logout = asyncHandler(async (req, res) => {
   if (req.sessionId) {
     await sessionService.revokeSession(req.sessionId);
   }
+  clearRefreshCookie(res);
   ok(res, null, '已退出登录');
 });
 
@@ -106,6 +148,7 @@ const logoutAll = asyncHandler(async (req, res) => {
   user.tokenVersion = (user.tokenVersion || 0) + 1;
   await user.save();
   await sessionService.revokeAllForUser(req.user.id);
+  clearRefreshCookie(res);
   ok(res, null, '已在所有设备下线');
 });
 

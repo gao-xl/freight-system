@@ -15,6 +15,7 @@ const { User, Role } = require('../models');
 const UserRole = require('../models/UserRole');
 const config = require('../config');
 const { ok, fail, asyncHandler } = require('../utils/response');
+const { validatePassword } = require('../utils/passwordPolicy');
 const { getInitStatus } = require('../services/bootstrapService');
 const { generateDemoData, clearDemoData, getOnboardingStatus } = require('../services/demoDataService');
 const { getPermissions, invalidate } = require('../services/permissionService');
@@ -31,7 +32,8 @@ const setupAdmin = asyncHandler(async (req, res) => {
   const { username, password, name } = req.body || {};
   if (!username || !password) return fail(res, '用户名和密码不能为空');
   if (String(username).length < 2 || String(username).length > 50) return fail(res, '用户名长度需为 2-50 位');
-  if (String(password).length < 6) return fail(res, '密码至少 6 位');
+  const pw = validatePassword(password);
+  if (!pw.ok) return fail(res, pw.message);
   if (!name) return fail(res, '请填写管理员姓名');
 
   const status = await getInitStatus();

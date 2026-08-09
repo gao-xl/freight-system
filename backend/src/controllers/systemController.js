@@ -1,5 +1,6 @@
 const { User, Role, Permission, UserRole, AuditLog, CompanyProfile } = require('../models');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
+const { validatePassword } = require('../utils/passwordPolicy');
 const { invalidate } = require('../services/permissionService');
 const { collectHealth } = require('../services/healthCheck');
 
@@ -24,6 +25,8 @@ const createUser = asyncHandler(async (req, res) => {
   const bcrypt = require('bcryptjs');
   const { username, name, password, role, email, phone, roleIds, customerId } = req.body || {};
   if (!username || !name || !password) return fail(res, '用户名、姓名、密码不能为空');
+  const pw = validatePassword(password);
+  if (!pw.ok) return fail(res, pw.message);
   const exists = await User.findOne({ where: { username } });
   if (exists) return fail(res, '用户名已存在');
   // C5 客户自助门户：customer 角色必须关联客户档案
@@ -51,7 +54,11 @@ const updateUser = asyncHandler(async (req, res) => {
   if (!user) return fail(res, '用户不存在', 1, 404);
   const { name, role, email, phone, status, password, roleIds, customerId } = req.body || {};
   const patch = { name, role, email, phone, status, customerId };
-  if (password) patch.password = bcrypt.hashSync(password, 10);
+  if (password) {
+    const pw = validatePassword(password);
+    if (!pw.ok) return fail(res, pw.message);
+    patch.password = bcrypt.hashSync(password, 10);
+  }
   await user.update(patch);
   // D8：管理员改密或禁用用户 → 递增 tokenVersion，作废该用户所有旧 token
   if (password || status === 'disabled') {
