@@ -177,6 +177,7 @@ async function openDetail(id) {
 }
 function logout() {
   localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
   router.push('/login');
 }
 

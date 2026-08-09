@@ -5,9 +5,36 @@ const { User } = require('../models');
 const config = require('../config');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { getPermissions } = require('../services/permissionService');
+const sessionService = require('../services/sessionService');
 
 // 占位密码哈希：用户不存在时也执行一次 bcrypt 比较，保持耗时一致，防时序侧信道枚举用户名
 const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 10);
+
+// 签发 access token；携带 sid（会话 id），供 end端下线时精确定位撤销
+function signAccessToken(user, sessionId) {
+  return jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      ver: user.tokenVersion || 0,
+      sid: sessionId,
+      // 会话内单端下线（logout）不改 tokenVersion，仅凭 sid 撤销；改密/禁用才递增 tokenVersion 全局失效
+      jti: crypto.randomUUID(),
+    },
+    config.jwtSecret,
+    { expiresIn: config.jwtExpiresIn }
+  );
+}
+
+// 从请求提取设备信息（浏览器 UA / IP）
+function deviceInfo(req) {
+  const ua = req.headers['user-agent'] || '';
+  const label = ua ? ua.slice(0, 60) : '未知设备';
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '';
+  return { deviceLabel: label, ip, userAgent: ua };
+}
 
 const login = asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
@@ -20,17 +47,80 @@ const login = asyncHandler(async (req, res) => {
     return fail(res, '用户名或密码错误', 1, 401);
   }
   await user.update({ lastLoginAt: new Date() });
-  // D8：签发带 ver（tokenVersion）与 jti 的 token；改密/禁用后 tokenVersion 递增，旧 token 即刻失效
-  const token = jwt.sign(
-    { id: user.id, username: user.username, name: user.name, role: user.role, ver: user.tokenVersion || 0, jti: crypto.randomUUID() },
-    config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
-  );
+  // D8：签发带 ver（tokenVersion）与 jti 的 token；M3：同步签发 refresh token 并登记会话
+  const session = await sessionService.createSession(user, deviceInfo(req));
+  const token = signAccessToken(user, session.sessionId);
   const permissions = await getPermissions(user.id);
   ok(res, {
     token,
+    refreshToken: session.refreshToken,
+    expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
     user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: !!user.mustChangePassword },
   }, '登录成功');
+});
+
+// 刷新：校验 refresh token → 轮换（撤销旧会话、签发全新 access+refresh）→ 返回新对
+const refresh = asyncHandler(async (req, res) => {
+  const { refreshToken } = req.body || {};
+  const session = refreshToken ? await sessionService.findValidSessionByToken(refreshToken) : null;
+  // 无效/过期/已撤销统一文案，不暴露具体原因
+  if (!session) return fail(res, '登录会话已失效，请重新登录', 1, 401);
+  const user = session.user;
+  if (!user || user.status !== 'active') {
+    await sessionService.revokeSession(session.id);
+    return fail(res, '账号不可用，请重新登录', 1, 401);
+  }
+  // 改密后 tokenVersion 递增，旧会话 ver 与当前不一致 → 拒刷并撤销，保证改密即全局下线
+  if ((session.ver || 0) !== Number(user.tokenVersion || 0)) {
+    await sessionService.revokeSession(session.id);
+    return fail(res, '登录会话已失效，请重新登录', 1, 401);
+  }
+  // 轮换：撤销旧会话，签发新会话（refresh token 单次使用）
+  await sessionService.revokeSession(session.id);
+  const newSession = await sessionService.createSession(user, {
+    deviceLabel: session.deviceLabel,
+    ip: session.ip,
+    userAgent: session.userAgent,
+  });
+  const token = signAccessToken(user, newSession.sessionId);
+  const permissions = await getPermissions(user.id);
+  ok(res, {
+    token,
+    refreshToken: newSession.refreshToken,
+    expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
+    user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: !!user.mustChangePassword },
+  }, '刷新成功');
+});
+
+// 端线下线：撤销当前会话（access token 中携带的 sid）
+const logout = asyncHandler(async (req, res) => {
+  if (req.sessionId) {
+    await sessionService.revokeSession(req.sessionId);
+  }
+  ok(res, null, '已退出登录');
+});
+
+// 全部端线下线 + 递增 tokenVersion（使该用户所有 access token 立即失效）
+const logoutAll = asyncHandler(async (req, res) => {
+  const user = await User.findByPk(req.user.id);
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
+  await user.save();
+  await sessionService.revokeAllForUser(req.user.id);
+  ok(res, null, '已在所有设备下线');
+});
+
+// 当前用户活跃会话列表（会话管理）
+const sessions = asyncHandler(async (req, res) => {
+  const list = await sessionService.listActiveSessions(req.user.id);
+  ok(res, list.map((s) => ({
+    id: s.id,
+    deviceLabel: s.deviceLabel,
+    ip: s.ip,
+    expiresAt: s.expiresAt,
+    lastUsedAt: s.lastUsedAt,
+    createdAt: s.createdAt,
+    current: s.id === req.sessionId,
+  })));
 });
 
 const me = asyncHandler(async (req, res) => {
@@ -51,7 +141,9 @@ const changePassword = asyncHandler(async (req, res) => {
   // Onboarding：改密成功即清除强制改密标记
   user.mustChangePassword = false;
   await user.save();
+  // M3：改密即全局下线所有会话
+  await sessionService.revokeAllForUser(user.id);
   ok(res, null, '密码修改成功，其他设备需重新登录');
 });
 
-module.exports = { login, me, changePassword };
+module.exports = { login, refresh, logout, logoutAll, sessions, me, changePassword };

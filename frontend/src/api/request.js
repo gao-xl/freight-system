@@ -7,11 +7,48 @@ const request = axios.create({
   timeout: 15000,
 });
 
+// 全局凭证读写（直接操作 localStorage，避免与 auth store/blog 循环依赖）
+const getToken = () => localStorage.getItem('token') || '';
+const getRefreshToken = () => localStorage.getItem('refreshToken') || '';
+const setTokens = ({ token, refreshToken, user }) => {
+  if (token) localStorage.setItem('token', token);
+  if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
+  if (user) localStorage.setItem('user', JSON.stringify(user));
+};
+const clearTokens = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
+};
+
 request.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+// M3：单飞刷新锁——同一时间只允许一个并发刷新请求，避免 N 个 401 同时触发刷新
+let refreshing = null;
+
+// 用 refresh token 换取新 token 对（走裸 axios，避免经本拦截器再次进入 401 处理）
+async function doRefresh() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) throw new Error('no-refresh-token');
+  const resp = await axios.post('/api/auth/refresh', { refreshToken }, { timeout: 15000 });
+  const data = resp.data?.data;
+  if (!data?.token) throw new Error('refresh-failed');
+  setTokens(data);
+  return data;
+}
+
+// 登出并跳转登录页
+function forceLogout(message) {
+  clearTokens();
+  if (router.currentRoute.value.path !== '/login') {
+    ElMessage.error(message || '登录已过期，请重新登录');
+    router.push('/login');
+  }
+}
 
 request.interceptors.response.use(
   (response) => {
@@ -24,16 +61,35 @@ request.interceptors.response.use(
     }
     return res.data;
   },
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
-    if (status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      if (router.currentRoute.value.path !== '/login') {
-        ElMessage.error('登录已过期，请重新登录');
-        router.push('/login');
+    const config = error.config || {};
+    const isAuthEndpoint = config.url?.includes('/auth/login') || config.url?.includes('/auth/refresh');
+
+    if (status === 401 && !isAuthEndpoint && !config._retried) {
+      config._retried = true;
+      try {
+        // 单飞：复用进行中的刷新 Promise
+        if (!refreshing) {
+          refreshing = doRefresh().finally(() => { refreshing = null; });
+        }
+        await refreshing;
+        // 用新 token 重放原请求
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${getToken()}`;
+        return request(config);
+      } catch (e) {
+        forceLogout();
+        return Promise.reject(e);
       }
-    } else if (!error.config?.silent) {
+    }
+
+    if (status === 401) {
+      forceLogout();
+      return Promise.reject(error);
+    }
+
+    if (!error.config?.silent) {
       // silent 请求（如门户 fail-open 下载/查询）由调用方按业务兜底提示，不在此统一弹错
       ElMessage.error(error.response?.data?.message || error.message || '网络错误');
     }

@@ -22,6 +22,11 @@ const changePassword = Joi.object({
   newPassword: Joi.string().min(6).max(255).required(),
 }).unknown(true);
 
+// M3 刷新会话：校验 refresh token 存在
+const refresh = Joi.object({
+  refreshToken: Joi.string().max(512).required(),
+}).unknown(true);
+
 // 客户
 const customerBase = Joi.object({
   code: str(30),
@@ -262,7 +267,7 @@ const portalSi = Joi.object({
 }).or('shipper', 'consignee', 'shipperName', 'shipperAddress', 'consigneeName', 'consigneeAddress', 'notifyParty', 'marksNumbers', 'placeOfReceipt', 'placeOfDelivery', 'cargoDesc', 'containerNo');
 
 module.exports = {
-  login, changePassword,
+  login, changePassword, refresh,
   customerCreate, customerUpdate,
   supplierCreate, supplierUpdate,
   orderCreate, orderUpdate,

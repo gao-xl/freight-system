@@ -18,6 +18,7 @@ const { ok, fail, asyncHandler } = require('../utils/response');
 const { getInitStatus } = require('../services/bootstrapService');
 const { generateDemoData, clearDemoData, getOnboardingStatus } = require('../services/demoDataService');
 const { getPermissions, invalidate } = require('../services/permissionService');
+const sessionService = require('../services/sessionService');
 
 // 初始化状态（公开）：前端据此决定跳 /setup-admin（无管理员）或 /login
 const initStatus = asyncHandler(async (req, res) => {
@@ -56,14 +57,23 @@ const setupAdmin = asyncHandler(async (req, res) => {
   });
 
   invalidate(user.id);
+  // M3：与登录一致，登记会话并签发 access + refresh 对
+  const ua = req.headers['user-agent'] || '';
+  const session = await sessionService.createSession(user, {
+    deviceLabel: ua ? ua.slice(0, 60) : '未知设备',
+    ip: req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || '',
+    userAgent: ua,
+  });
   const token = jwt.sign(
-    { id: user.id, username: user.username, name: user.name, role: user.role, ver: user.tokenVersion || 0, jti: crypto.randomUUID() },
+    { id: user.id, username: user.username, name: user.name, role: user.role, ver: user.tokenVersion || 0, sid: session.sessionId, jti: crypto.randomUUID() },
     config.jwtSecret,
     { expiresIn: config.jwtExpiresIn }
   );
   const permissions = await getPermissions(user.id);
   ok(res, {
     token,
+    refreshToken: session.refreshToken,
+    expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
     user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: false },
   }, '初始化完成，欢迎使用');
 });

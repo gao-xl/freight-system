@@ -72,6 +72,7 @@ const result = await withTransaction(async (t) => {
 
 - **入参校验**：对外接口用 `middleware/validate.js` + `validation/schemas.js`
 - **JWT 密钥**：生产环境 `NODE_ENV=production` 必须设置 `JWT_SECRET`，否则拒绝启动
+- **会话刷新（M3）**：登录签发 access + refresh 对；access 默认 12h，refresh 默认 30d 存 `Sessions` 表（仅存哈希）。端线下线 `POST /auth/logout` 撤销当前会话，全局下线 `POST /auth/logout-all` 递增 `tokenVersion` 使所有 token 即刻失效
 - **审计**：写操作走 `audit` 中间件自动落 `AuditLog`
 
 ## 9. 上线前检查清单

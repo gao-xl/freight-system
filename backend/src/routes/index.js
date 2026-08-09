@@ -97,6 +97,11 @@ router.post('/automation/run', guard('system', '*'), automation.run);
  *         description: 登录请求过于频繁
  */
 router.post('/auth/login', validate(S.login), auth.login);
+// M3 会话增强：公开刷新；登录用户端线下线 / 全局下线 / 会话列表
+router.post('/auth/refresh', validate(S.refresh), auth.refresh);
+router.post('/auth/logout', authRequired, auth.logout);
+router.post('/auth/logout-all', authRequired, auth.logoutAll);
+router.get('/auth/sessions', authRequired, auth.sessions);
 router.get('/auth/me', authRequired, auth.me);
 router.post('/auth/change-password', authRequired, validate(S.changePassword), auth.changePassword);
 

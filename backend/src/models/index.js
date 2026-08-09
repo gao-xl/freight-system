@@ -47,6 +47,7 @@ const FeeTemplate = require('./FeeTemplate'); // N1 费用模板
 const PaymentRecord = require('./PaymentRecord'); // N3 收款/付款单
 const DemoDataLog = require('./DemoDataLog'); // Onboarding 示例数据批次
 const NotificationRecord = require('./NotificationRecord'); // E2 通知推送记录
+const Session = require('./Session'); // M3 登录会话（refresh token 哈希）
 
 // 关联关系
 Order.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
@@ -141,6 +142,10 @@ Order.hasMany(PaymentTransaction, { foreignKey: 'orderId' });
 ApiKey.belongsTo(User, { as: 'user', foreignKey: 'userId' });
 User.hasMany(ApiKey, { as: 'apiKeys', foreignKey: 'userId' });
 
+// M3 登录会话关联：每个用户可有多端会话
+Session.belongsTo(User, { as: 'user', foreignKey: 'userId' });
+User.hasMany(Session, { as: 'sessions', foreignKey: 'userId' });
+
 module.exports = {
   sequelize,
   User,
@@ -191,4 +196,5 @@ module.exports = {
   PaymentRecord,
   DemoDataLog,
   NotificationRecord,
+  Session,
 };

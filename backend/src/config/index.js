@@ -29,7 +29,9 @@ module.exports = {
   // 无人值守部署备选：设置后 Bootstrap 直接创建 admin（mustChangePassword=true 强制首登改密）
   adminInitPassword: process.env.ADMIN_INIT_PASSWORD || '',
   jwtSecret,
-  jwtExpiresIn: '12h',
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '12h',
+  // M3 refresh token 有效期（默认 30 天），登录/刷新时签发 opaque token 存 Sessions 表
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   db: {
     dialect: process.env.DB_DIALECT || 'postgres',
     host: process.env.DB_HOST,

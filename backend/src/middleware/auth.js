@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config');
-const { User } = require('../models');
+const { User, Session } = require('../models');
 const { getPermissions, getEffectivePermissions } = require('../services/permissionService');
 const { verifyPlainKey, touchLastUsed } = require('../services/apiKeyService');
 const { logger } = require('../utils/logger');
@@ -18,13 +18,20 @@ async function authRequired(req, res, next) {
     try {
       const decoded = jwt.verify(token, config.jwtSecret);
       // D8：每次请求校验用户存在/启用 + tokenVersion 匹配（改密/禁用后旧 token 即刻失效）
-      const user = await User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion', 'customerId'] });
+      const userQuery = User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion', 'customerId'] });
+      // M3：access token 携带 sid，校验对应会话未被端线下线撤销/过期（无 sid 的存量 token 跳过此检查，平滑过渡）
+      const sessionQuery = decoded.sid
+        ? Session.findByPk(decoded.sid, { attributes: ['revokedAt', 'expiresAt'] })
+        : Promise.resolve(null);
+      const [user, session] = await Promise.all([userQuery, sessionQuery]);
       // 旧 token 无 ver 按 0 处理，与 tokenVersion 默认 0 兼容，存量会话平滑过渡
-      if (!user || user.status !== 'active' || (decoded.ver || 0) !== Number(user.tokenVersion || 0)) {
+      const sessionInvalid = !!session && (!!session.revokedAt || (session.expiresAt && new Date(session.expiresAt) < new Date()));
+      if (!user || user.status !== 'active' || (decoded.ver || 0) !== Number(user.tokenVersion || 0) || sessionInvalid) {
         return res.status(401).json({ code: 401, message: '凭证无效，请重新登录' });
       }
       // U1 深挖修复：JWT 不含 customerId，需以 DB 为准合并进 req.user，否则门户接口永远拿不到客户档案
       req.user = { ...decoded, customerId: user.customerId ?? decoded.customerId ?? null };
+      req.sessionId = decoded.sid || null;
       req.authType = 'jwt';
       return next();
     } catch (e) {
