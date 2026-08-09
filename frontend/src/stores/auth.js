@@ -4,7 +4,6 @@ import { loginAPI, meAPI, logoutAPI, refreshAPI } from '@/api';
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: localStorage.getItem('token') || '',
-    refreshToken: localStorage.getItem('refreshToken') || '',
     user: JSON.parse(localStorage.getItem('user') || 'null'),
   }),
   getters: {
@@ -14,26 +13,23 @@ export const useAuthStore = defineStore('auth', {
     permissions: (s) => s.user?.permissions || [],
   },
   actions: {
-    // 持久化 token 对到 localStorage
+    // 持久化 access token 与 user 元数据（P0-2：refresh token 在 httpOnly cookie，不入 localStorage）
     _persist() {
       localStorage.setItem('token', this.token);
-      localStorage.setItem('refreshToken', this.refreshToken);
       localStorage.setItem('user', JSON.stringify(this.user));
     },
     async login(username, password) {
       const data = await loginAPI({ username, password });
       this.token = data.token;
-      this.refreshToken = data.refreshToken || '';
       this.user = data.user;
       this._persist();
       return data;
     },
-    // M3：用 refresh token 换取新 token 对（401 拦截器调用）
+    // M3 刷新：refresh token 由浏览器 httpOnly cookie 自动携带，此处仅取新 access token
     async refresh() {
-      if (!this.refreshToken) return null;
-      const data = await refreshAPI({ refreshToken: this.refreshToken });
+      const data = await refreshAPI();
       this.token = data.token;
-      this.refreshToken = data.refreshToken || '';
+      this.user = data.user || this.user;
       this._persist();
       return data;
     },
@@ -66,10 +62,9 @@ export const useAuthStore = defineStore('auth', {
     // 本地清空凭证（401 / 刷新失败兜底）
     clear() {
       this.token = '';
-      this.refreshToken = '';
       this.user = null;
       localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('refreshToken'); // 清理历史遗留明文 refresh token
       localStorage.removeItem('user');
     },
   },

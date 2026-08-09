@@ -5,19 +5,21 @@ import router from '@/router';
 const request = axios.create({
   baseURL: '/api',
   timeout: 15000,
+  // P0-2：允许携带 httpOnly refresh cookie（SameSite=Lax 同源自动带上；跨域需服务端 CORS credentials:true）
+  withCredentials: true,
 });
 
 // 全局凭证读写（直接操作 localStorage，避免与 auth store/blog 循环依赖）
+// P0-2：access token 仍经 header 携带；refresh token 已迁入 httpOnly cookie，JS 不可读，
+//       不再写入 localStorage，仅保留 access token 与 user 元数据做本地校验。
 const getToken = () => localStorage.getItem('token') || '';
-const getRefreshToken = () => localStorage.getItem('refreshToken') || '';
-const setTokens = ({ token, refreshToken, user }) => {
+const setTokens = ({ token, user }) => {
   if (token) localStorage.setItem('token', token);
-  if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
   if (user) localStorage.setItem('user', JSON.stringify(user));
 };
 const clearTokens = () => {
   localStorage.removeItem('token');
-  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('refreshToken'); // 清理历史遗留的明文 refresh token
   localStorage.removeItem('user');
 };
 
@@ -31,10 +33,9 @@ request.interceptors.request.use((config) => {
 let refreshing = null;
 
 // 用 refresh token 换取新 token 对（走裸 axios，避免经本拦截器再次进入 401 处理）
+// P0-2：refresh token 已迁入 httpOnly cookie，由浏览器 withCredentials 自动携带，body 不再传 token。
 async function doRefresh() {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) throw new Error('no-refresh-token');
-  const resp = await axios.post('/api/auth/refresh', { refreshToken }, { timeout: 15000 });
+  const resp = await axios.post('/api/auth/refresh', {}, { timeout: 15000, withCredentials: true });
   const data = resp.data?.data;
   if (!data?.token) throw new Error('refresh-failed');
   setTokens(data);
