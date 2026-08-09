@@ -39,4 +39,5 @@ export const releaseAPI = {
   records: (orderId) => request.get(`/release/orders/${orderId}`),
   apply: (orderId, data) => request.post(`/orders/${orderId}/release`, data),
   approve: (id, data) => request.post(`/release/${id}/approve`, data),
+  batchApprove: (ids, data) => request.post('/release/batch-approve', { ids, ...data }), // E3 批量审批放单
 };

@@ -125,9 +125,10 @@
               <div class="tl-head">
                 <el-tag :type="tlType(n)" size="small">{{ dictText(TIMELINE_TYPE, n.type) }}</el-tag>
                 <span class="tl-loc">{{ n.title }}</span>
+                <el-tag v-if="n.riskLevel && n.riskLevel !== 'normal'" :type="n.riskLevel === 'danger' ? 'danger' : 'warning'" size="small" effect="plain">{{ riskText(n) }}</el-tag>
                 <el-tag v-if="n.auto" size="small" effect="plain" type="info">自动</el-tag>
               </div>
-              <div class="tl-desc">{{ n.description }}</div>
+              <div class="tl-desc" :class="n.riskLevel === 'danger' ? 'tl-desc-danger' : ''">{{ n.description }}</div>
             </el-timeline-item>
           </el-timeline>
           <el-empty v-if="!timeline.length" description="暂无节点" />
@@ -214,9 +215,27 @@
               </el-select>
             </div>
             <div class="left">
-              <span class="fin-sum">应收 <b class="recv">{{ money(finSum('receivable')) }}</b></span>
-              <span class="fin-sum">应付 <b class="pay">{{ money(finSum('payable')) }}</b></span>
-              <span class="fin-sum">毛利 <b :class="profit>=0?'profit':'loss'">{{ money(profit) }}</b></span>
+              <div class="profit-summary-card">
+                <div class="profit-item">
+                  <span class="profit-label">应收</span>
+                  <span class="profit-value recv">{{ money(finSum('receivable')) }}</span>
+                </div>
+                <div class="profit-divider"></div>
+                <div class="profit-item">
+                  <span class="profit-label">应付</span>
+                  <span class="profit-value pay">{{ money(finSum('payable')) }}</span>
+                </div>
+                <div class="profit-divider"></div>
+                <div class="profit-item">
+                  <span class="profit-label">毛利</span>
+                  <span class="profit-value" :class="profit>=0?'profit':'loss'">{{ money(profit) }}</span>
+                </div>
+                <div class="profit-divider"></div>
+                <div class="profit-item">
+                  <span class="profit-label">毛利率</span>
+                  <span class="profit-value" :class="profit>=0?'profit':'loss'">{{ profitRate }}%</span>
+                </div>
+              </div>
             </div>
           </div>
           <el-table :data="detail.finance" size="small" stripe>
@@ -293,6 +312,10 @@
             </div>
             <div class="left">
               <el-button type="primary" size="small" @click="openReleaseDialog"><el-icon><Check /></el-icon>申请放单</el-button>
+              <el-button type="success" size="small" plain v-permission="'release:approve'" :disabled="!pendingReleaseCount" @click="doBatchApprove(true)">
+                <el-icon><Select /></el-icon>批量通过<span v-if="pendingReleaseCount"> ({{ pendingReleaseCount }})</span>
+              </el-button>
+              <el-button type="danger" size="small" plain v-permission="'release:approve'" :disabled="!pendingReleaseCount" @click="doBatchApprove(false)">批量驳回</el-button>
             </div>
           </div>
           <el-table :data="releaseData.records" size="small" stripe>
@@ -451,7 +474,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { orderDetailAPI, orderTimelineAPI, orderFlowAPI, orderAdvanceAPI, orderNodesAPI, updateOrderNodeAPI, bookingAPI, customsAPI, documentAPI, trackAPI, financeAPI, financeBatchAPI, feeTemplateAPI, supplierAPI, orderAPI, orderContainersAPI, saveOrderContainersAPI, releaseAPI } from '@/api';
 import {
   ORDER_STATUS, ORDER_TYPE, MODE, SERVICE_TYPE, BOOKING_STATUS, CUSTOMS_STATUS,
@@ -533,7 +556,13 @@ const desCol = computed(() => (isMobile.value ? 1 : 3));
 let mql = null;
 
 const TIMELINE_TYPE = { order: '订单', booking: '订舱', customs: '报关', track: '运输', finance: '财务', release: '放单' };
-const tlType = (n) => ({ booking: 'primary', customs: 'warning', track: 'success', finance: 'danger', release: 'info', order: 'info' }[n.type] || 'info');
+// 时间线异常标红：优先按后端 riskLevel 判定；无 riskLevel 时回退到旧的按 type 映射
+const tlType = (n) => {
+  if (n.riskLevel === 'danger') return 'danger';
+  if (n.riskLevel === 'warning') return 'warning';
+  return ({ booking: 'primary', customs: 'warning', track: 'success', finance: 'danger', release: 'info', order: 'info' }[n.type] || 'info');
+};
+const riskText = (n) => ({ danger: '异常', warning: '关注' }[n.riskLevel] || '');
 
 const bookingDialog = ref(false), bookingForm = ref({});
 const customsDialog = ref(false), customsForm = ref({});
@@ -599,6 +628,11 @@ const formatTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '-');
 
 const finSum = (dir) => detail.value.finance.filter((f) => f.direction === dir).reduce((s, f) => s + Number(f.amount), 0);
 const profit = computed(() => finSum('receivable') - finSum('payable'));
+const profitRate = computed(() => {
+  const recv = finSum('receivable');
+  if (!recv) return '0.00';
+  return ((profit.value / recv) * 100).toFixed(2);
+});
 
 async function load() {
   const [d, tl] = await Promise.all([
@@ -669,6 +703,17 @@ async function approveRelease(rec, approve) {
   ElMessage.success(approve ? '放单已审批通过' : '放单已驳回');
   loadRelease();
 }
+const pendingReleaseCount = computed(() => (releaseData.value.records || []).filter((r) => r.approvalStatus === 'pending').length);
+async function doBatchApprove(approve) {
+  const pendingRows = (releaseData.value.records || []).filter((r) => r.approvalStatus === 'pending');
+  if (!pendingRows.length) { ElMessage.warning('暂无待审批的放单记录'); return; }
+  try {
+    await ElMessageBox.confirm(`确认批量${approve ? '通过' : '驳回'} ${pendingRows.length} 条待审批放单记录？`, '批量审批确认', { type: 'warning' });
+    const res = await releaseAPI.batchApprove(pendingRows.map((r) => r.id), { approve });
+    ElMessage.success(`批量审批完成：成功 ${res.succeeded?.length || 0} 条${res.failed?.length ? `，失败 ${res.failed.length} 条：${res.failed.map((f) => f.reason).join('; ')}` : ''}`);
+    loadRelease();
+  } catch { /* 取消 */ }
+}
 
 onMounted(async () => {
   load();
@@ -699,11 +744,19 @@ function onMobileChange(e) {
 .tl-head { display: flex; align-items: center; gap: 10px; }
 .tl-loc { font-weight: 600; }
 .tl-desc { color: var(--text-main); margin: 4px 0; }
+.tl-desc-danger { color: var(--danger); font-weight: 600; }
 .tl-op { color: var(--text-sub); font-size: 12px; }
 .tl-hint { color: var(--text-sub); font-size: 12px; margin-left: 12px; }
 .fin-sum { font-size: 14px; color: var(--text-sub); margin-left: 16px; }
 .recv { color: var(--danger); } .pay { color: var(--success); }
 .profit { color: var(--success); } .loss { color: var(--danger); }
+.profit-summary-card { display: flex; align-items: center; gap: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
+.profit-item { display: flex; flex-direction: column; align-items: center; min-width: 72px; }
+.profit-label { font-size: 11px; color: var(--text-muted); }
+.profit-value { font-size: 15px; font-weight: 700; }
+.profit-value.recv { color: var(--danger); }
+.profit-value.pay { color: var(--success); }
+.profit-divider { width: 1px; height: 32px; background: var(--border); margin: 0 8px; }
 .flow-stage { padding: 8px 0 16px; }
 .flow-desc { text-align: center; color: var(--text-sub); margin: 8px 0 4px; display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap; }
 .status-actions { margin-top: 24px; text-align: center; }

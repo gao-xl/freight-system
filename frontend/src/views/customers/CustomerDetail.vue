@@ -57,6 +57,7 @@
           <el-descriptions-item label="客户类型">{{ dictText(CUSTOMER_TYPE, detail.type) }}</el-descriptions-item>
           <el-descriptions-item label="客户等级">{{ detail.level }} 级</el-descriptions-item>
           <el-descriptions-item label="信用额度">{{ detail.creditLimit || 0 }}</el-descriptions-item>
+          <el-descriptions-item label="账期（天）">{{ detail.paymentTerms ?? 30 }} 天</el-descriptions-item>
           <el-descriptions-item label="联系人">{{ detail.contact || '-' }}</el-descriptions-item>
           <el-descriptions-item label="电话">{{ detail.phone || '-' }}</el-descriptions-item>
           <el-descriptions-item label="邮箱">{{ detail.email || '-' }}</el-descriptions-item>

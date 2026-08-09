@@ -28,10 +28,17 @@ export const invoiceAPI = {
   create: (data) => request.post('/finance/invoices', data),
   fromFees: (data) => request.post('/finance/invoices/from-fees', data), // N2 从费用生成发票
   issue: (id) => request.post(`/finance/invoices/${id}/issue`),
+  batchIssue: (ids) => request.post('/finance/invoices/batch-issue', { ids }), // E3 批量开票
   cancel: (id) => request.post(`/finance/invoices/${id}/cancel`),
+  // 数电票批量导入文件
+  digitalTaxPreview: (invoiceIds) => request.post('/finance/invoices/digital-tax-preview', { invoiceIds }),
+  digitalTaxExport: (data) => request.post('/finance/invoices/digital-tax-export', data, { responseType: 'blob' }),
 };
 export const financeWriteoffAPI = (id, data) => request.post(`/finance/${id}/writeoff`, data);
 export const financeBatchWriteoffAPI = (ids, amount) => request.post('/finance/batch-writeoff', { ids, amount });
+// P0.1 红字冲销
+export const financeReverseAPI = (id, data) => request.post(`/finance/${id}/reverse`, data);
+export const financeReversalsAPI = (id) => request.get(`/finance/${id}/reversals`);
 // 结账/扎帐/锁帐：账期管理
 export const financePeriodsAPI = (year) => request.get('/finance/periods', { params: { year } });
 export const financeEnsurePeriodsAPI = () => request.post('/finance/periods/ensure');

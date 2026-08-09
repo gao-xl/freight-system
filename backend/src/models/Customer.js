@@ -14,6 +14,7 @@ const Customer = sequelize.define('Customer', {
   email: { type: DataTypes.STRING(100) },
   address: { type: DataTypes.STRING(255) },
   creditLimit: { type: DataTypes.DECIMAL(15, 2), defaultValue: 0 },
+  paymentTerms: { type: DataTypes.INTEGER, defaultValue: 30 }, // P0.2 账期天数（默认 30 天，用于自动计算到期日）
   businessScope: { type: DataTypes.STRING(255) },
   taxNo: { type: DataTypes.STRING(50) },
   remark: { type: DataTypes.TEXT },

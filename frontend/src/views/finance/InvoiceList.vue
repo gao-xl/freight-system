@@ -16,11 +16,14 @@
         <el-input v-model="query.keyword" placeholder="发票号/订单号" clearable style="width:220px" @keyup.enter="load(1)" @clear="load(1)" />
         <el-button type="primary" @click="load(1)"><el-icon><Search /></el-icon>查询</el-button>
         <el-button v-permission="'finance:create'" type="success" plain @click="openFromFees"><el-icon><DocumentAdd /></el-icon>从费用生成发票</el-button>
+        <el-button v-permission="'finance:update'" type="primary" plain :disabled="!selectedRows.length" @click="doBatchIssue"><el-icon><Check /></el-icon>批量开具<span v-if="selectedRows.length"> ({{ selectedRows.length }})</span></el-button>
+        <el-button v-permission="'finance:read'" type="warning" plain :disabled="!selectedRows.length" @click="openDigitalTax"><el-icon><Download /></el-icon>导出数电票<span v-if="selectedRows.length"> ({{ selectedRows.length }})</span></el-button>
       </div>
     </div>
 
     <div class="page-card">
-      <el-table :data="list" v-loading="loading" stripe>
+      <el-table :data="list" v-loading="loading" stripe @selection-change="onSelectionChange">
+        <el-table-column type="selection" width="40" />
         <el-table-column prop="invoiceNo" label="发票号" min-width="170" />
         <el-table-column label="类型" width="100">
           <template #default="{ row }">
@@ -103,6 +106,9 @@
         </el-table>
       </template>
     </el-dialog>
+
+    <!-- 数电票导出对话框 -->
+    <DigitalTaxExportDialog v-model="dtaxVisible" :invoice-ids="dtaxIds" />
   </div>
 </template>
 
@@ -111,6 +117,7 @@ import { reactive, ref, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { invoiceAPI, financeAPI, orderAPI } from '@/api';
 import { FIN_CATEGORY, FIN_STATUS, dictText, money } from '@/utils/dicts';
+import DigitalTaxExportDialog from './DigitalTaxExportDialog.vue';
 
 const INV_STATUS = {
   draft: { text: '草稿', type: 'info' }, issued: { text: '已开票', type: 'success' },
@@ -121,6 +128,11 @@ const query = reactive({ page: 1, pageSize: 10, invoiceType: null, status: null,
 const list = ref([]);
 const total = ref(0);
 const loading = ref(false);
+
+// 数电票导出
+const selectedRows = ref([]);
+const dtaxVisible = ref(false);
+const dtaxIds = ref([]);
 
 async function load(page) {
   query.page = page || 1;
@@ -149,6 +161,16 @@ async function doIssue(row) {
     load(query.page);
   } catch { /* 取消 */ }
 }
+async function doBatchIssue() {
+  const draftRows = selectedRows.value.filter((r) => r.status === 'draft');
+  if (!draftRows.length) { ElMessage.warning('所选发票均非草稿状态，无法开具'); return; }
+  try {
+    await ElMessageBox.confirm(`确认批量开具 ${draftRows.length} 张草稿发票？非草稿发票将被跳过。`, '批量开具确认', { type: 'warning' });
+    const res = await invoiceAPI.batchIssue(draftRows.map((r) => r.id));
+    ElMessage.success(`批量开具完成：成功 ${res.succeeded?.length || 0} 张${res.failed?.length ? `，失败 ${res.failed.length} 张：${res.failed.map((f) => f.reason).join('; ')}` : ''}`);
+    load(query.page);
+  } catch { /* 取消 */ }
+}
 async function doCancel(row) {
   try {
     await ElMessageBox.confirm(`确认作废发票「${row.invoiceNo}」？作废后不可恢复。`, '作废确认', { type: 'warning' });
@@ -158,6 +180,13 @@ async function doCancel(row) {
   } catch { /* 取消 */ }
 }
 function printInv(row) { window.open(`/api/print/invoice/${row.id}`, '_blank'); }
+
+function onSelectionChange(rows) { selectedRows.value = rows; }
+function openDigitalTax() {
+  if (!selectedRows.value.length) return;
+  dtaxIds.value = selectedRows.value.map((r) => r.id);
+  dtaxVisible.value = true;
+}
 
 const detailVisible = ref(false);
 const detail = ref(null);

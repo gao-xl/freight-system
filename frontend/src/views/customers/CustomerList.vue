@@ -103,6 +103,7 @@
           <el-col :span="12"><el-form-item label="联系电话"><el-input v-model="form.phone" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="信用额度"><el-input-number v-model="form.creditLimit" :min="0" :step="10000" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="账期（天）"><el-input-number v-model="form.paymentTerms" :min="0" :max="365" :step="5" style="width:100%" placeholder="默认 30 天" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="税号"><el-input v-model="form.taxNo" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="业务范围"><el-input v-model="form.businessScope" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="地址"><el-input v-model="form.address" /></el-form-item></el-col>
@@ -227,7 +228,7 @@ async function loadStats() {
 }
 
 function openDialog(row) {
-  form.value = row ? { ...row } : { type: 'shipper', level: 'B', status: 'active', creditLimit: 0 };
+  form.value = row ? { ...row } : { type: 'shipper', level: 'B', status: 'active', creditLimit: 0, paymentTerms: 30 };
   dialogVisible.value = true;
 }
 

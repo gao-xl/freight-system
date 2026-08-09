@@ -226,18 +226,20 @@
         <el-table-column label="状态" width="100">
           <template #default="{ row }"><el-tag :type="statusOf(FIN_STATUS, row.status).type" size="small">{{ statusOf(FIN_STATUS, row.status).text }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-tooltip v-if="recordLocked(row)" content="该记录所属账期已锁帐，禁止修改" placement="top">
               <span>
                 <el-button link type="primary" disabled>编辑</el-button>
                 <el-button v-if="row.status !== 'paid'" link type="success" disabled>记为已收付</el-button>
+                <el-button v-if="row.status !== 'paid' && row.status !== 'waived'" link type="danger" disabled>红冲</el-button>
                 <el-button link type="danger" disabled>删除</el-button>
               </span>
             </el-tooltip>
             <template v-else>
               <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
               <el-button v-if="row.status !== 'paid'" link type="success" @click="markPaid(row)">记为已收付</el-button>
+              <el-button v-if="row.status !== 'paid' && row.status !== 'waived' && !row.reverseRef" link type="danger" @click="openReverse(row)">红冲</el-button>
               <el-button link type="danger" @click="remove(row)">删除</el-button>
             </template>
           </template>
@@ -313,6 +315,31 @@
       </template>
     </el-dialog>
 
+    <!-- P0.1 红字冲销 -->
+    <el-dialog v-model="reverseDialog" title="红字冲销" width="480px">
+      <div class="batch-tip">
+        将对以下费用记录执行红字冲销操作：
+      </div>
+      <el-descriptions :column="2" border size="small">
+        <el-descriptions-item label="费用说明">{{ reverseTarget?.description }}</el-descriptions-item>
+        <el-descriptions-item label="方向">{{ FIN_DIRECTION[reverseTarget?.direction]?.text }}</el-descriptions-item>
+        <el-descriptions-item label="金额">{{ reverseTarget?.amount }} {{ reverseTarget?.currency }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ statusOf(FIN_STATUS, reverseTarget?.status).text }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="reverse-tip" style="margin-top:12px;font-size:13px;color:var(--text-muted);background:var(--bg2);padding:10px;border-radius:6px;border-left:3px solid var(--danger)">
+        操作说明：红冲将创建一笔与原记录金额相等、方向相反的冲销记录，并将原记录标记为已冲销。此操作不可逆。
+      </div>
+      <el-form label-width="70px" style="margin-top:12px">
+        <el-form-item label="冲销原因">
+          <el-input v-model="reverseReason" type="textarea" :rows="2" placeholder="选填冲销原因说明" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="reverseDialog = false">取消</el-button>
+        <el-button type="danger" :loading="reversing" @click="doReverse">确认红冲</el-button>
+      </template>
+    </el-dialog>
+
     <!-- N1 费用模板管理 -->
     <el-dialog v-model="tplMgrVisible" title="费用模板管理" width="680px">
       <div class="table-topbar" style="margin-bottom:10px">
@@ -373,7 +400,8 @@ import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import * as echarts from 'echarts';
 import { financeAPI, financeSummaryAPI, financeTrendAPI, orderAPI, financeExportAPI, financeBatchWriteoffAPI,
-  financePeriodsAPI, financeEnsurePeriodsAPI, financeClosePeriodAPI, financeLockPeriodAPI, financeUnlockPeriodAPI, financePeriodStatementAPI, feeTemplateAPI, financeAgingAPI, financePaymentAPI, customerAPI } from '@/api';
+  financePeriodsAPI, financeEnsurePeriodsAPI, financeClosePeriodAPI, financeLockPeriodAPI, financeUnlockPeriodAPI, financePeriodStatementAPI, feeTemplateAPI, financeAgingAPI, financePaymentAPI, customerAPI,
+  financeReverseAPI } from '@/api';
 import { FIN_DIRECTION, FIN_CATEGORY, FIN_STATUS, dictText, statusOf, money } from '@/utils/dicts';
 
 const PERIOD_STATUS = {
@@ -450,6 +478,30 @@ async function doPayment() {
     loadAging();
   } catch (e) { /* 拦截器 */ }
   finally { paying.value = false; }
+}
+
+// P0.1 红字冲销
+const reverseDialog = ref(false);
+const reverseTarget = ref(null);
+const reverseReason = ref('');
+const reversing = ref(false);
+
+function openReverse(row) {
+  reverseTarget.value = row;
+  reverseReason.value = '';
+  reverseDialog.value = true;
+}
+
+async function doReverse() {
+  reversing.value = true;
+  try {
+    const data = await financeReverseAPI(reverseTarget.value.id, { reason: reverseReason.value || undefined });
+    ElMessage.success(data.msg || '红字冲销成功');
+    reverseDialog.value = false;
+    reverseTarget.value = null;
+    load(); loadSummary();
+  } catch (e) { /* 拦截器 */ }
+  finally { reversing.value = false; }
 }
 
 // N1 费用模板管理

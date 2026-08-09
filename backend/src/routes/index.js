@@ -295,6 +295,7 @@ router.delete('/containers/:id', guard('order', 'delete'), container.remove);
 router.get('/release', guard('release', 'read'), release.list);
 router.get('/release/orders/:id', guard('release', 'read'), release.records);
 router.post('/orders/:id/release', guard('release', 'create'), release.apply);
+router.post('/release/batch-approve', guard('release', 'approve'), release.batchApprove);
 router.post('/release/:id/approve', guard('release', 'approve'), release.approve);
 
 // 待办任务中心（A4）——聚合各业务模块，登录用户即可访问
@@ -355,6 +356,9 @@ router.get('/finance/invoices', guard('finance', 'read'), finance.invoiceList);
 router.get('/finance/aging', guard('finance', 'read'), finance.aging); // N5 AR 账龄
 router.post('/finance/invoices', guard('finance', 'create'), finance.createInvoice);
 router.post('/finance/invoices/from-fees', guard('finance', 'create'), finance.createInvoiceFromFees); // N2 从费用生成发票
+router.post('/finance/invoices/batch-issue', guard('finance', 'update'), finance.batchIssueInvoice); // E3 批量开票
+router.post('/finance/invoices/digital-tax-preview', guard('finance', 'read'), finance.digitalTaxPreview); // 数电票预览
+router.post('/finance/invoices/digital-tax-export', guard('finance', 'read'), finance.exportDigitalTax); // 数电票导出
 router.post('/finance/invoices/:id/issue', guard('finance', 'update'), finance.issueInvoice);
 router.post('/finance/invoices/:id/cancel', guard('finance', 'update'), finance.cancelInvoice);
 router.post('/finance/batch-delete', guard('finance', 'delete'), finance.batchRemove);
@@ -364,6 +368,8 @@ router.post('/finance/batch', guard('finance', 'create'), finance.batchCreate); 
 router.get('/finance/payments', guard('finance', 'read'), finance.paymentList); // N3 收款/付款单
 router.post('/finance/payments', guard('finance', 'create'), finance.createPayment); // N3 收款核销
 router.post('/finance/:id/writeoff', guard('finance', 'update'), finance.writeoff);
+router.post('/finance/:id/reverse', guard('finance', 'update'), finance.reverse); // P0.1 红字冲销
+router.get('/finance/:id/reversals', guard('finance', 'read'), finance.getReversals); // P0.1 查询冲销记录
 router.post('/finance/:id/restore', guard('finance', 'update'), finance.restore); // U5 回收站恢复
 router.get('/finance/:id', guard('finance', 'read'), finance.get);
 router.post('/finance', guard('finance', 'create'), validate(S.financeCreate), finance.create);

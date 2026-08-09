@@ -9,6 +9,7 @@
           <el-radio-button value="all">全部</el-radio-button>
         </el-radio-group>
         <el-select v-model="query.level" placeholder="级别" clearable style="width:110px" @change="load(1)">
+          <el-option label="提示" value="info" />
           <el-option label="警告" value="warning" />
           <el-option label="危险" value="danger" />
         </el-select>
@@ -18,6 +19,7 @@
       <div class="stats">
         <el-tag type="danger" size="large">危险 {{ dangerCount }}</el-tag>
         <el-tag type="warning" size="large">警告 {{ warningCount }}</el-tag>
+        <el-tag type="info" size="large">提示 {{ infoCount }}</el-tag>
       </div>
     </div>
 
@@ -75,6 +77,7 @@ const query = reactive({ page: 1, pageSize: 10, status: 'active', level: '' });
 
 const dangerCount = computed(() => list.value.filter((r) => r.level === 'danger').length);
 const warningCount = computed(() => list.value.filter((r) => r.level === 'warning').length);
+const infoCount = computed(() => list.value.filter((r) => r.level === 'info').length);
 
 function levelType(l) { return l === 'danger' ? 'danger' : l === 'warning' ? 'warning' : 'info'; }
 function levelText(l) { return { danger: '危险', warning: '警告', info: '提示' }[l] || l; }

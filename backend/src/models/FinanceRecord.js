@@ -26,7 +26,13 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
   customFields: { type: DataTypes.TEXT },   // B4 自定义字段扩展（JSON 字符串）
   version: { type: DataTypes.INTEGER, defaultValue: 0 }, // P3.7 乐观锁
   isDemo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding 演示数据标记（可一键清空）
-}, { timestamps: true, indexes: [{ fields: ['settleMonth'] }] });
+  // P0.1 红字冲销
+  reverseRef: { type: DataTypes.INTEGER, allowNull: true }, // 被冲销的原记录 ID（冲销记录指向原记录）
+  reverseType: { type: DataTypes.ENUM('full', 'partial'), allowNull: true }, // 冲销类型：全额/部分
+  reversedAt: { type: DataTypes.DATE, allowNull: true }, // 冲销时间
+  reversedBy: { type: DataTypes.INTEGER, allowNull: true }, // 冲销操作人
+  reversedReason: { type: DataTypes.STRING(255), allowNull: true }, // 冲销原因
+}, { timestamps: true, indexes: [{ fields: ['settleMonth'] }, { fields: ['reverseRef'] }] });
 
 // P2.4 本币折算金额：localAmount = amount * exchangeRate
 // 规则：exchangeRate 优先（新 API 唯一入口）；兼容历史 API 传 rate（≠1 时降级为别名）；
@@ -65,8 +71,29 @@ async function resolveLocalAmount(instance) {
   }
 }
 
+// P0.2 账期自动计算：根据客户账期天数自动推导到期日
+async function resolveDueDate(instance) {
+  // 仅当设置了 counterpartyId 且未传入 dueDate 时自动计算
+  if (instance.counterpartyId && !instance.dueDate) {
+    try {
+      const { Customer } = require('../services/dataAccess');
+      const customer = await Customer.findByPk(instance.counterpartyId, { attributes: ['paymentTerms'] });
+      if (customer && customer.paymentTerms) {
+        const days = Number(customer.paymentTerms) || 30;
+        const created = instance.createdAt || new Date();
+        const due = new Date(created);
+        due.setDate(due.getDate() + days);
+        instance.dueDate = due.toISOString().slice(0, 10);
+      }
+    } catch {
+      // 静默失败，不影响创建流程
+    }
+  }
+}
+
 FinanceRecord.beforeCreate(async (instance) => {
   await resolveLocalAmount(instance);
+  await resolveDueDate(instance);
 });
 
 FinanceRecord.beforeUpdate(async (instance) => {

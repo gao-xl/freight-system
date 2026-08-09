@@ -62,10 +62,24 @@ const router = createRouter({
 });
 
 // 按权限返回可访问的默认首页（替代仅按角色，避免落到无权限页触发 403 死循环）
+// P0.4 角色化首页：根据用户角色 + 权限点返回最匹配的首页
 export function safeHome(auth) {
+  // 客户门户角色
   if (auth.role === 'customer') return '/portal';
+  // 管理员/财务角色优先看经营看板
+  if (auth.role === 'admin' && auth.hasPermission('dashboard:read')) return '/dashboard';
+  // 财务角色：直接进财务页
+  if (auth.role === 'finance' && auth.hasPermission('finance:read')) return '/finance';
+  // 操作角色：进待办工作台
+  if (auth.role === 'operator' && auth.hasPermission('order:read')) return '/tasks';
+  // 销售角色：进客户管理
+  if (auth.role === 'sales' && auth.hasPermission('customer:read')) return '/customers';
+  // 按权限点兜底
   if (auth.hasPermission('dashboard:read')) return '/dashboard';
   if (auth.hasPermission('finance:read')) return '/finance';
+  if (auth.hasPermission('order:read')) return '/orders';
+  if (auth.hasPermission('customer:read')) return '/customers';
+  if (auth.hasPermission('quotation:read')) return '/quotations';
   return '/tasks'; // 待办工作台无需权限，作为兜底
 }
 

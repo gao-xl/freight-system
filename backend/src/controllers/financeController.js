@@ -1,4 +1,4 @@
-const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod, PaymentRecord } = require('../services/dataAccess');
+const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod, PaymentRecord, CompanyProfile, CompanyAccount, InvoiceTitle } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');
@@ -7,6 +7,14 @@ const { exportBuffer } = require('../services/exportService');
 const { sequelize } = require('../services/dataAccess');
 const { financeSummaryByCurrency, checkCustomerCredit } = require('../services/currencyService');
 const finance = require('../domains/finance/financeService');
+const {
+  buildDigitalTaxExcel,
+  validateInvoice,
+  countRemarkChars,
+  getTaxInfo,
+  TAX_CODE_MAP,
+  TRANSPORT_MODE_MAP,
+} = require('../services/digitalTaxInvoiceService');
 const {
   periodCodeFromDate,
   getOrCreatePeriod,
@@ -186,6 +194,28 @@ const issueInvoice = asyncHandler(async (req, res) => {
   if (inv.status !== 'draft') return fail(res, '仅草稿状态可开票', 1, 400);
   await inv.update({ status: 'issued', issuedAt: new Date() });
   ok(res, inv, '已开票');
+});
+
+// 批量开票：POST /finance/invoices/batch-issue { ids: [] }
+const batchIssueInvoice = asyncHandler(async (req, res) => {
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : String(req.body?.ids || '').split(','))
+    .map(Number).filter((n) => n > 0);
+  if (!ids.length) return fail(res, '请选择要开具的发票', 1, 400);
+  const succeeded = [];
+  const failed = [];
+  for (const id of ids) {
+    const inv = await scopedFindOne(req, Invoice, { id });
+    if (!inv) { failed.push({ id, reason: '发票不存在' }); continue; }
+    try {
+      await assertOrderEditable(inv.orderId);
+      if (inv.status !== 'draft') { failed.push({ id, reason: `非草稿状态(${inv.status})` }); continue; }
+      await inv.update({ status: 'issued', issuedAt: new Date() });
+      succeeded.push(id);
+    } catch (e) {
+      failed.push({ id, reason: e.message || '开票失败' });
+    }
+  }
+  ok(res, { succeeded, failed, total: succeeded.length + failed.length }, `批量开票完成：成功 ${succeeded.length} 张，失败 ${failed.length} 张`);
 });
 
 // N2 从费用勾选生成发票：POST /finance/invoices/from-fees { orderId, feeIds?, invoiceType, taxRate }
@@ -515,8 +545,301 @@ const aging = asyncHandler(async (req, res) => {
   ok(res, data);
 });
 
+// ===== P0.1 红字冲销 =====
+
+// 红字冲销：创建一笔与原记录金额相等、方向相反的冲销记录，并将原记录标记为已冲销
+// POST /finance/:id/reverse { reason? }
+const reverse = asyncHandler(async (req, res) => {
+  const rec = await scopedFindOne(req, FinanceRecord, { id: req.params.id });
+  if (!rec) return fail(res, '费用记录不存在', 1, 404);
+  await assertRecordEditable(rec);
+  if (rec.status === 'paid' || rec.status === 'waived') return fail(res, '已完成记录不可冲销', 1, 400);
+  if (rec.reverseRef) return fail(res, '该记录已是冲销记录，不可再次冲销', 1, 400);
+
+  // 查找是否存在已冲销的记录（防止重复冲销）
+  const existingReverse = await FinanceRecord.findOne({ where: { reverseRef: rec.id } });
+  if (existingReverse) return fail(res, '该记录已被冲销，请勿重复操作', 1, 400);
+
+  const reason = ((req.body || {}).reason || '').toString().trim() || '红字冲销';
+
+  const t = await sequelize.transaction();
+  try {
+    // 1. 创建冲销记录（方向相反、金额相同、币种一致）
+    const reverseDir = rec.direction === 'receivable' ? 'payable' : 'receivable';
+    const reverseRecord = await FinanceRecord.create({
+      orderId: rec.orderId,
+      direction: reverseDir,
+      category: rec.category,
+      description: `[红冲] ${rec.description}（${reason}）`,
+      amount: rec.amount,
+      currency: rec.currency,
+      exchangeRate: rec.exchangeRate,
+      localAmount: rec.localAmount ? Number(-Math.abs(Number(rec.localAmount)).toFixed(2)) : null,
+      status: 'paid',  // 冲销记录直接标记为已完成
+      counterpartyId: rec.counterpartyId,
+      dueDate: rec.dueDate,
+      settleMonth: rec.settleMonth,
+      remark: `冲销原记录 #${rec.id}，${reason}`,
+      groupId: rec.groupId,
+      ownerId: req.user?.id || rec.ownerId,
+      // 冲销关联
+      reverseRef: rec.id,
+      reverseType: 'full',
+      reversedAt: new Date(),
+      reversedBy: req.user?.id || null,
+      reversedReason: reason,
+    }, { transaction: t });
+
+    // 2. 将原记录标记为已冲销（保留原记录，不删除）
+    await rec.update({
+      status: 'paid',
+      paidAmount: rec.amount,  // 全额冲销
+      paidAt: new Date(),
+      remark: (rec.remark || '') + ` [已冲销 ${new Date().toISOString().slice(0, 10)}]`,
+    }, { transaction: t });
+
+    await t.commit();
+    const events = require('../services/eventBus');
+    events.emit('finance.created', { id: reverseRecord.id, data: reverseRecord.toJSON(), user: req.user });
+    events.emit('finance.updated', { id: rec.id, data: rec.toJSON(), user: req.user });
+    ok(res, { original: rec.toJSON(), reversed: reverseRecord.toJSON() }, '红字冲销成功');
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+});
+
+// 查询冲销记录：GET /finance/:id/reversals
+const getReversals = asyncHandler(async (req, res) => {
+  const rec = await scopedFindOne(req, FinanceRecord, { id: req.params.id });
+  if (!rec) return fail(res, '费用记录不存在', 1, 404);
+  // 查找该记录的所有冲销记录
+  const reversals = await FinanceRecord.findAll({ where: { reverseRef: rec.id } });
+  // 如果该记录本身就是冲销记录，查找原记录
+  let original = null;
+  if (rec.reverseRef) {
+    original = await FinanceRecord.findByPk(rec.reverseRef, { attributes: ['id', 'orderId', 'direction', 'category', 'description', 'amount', 'currency', 'status'] });
+  }
+  ok(res, { reversals, original });
+});
+
+// ===== 数电票批量导入文件生成 =====
+
+/**
+ * 加载销方信息（CompanyProfile + 默认 CNY 银行账号 + 默认开票抬头）
+ * @returns {Object} seller { name, taxNo, address, phone, bankName, bankAccount }
+ */
+async function loadSellerInfo() {
+  const profile = await CompanyProfile.findByPk(1);
+  const account = await CompanyAccount.findOne({
+    where: { isDefault: true, currency: 'CNY' },
+    order: [['id', 'ASC']],
+  });
+  const defaultTitle = await InvoiceTitle.findOne({
+    where: { isDefault: true, status: 'active' },
+    order: [['id', 'ASC']],
+  });
+  return {
+    name: profile?.companyName || defaultTitle?.titleName || '',
+    taxNo: profile?.taxNo || defaultTitle?.taxNo || '',
+    address: profile?.address || defaultTitle?.address || '',
+    phone: profile?.phone || defaultTitle?.phone || '',
+    bankName: account?.bankName || defaultTitle?.bankName || '',
+    bankAccount: account?.accountNo || defaultTitle?.accountNo || '',
+  };
+}
+
+/**
+ * 加载单张发票的数电票预览数据（购方/明细/运输信息）
+ * @param {Object} req - 请求对象（用于数据隔离）
+ * @param {number} invoiceId - 发票 ID
+ * @returns {Object|null} 发票预览数据
+ */
+async function loadInvoiceForDigitalTax(req, invoiceId) {
+  const inv = await scopedFindOne(req, Invoice, { id: invoiceId });
+  if (!inv) return null;
+
+  // 购方信息
+  let customer = null;
+  if (inv.customerId) customer = await Customer.findByPk(inv.customerId);
+
+  // 订单信息（运输信息来源）
+  let order = null;
+  if (inv.orderId) order = await Order.findByPk(inv.orderId);
+
+  // 明细行：从 Invoice.items(JSON) 解析 + 补全 FinanceRecord
+  let rawItems = [];
+  try { rawItems = JSON.parse(inv.items || '[]'); } catch { rawItems = []; }
+
+  const feeIds = rawItems.map((i) => i.financeId).filter(Boolean);
+  const fees = feeIds.length
+    ? await FinanceRecord.findAll({ where: { id: { [Op.in]: feeIds } } })
+    : [];
+  const feeMap = {};
+  for (const f of fees) feeMap[f.id] = f;
+
+  // 构建 CNY 明细行
+  let enrichedItems = rawItems.map((item) => {
+    const fee = feeMap[item.financeId];
+    // 数电票必须人民币：原币 CNY 直接取，非 CNY 取 localAmount（本币折算）
+    const cnyAmount = inv.currency === 'CNY'
+      ? Number(item.amount || 0)
+      : (fee ? Number(fee.localAmount || 0) : Number(item.amount || 0));
+    const category = fee?.category || 'other';
+    const taxInfo = getTaxInfo(category);
+    return {
+      financeId: item.financeId || null,
+      description: item.description || '',
+      amount: Number(cnyAmount.toFixed(2)),
+      currency: 'CNY',
+      originalAmount: Number(item.amount || 0),
+      originalCurrency: item.currency || inv.currency || 'CNY',
+      category,
+      spmc: taxInfo.name,
+      spbm: taxInfo.code,
+      spsl: 1,
+      dw: '次',
+      ggxh: '',
+    };
+  });
+
+  // 无明细时用发票金额兜底（仅 CNY 发票）
+  if (!enrichedItems.length && inv.currency === 'CNY') {
+    const taxInfo = getTaxInfo('transport_fee');
+    enrichedItems.push({
+      financeId: null,
+      description: '货物运输服务',
+      amount: Number(inv.amount) || 0,
+      currency: 'CNY',
+      category: 'transport_fee',
+      spmc: taxInfo.name,
+      spbm: taxInfo.code,
+      spsl: 1,
+      dw: '次',
+      ggxh: '',
+    });
+  }
+
+  // 判断是否货物运输（有订单且运输方式为 sea/air/land/rail）
+  const isFreight = !!order && ['sea', 'air', 'land', 'rail'].includes(order.mode);
+  const transportMode = order ? TRANSPORT_MODE_MAP[order.mode] : null;
+
+  // 车牌号：从 customFields JSON 读取
+  let vehiclePlate = '';
+  if (order?.customFields) {
+    try {
+      const cf = JSON.parse(order.customFields);
+      vehiclePlate = cf.vehiclePlate || cf.车牌号 || '';
+    } catch { /* customFields 非 JSON 忽略 */ }
+  }
+
+  // 购方银行信息（Customer 无银行字段，留空由用户在对话框填写）
+  const buyer = {
+    name: customer?.name || '',
+    taxNo: customer?.taxNo || '',
+    address: customer?.address || '',
+    phone: customer?.phone || '',
+    bankName: '',
+    bankAccount: '',
+  };
+
+  // CNY 金额汇总
+  const totalJe = enrichedItems.reduce((s, i) => s + Number(i.amount), 0);
+  const taxRate = Number(inv.taxRate) || 0;
+  const totalSe = Number((totalJe * taxRate / 100).toFixed(2));
+  const totalJshj = Number((totalJe + totalSe).toFixed(2));
+
+  return {
+    id: inv.id,
+    invoiceNo: inv.invoiceNo,
+    originalCurrency: inv.currency,
+    taxRate,
+    buyer,
+    order: order ? {
+      orderNo: order.orderNo,
+      mode: order.mode,
+      originPlace: order.originPlace || '',
+      destPlace: order.destPlace || '',
+      cargoDesc: order.cargoDesc || '',
+      vehiclePlate,
+    } : null,
+    items: enrichedItems,
+    isFreight,
+    transport: isFreight ? {
+      qyd: order.originPlace || '',
+      ddd: order.destPlace || '',
+      ysgjzl: transportMode || '',
+      ysgjhp: vehiclePlate || '',
+      yshwmc: order.cargoDesc || '',
+    } : null,
+    remark: '',
+    amount: totalJe,
+    taxAmount: totalSe,
+    totalAmount: totalJshj,
+    // 非人民币发票无法转换时标记
+    currencyWarning: inv.currency !== 'CNY' && !enrichedItems.length
+      ? `发票原币 ${inv.currency}，需关联费用记录才能折算人民币`
+      : null,
+  };
+}
+
+/**
+ * 数电票预览：POST /finance/invoices/digital-tax-preview
+ * 加载所选发票的销方/购方/明细/运输信息，供前端对话框预览和编辑
+ */
+const digitalTaxPreview = asyncHandler(async (req, res) => {
+  const { invoiceIds } = req.body || {};
+  if (!Array.isArray(invoiceIds) || !invoiceIds.length) {
+    return fail(res, '请选择至少一张发票', 1, 400);
+  }
+
+  const seller = await loadSellerInfo();
+  const invoices = [];
+  for (const id of invoiceIds) {
+    const data = await loadInvoiceForDigitalTax(req, Number(id));
+    if (data) invoices.push(data);
+  }
+
+  if (!invoices.length) return fail(res, '未找到有效的发票记录', 1, 404);
+  ok(res, { seller, invoices });
+});
+
+/**
+ * 数电票导出：POST /finance/invoices/digital-tax-export
+ * 接收前端编辑后的发票数据 + 全局选项，生成数电票批量导入 Excel
+ */
+const exportDigitalTax = asyncHandler(async (req, res) => {
+  const { invoices: clientInvoices, options = {} } = req.body || {};
+  if (!Array.isArray(clientInvoices) || !clientInvoices.length) {
+    return fail(res, '请选择至少一张发票', 1, 400);
+  }
+
+  // 销方信息（服务端加载，不信任客户端传入）
+  const seller = await loadSellerInfo();
+
+  // 校验每张发票
+  const allErrors = [];
+  for (let i = 0; i < clientInvoices.length; i++) {
+    const inv = clientInvoices[i];
+    const errs = validateInvoice(inv);
+    if (errs.length) allErrors.push(`发票 ${inv.invoiceNo || inv.id || i + 1}：${errs.join('；')}`);
+  }
+  if (allErrors.length) {
+    return fail(res, `数据校验未通过：\n${allErrors.join('\n')}`, 1, 400);
+  }
+
+  // 生成 Excel
+  const buf = await buildDigitalTaxExcel(clientInvoices, seller, options);
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const filename = encodeURIComponent(`数电票批量导入_${dateStr}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
+  res.send(Buffer.from(buf));
+});
+
 module.exports = {
-  ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, createInvoiceFromFees,
+  ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, batchIssueInvoice, createInvoiceFromFees,
   cancelInvoice, writeoff, batchWriteoff, currencySummary, creditCheck, createPayment, paymentList,
   periods, ensurePeriods, closePeriod, lockPeriod, unlockPeriod, periodStatement, batchCreate, aging,
+  reverse, getReversals, digitalTaxPreview, exportDigitalTax,
 };

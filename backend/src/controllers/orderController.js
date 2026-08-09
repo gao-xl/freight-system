@@ -259,29 +259,66 @@ const timeline = asyncHandler(async (req, res) => {
   const nodes = [];
   const push = (t, title, desc, at, meta = {}) => nodes.push({ type: t, title, description: desc, time: at, ...meta });
 
+  // 风险判定：为节点补充 riskLevel（normal/warning/danger），供前端时间线异常标红
+  // 规则映射基于各节点状态枚举，仅对"业务受阻/超期/待处理"状态标记风险
+  const riskLevelFor = (type, meta) => {
+    switch (type) {
+      case 'booking':
+        // new=待确认(关注), cancelled=取消(异常)
+        if (meta.status === 'cancelled') return 'danger';
+        if (meta.status === 'new') return 'warning';
+        return 'normal';
+      case 'customs':
+        // 未放行/被驳回/查验中=异常；released/closed 正常
+        if (meta.status === 'rejected') return 'danger';
+        if (['prepared', 'submitted', 'inspecting'].includes(meta.status)) return 'warning';
+        return 'normal';
+      case 'finance': {
+        // 应收未收且已超期=异常；unpaid/partial 未超期=关注
+        if (meta.status === 'unpaid' || meta.status === 'partial') {
+          if (meta.dueDate && new Date(meta.dueDate + 'T00:00:00') < new Date()) return 'danger';
+          return 'warning';
+        }
+        return 'normal';
+      }
+      case 'release':
+        // 待审批=异常(需处理)；approved/rejected 正常
+        if (meta.status === 'pending') return 'danger';
+        return 'normal';
+      case 'track':
+      case 'order':
+      default:
+        return 'normal';
+    }
+  };
+
   // 1. 订舱节点
   for (const b of bookings) {
-    push('booking', `订舱 ${b.bookingNo}`, `承运人 ${b.supplierId ? '#' + b.supplierId : '-'} · ${b.vesselName || b.flightNo || ''} · ${b.containerType || ''}${b.containerQty ? ' x' + b.containerQty : ''}`, b.bookingDate ? new Date(b.bookingDate + 'T00:00:00') : b.createdAt, { status: b.status });
+    const meta = { status: b.status };
+    push('booking', `订舱 ${b.bookingNo}`, `承运人 ${b.supplierId ? '#' + b.supplierId : '-'} · ${b.vesselName || b.flightNo || ''} · ${b.containerType || ''}${b.containerQty ? ' x' + b.containerQty : ''}`, b.bookingDate ? new Date(b.bookingDate + 'T00:00:00') : b.createdAt, { ...meta, riskLevel: riskLevelFor('booking', meta) });
   }
   // 2. 报关节点
   for (const c of customs) {
     const at = c.submitDate ? new Date(c.submitDate + 'T00:00:00') : c.createdAt;
-    push('customs', `报关 ${c.declNo || ''}`, `类型 ${c.type} · 状态 ${c.status}`, at, { status: c.status });
+    const meta = { status: c.status };
+    push('customs', `报关 ${c.declNo || ''}`, `类型 ${c.type} · 状态 ${c.status}`, at, { ...meta, riskLevel: riskLevelFor('customs', meta) });
   }
   // 3. 运输跟踪节点（人工+自动）
   for (const t of tracks) {
-    push('track', `运输 ${dict(t.stage)}`, [t.description, t.location, t.operator].filter(Boolean).join(' · '), t.eventTime, { stage: t.stage, auto: t.auto });
+    push('track', `运输 ${dict(t.stage)}`, [t.description, t.location, t.operator].filter(Boolean).join(' · '), t.eventTime, { stage: t.stage, auto: t.auto, riskLevel: 'normal' });
   }
   // 4. 财务节点
   for (const f of financeData) {
-    push('finance', `费用 ${f.direction === 'receivable' ? '应收' : '应付'} ${f.amount}`, `${f.description || ''} · 状态 ${f.status}`, f.dueDate ? new Date(f.dueDate + 'T00:00:00') : f.createdAt, { status: f.status, financeId: f.id });
+    const meta = { status: f.status, financeId: f.id, dueDate: f.dueDate };
+    push('finance', `费用 ${f.direction === 'receivable' ? '应收' : '应付'} ${f.amount}`, `${f.description || ''} · 状态 ${f.status}`, f.dueDate ? new Date(f.dueDate + 'T00:00:00') : f.createdAt, { ...meta, riskLevel: riskLevelFor('finance', meta) });
   }
   // 5. 放单节点
   for (const r of releases) {
-    push('release', `放单 ${r.status || ''}`, r.remark || '', r.createdAt, { status: r.status });
+    const meta = { status: r.approvalStatus || r.status };
+    push('release', `放单 ${meta.status || ''}`, r.remark || '', r.createdAt, { ...meta, riskLevel: riskLevelFor('release', meta) });
   }
   // 6. 订单创建/状态节点
-  push('order', '订单创建', `${order.orderNo} · ${order.cargoDesc || ''}`, order.createdAt, { status: order.status });
+  push('order', '订单创建', `${order.orderNo} · ${order.cargoDesc || ''}`, order.createdAt, { status: order.status, riskLevel: 'normal' });
 
   // 按时间升序排序，无时间靠后
   nodes.sort((a, b) => (a.time ? a.time : 0) - (b.time ? b.time : 0));

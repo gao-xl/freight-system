@@ -6,7 +6,35 @@
     <!-- 页面标题 -->
     <div class="page-heading">
       <div class="title"><el-icon><Odometer /></el-icon>经营看板</div>
-      <span class="welcome">欢迎回来，{{ greeting() }}</span>
+      <span class="welcome">欢迎回来，{{ greeting() }}，{{ roleMeta.name }}</span>
+    </div>
+
+    <!-- 角色工作台：按角色呈现高频入口与今日待办 -->
+    <div class="role-workbench" :style="{ '--rb-accent': roleMeta.accent }">
+      <div class="rb-head">
+        <div class="rb-identity">
+          <div class="rb-role">{{ roleMeta.name }}</div>
+          <div class="rb-tagline">{{ roleMeta.tagline }}</div>
+        </div>
+        <div class="rb-todo" v-if="todoTotal">
+          <el-tag size="small" effect="dark" type="danger" v-if="todoSummary.high">{{ todoSummary.high }} 高</el-tag>
+          <el-tag size="small" effect="plain" type="warning" v-if="todoSummary.medium">{{ todoSummary.medium }} 中</el-tag>
+          <el-tag size="small" effect="plain" type="info" v-if="todoSummary.low">{{ todoSummary.low }} 低</el-tag>
+          <span class="rb-todo-total">今日待办 {{ todoTotal }} 项</span>
+          <el-button size="small" type="primary" plain @click="router.push('/tasks')"><el-icon><Memo /></el-icon>去处理</el-button>
+        </div>
+        <div class="rb-todo" v-else>
+          <span class="rb-todo-total" style="color:var(--success)">暂无待办，一切就绪</span>
+          <el-button size="small" plain @click="router.push('/tasks')"><el-icon><Memo /></el-icon>待办工作台</el-button>
+        </div>
+      </div>
+      <div class="rb-actions">
+        <button v-for="a in roleActions" :key="a.label" class="rb-action" @click="router.push(a.path)">
+          <el-icon class="rb-action-icon"><component :is="a.icon" /></el-icon>
+          <span class="rb-action-label">{{ a.label }}</span>
+          <span class="rb-action-desc">{{ a.desc }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- 统计卡片 -->
@@ -113,10 +141,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
 import { useRouter } from 'vue-router';
-import { dashboardAPI, orderStatusDistAPI, modeDistAPI, recentOrdersAPI, dashboardMetricsAPI, dashboardAgingAPI, salesPerformanceAPI } from '@/api';
+import { dashboardAPI, orderStatusDistAPI, modeDistAPI, recentOrdersAPI, dashboardMetricsAPI, dashboardAgingAPI, salesPerformanceAPI, todoAPI } from '@/api';
 import OnboardingChecklist from '@/components/OnboardingChecklist.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useOnboardingStore } from '@/stores/onboarding';
@@ -130,11 +158,70 @@ const recent = ref([]);
 const metric = ref({});
 const aging = ref({ unbilled: {}, bands: [], settled: {} });
 const sales = ref([]);
+const todoTotal = ref(0);
+const todoSummary = ref({});
 const statusRef = ref();
 const modeRef = ref();
 const agingRef = ref();
 const salesRef = ref();
 let statusChart, modeChart, agingChart, salesChart;
+
+// 角色工作台：按角色呈现差异化高频入口（权限过滤）与配色
+const ROLE_META = {
+  admin:    { name: '管理员', tagline: '系统管理 · 全量业务视角', accent: '#1f5fbf' },
+  manager:  { name: '经理',   tagline: '审批决策 · 经营节奏',   accent: '#7c3aed' },
+  operator: { name: '操作员', tagline: '业务执行 · 跟单推进',   accent: '#0d9488' },
+  finance:  { name: '财务',   tagline: '资金管理 · 应收把控',   accent: '#d97706' },
+  viewer:   { name: '只读',   tagline: '数据总览 · 只读视角',   accent: '#64748b' },
+};
+const ROLE_ACTIONS = {
+  admin: [
+    { label: '待办工作台', icon: 'Memo', perm: undefined, path: '/tasks', desc: '今日该做的单' },
+    { label: '订单审批', icon: 'Document', perm: 'order:approve', path: '/orders', desc: '待审批订单' },
+    { label: '报价审批', icon: 'PriceTag', perm: 'quotation:approve', path: '/quotations', desc: '待审批报价' },
+    { label: '放单审批', icon: 'Select', perm: 'release:approve', path: '/orders', desc: '待审批放单' },
+    { label: '财务扎帐', icon: 'Money', perm: 'finance:close', path: '/finance', desc: '结账与锁帐' },
+    { label: '预警中心', icon: 'Bell', perm: 'alert:read', path: '/alerts', desc: '风险预警' },
+    { label: '系统管理', icon: 'Setting', perm: 'system:user', path: '/system', desc: '用户与权限' },
+    { label: '系统健康', icon: 'Monitor', perm: 'system:user', path: '/system/health', desc: '运行状态' },
+  ],
+  manager: [
+    { label: '待办工作台', icon: 'Memo', perm: undefined, path: '/tasks', desc: '今日该做的单' },
+    { label: '订单审批', icon: 'Document', perm: 'order:approve', path: '/orders', desc: '待审批订单' },
+    { label: '报价审批', icon: 'PriceTag', perm: 'quotation:approve', path: '/quotations', desc: '待审批报价' },
+    { label: '放单审批', icon: 'Select', perm: 'release:approve', path: '/orders', desc: '待审批放单' },
+    { label: '财务扎帐', icon: 'Money', perm: 'finance:close', path: '/finance', desc: '结账与锁帐' },
+    { label: '预警中心', icon: 'Bell', perm: 'alert:read', path: '/alerts', desc: '风险预警' },
+    { label: '报表设计', icon: 'DataAnalysis', perm: 'dashboard:read', path: '/system/reports', desc: '经营分析' },
+  ],
+  operator: [
+    { label: '待办工作台', icon: 'Memo', perm: undefined, path: '/tasks', desc: '今日该做的单' },
+    { label: '新建订单', icon: 'DocumentAdd', perm: 'order:create', path: '/orders', desc: '录入新订单' },
+    { label: '待订舱', icon: 'Ship', perm: 'booking:create', path: '/bookings', desc: '订舱操作' },
+    { label: '待报关', icon: 'Stamp', perm: 'customs:create', path: '/customs', desc: '报关申报' },
+    { label: '运输跟踪', icon: 'MapLocation', perm: 'track:read', path: '/tracking', desc: '节点更新' },
+    { label: '放单申请', icon: 'Select', perm: 'release:create', path: '/orders', desc: '申请放单' },
+    { label: '预警中心', icon: 'Bell', perm: 'alert:read', path: '/alerts', desc: '风险预警' },
+  ],
+  finance: [
+    { label: '待办工作台', icon: 'Memo', perm: undefined, path: '/tasks', desc: '今日该做的单' },
+    { label: '待开票', icon: 'Ticket', perm: 'finance:update', path: '/finance/invoices', desc: '开具发票' },
+    { label: '应收核销', icon: 'Money', perm: 'finance:update', path: '/finance', desc: '收款核销' },
+    { label: '对账单', icon: 'Tickets', perm: 'finance:read', path: '/finance/statement', desc: '客户对账' },
+    { label: '账龄分析', icon: 'DataAnalysis', perm: 'finance:read', path: '/finance', desc: '应收账龄' },
+    { label: '结账扎帐', icon: 'Lock', perm: 'finance:close', path: '/finance', desc: '月度扎帐' },
+  ],
+  viewer: [
+    { label: '待办工作台', icon: 'Memo', perm: undefined, path: '/tasks', desc: '今日概览' },
+    { label: '订单查询', icon: 'Document', perm: 'order:read', path: '/orders', desc: '订单浏览' },
+    { label: '财务查询', icon: 'Money', perm: 'finance:read', path: '/finance', desc: '财务浏览' },
+    { label: '预警中心', icon: 'Bell', perm: 'alert:read', path: '/alerts', desc: '风险预警' },
+    { label: '报表设计', icon: 'DataAnalysis', perm: 'dashboard:read', path: '/system/reports', desc: '经营分析' },
+  ],
+};
+const roleKey = computed(() => auth.role || 'viewer');
+const roleMeta = computed(() => ROLE_META[roleKey.value] || ROLE_META.viewer);
+const roleActions = computed(() => ((ROLE_ACTIONS[roleKey.value] || ROLE_ACTIONS.viewer)).filter((a) => auth.hasPermission(a.perm)));
 
 const statusMap = {
   draft: ['草稿', 'info'], confirmed: ['已确认', 'primary'], in_progress: ['进行中', 'warning'],
@@ -232,6 +319,12 @@ onMounted(async () => {
   // Onboarding：同步完成度数据（Checklist 进度派生自真实数据，权威源 /onboarding/status）
   onboarding.fetchStatus();
   renderCharts(st, md);
+  // 角色工作台待办聚合（失败不阻塞主看板）
+  try {
+    const t = await todoAPI();
+    todoTotal.value = t.total || 0;
+    todoSummary.value = t.summary || {};
+  } catch (e) { /* 忽略 */ }
   try {
     const [m, ag, sp] = await Promise.all([dashboardMetricsAPI(), dashboardAgingAPI(), salesPerformanceAPI()]);
     metric.value = m;
@@ -251,6 +344,48 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .welcome { font-size: 13px; color: var(--text-muted); }
+
+/* 角色工作台 */
+.role-workbench {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+  animation: fadeUp .3s ease both;
+}
+.role-workbench::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+  background: var(--rb-accent);
+}
+.rb-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.rb-identity { display: flex; align-items: baseline; gap: 10px; }
+.rb-role { font-size: 22px; font-weight: 700; color: var(--rb-accent); font-family: var(--font-num); }
+.rb-tagline { font-size: 13px; color: var(--text-muted); }
+.rb-todo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rb-todo-total { font-size: 13px; color: var(--text-sub); margin-left: 4px; }
+.rb-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.rb-action {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 12px 14px;
+  background: var(--bg-lighter, #f7f9fc);
+  border: 1px solid var(--border-lighter, #eef1f5);
+  border-radius: 10px;
+  cursor: pointer; text-align: left;
+  transition: transform .16s, box-shadow .16s, border-color .16s;
+}
+.rb-action:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--rb-accent); }
+.rb-action-icon { font-size: 18px; color: var(--rb-accent); }
+.rb-action-label { font-size: 13px; font-weight: 600; color: var(--text-main); }
+.rb-action-desc { font-size: 12px; color: var(--text-muted); }
+
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

@@ -75,6 +75,41 @@ const approve = asyncHandler(async (req, res) => {
   ok(res, rec, approve ? '放单已审批通过' : '放单已驳回');
 });
 
+// 批量审批放单：POST /release/batch-approve { ids: [], approve, remark }
+const batchApprove = asyncHandler(async (req, res) => {
+  const { approve = true, remark } = req.body;
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : String(req.body?.ids || '').split(','))
+    .map(Number).filter((n) => n > 0);
+  if (!ids.length) return fail(res, '请选择放单记录', 1, 400);
+  const succeeded = [];
+  const failed = [];
+  for (const id of ids) {
+    const rec = await ReleaseRecord.findByPk(id);
+    if (!rec) { failed.push({ id, reason: '记录不存在' }); continue; }
+    if (rec.approvalStatus !== 'pending') { failed.push({ id, reason: `已处理(${rec.approvalStatus})` }); continue; }
+    try {
+      await withTransaction(async (t) => {
+        const finalStatus = approve ? 'approved' : 'rejected';
+        await rec.update(
+          {
+            approvalStatus: finalStatus,
+            approverId: req.user?.id,
+            approverName: req.user?.name || req.user?.username,
+            approvedAt: approve ? new Date() : null,
+            remark: remark || rec.remark,
+          },
+          { transaction: t }
+        );
+        await Order.update({ releaseStatus: approve ? 'approved' : 'none' }, { where: { id: rec.orderId }, transaction: t });
+      });
+      succeeded.push(id);
+    } catch (e) {
+      failed.push({ id, reason: e.message || '审批失败' });
+    }
+  }
+  ok(res, { succeeded, failed, total: succeeded.length + failed.length }, `批量审批完成：成功 ${succeeded.length} 条，失败 ${failed.length} 条`);
+});
+
 // 放单记录（含订单信息，用于详情）
 const records = asyncHandler(async (req, res) => {
   const recs = await ReleaseRecord.findAll({
@@ -87,4 +122,4 @@ const records = asyncHandler(async (req, res) => {
   ok(res, { order, receivableBalance: bal, records: recs });
 });
 
-module.exports = { list, apply, approve, records };
+module.exports = { list, apply, approve, batchApprove, records };
