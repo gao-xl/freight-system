@@ -1,4 +1,4 @@
-const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack, FinanceRecord } = require('../models');
+const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack } = require('../models');
 const { Op } = require('sequelize');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
@@ -8,6 +8,7 @@ const { checkCustomerCredit } = require('../services/currencyService');
 const events = require('../services/eventBus');
 const { ORDER_NODES, computeReached, deriveOrderStatus, statusMapText, dict } = require('../domains/order/orderDomain');
 const { advanceOne } = require('../services/orderService');
+const finance = require('../domains/finance/financeService');
 
 // 订单状态机纯逻辑已迁至 domains/order/orderDomain.js（F0），advanceOne 事务外壳已迁至 services/orderService.js（F1）。
 // 本文件只保留 HTTP 编排与数据权限编排。
@@ -233,25 +234,25 @@ const detail = asyncHandler(async (req, res) => {
     { model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] },
   ]);
   if (!order) return fail(res, '订单不存在', 1, 404);
-  const [bookings, customs, tracks, finance, documents] = await Promise.all([
+  const [bookings, customs, tracks, financeData, documents] = await Promise.all([
     Booking.findAll({ where: { orderId: order.id } }),
     CustomsDeclaration.findAll({ where: { orderId: order.id } }),
     ShipmentTrack.findAll({ where: { orderId: order.id }, order: [['eventTime', 'ASC']] }),
-    FinanceRecord.findAll({ where: { orderId: order.id } }),
+    finance.findRecordsByOrderId(order.id),
     require('../models').Document.findAll({ where: { orderId: order.id } }),
   ]);
-  ok(res, { order, bookings, customs, tracks, finance, documents });
+  ok(res, { order, bookings, customs, tracks, finance: financeData, documents });
 });
 
 // A4 订单完整时间线：聚合订舱/报关/运输跟踪/财务/单证/放单状态
 const timeline = asyncHandler(async (req, res) => {
   const order = await findVisibleOrder(req, req.params.id);
   if (!order) return fail(res, '订单不存在', 1, 404);
-  const [bookings, customs, tracks, finance, releases] = await Promise.all([
+  const [bookings, customs, tracks, financeData, releases] = await Promise.all([
     Booking.findAll({ where: { orderId: order.id } }),
     CustomsDeclaration.findAll({ where: { orderId: order.id } }),
     ShipmentTrack.findAll({ where: { orderId: order.id }, order: [['eventTime', 'ASC']] }),
-    FinanceRecord.findAll({ where: { orderId: order.id } }),
+    finance.findRecordsByOrderId(order.id),
     require('../models').ReleaseRecord.findAll({ where: { orderId: order.id } }),
   ]);
 
@@ -272,7 +273,7 @@ const timeline = asyncHandler(async (req, res) => {
     push('track', `运输 ${dict(t.stage)}`, [t.description, t.location, t.operator].filter(Boolean).join(' · '), t.eventTime, { stage: t.stage, auto: t.auto });
   }
   // 4. 财务节点
-  for (const f of finance) {
+  for (const f of financeData) {
     push('finance', `费用 ${f.direction === 'receivable' ? '应收' : '应付'} ${f.amount}`, `${f.description || ''} · 状态 ${f.status}`, f.dueDate ? new Date(f.dueDate + 'T00:00:00') : f.createdAt, { status: f.status, financeId: f.id });
   }
   // 5. 放单节点
@@ -341,38 +342,21 @@ const exportExcel = asyncHandler(async (req, res) => {
   res.send(Buffer.from(buf));
 });
 
-// 单票成本/毛利（B6）：按订单归集应收(FP)应付(CP)
+// 单票成本/毛利（B6）：按订单归集应收(FP)应付(CP)；聚合逻辑在 financeService.summarizeOrderMargin
 const profit = asyncHandler(async (req, res) => {
   const order = await findVisibleOrder(req, req.params.id, [
     { model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] },
   ]);
   if (!order) return fail(res, '订单不存在', 1, 404);
-  const rows = await FinanceRecord.findAll({ where: { orderId: order.id } });
-  let receivable = 0, payable = 0, received = 0, paid = 0;
-  const byCategory = {};
-  for (const r of rows) {
-    // P3.7 本币口径：优先 localAmount（本币折算），缺省回退原币金额（历史数据兼容）
-    const amt = r.localAmount != null ? Number(r.localAmount) : Number(r.amount);
-    const paidAmt = r.localAmount != null ? Number((Number(r.paidAmount || 0) * (r.exchangeRate || 1)).toFixed(2)) : Number(r.paidAmount);
-    if (r.direction === 'receivable') { receivable += amt; received += paidAmt; }
-    else { payable += amt; paid += paidAmt; }
-    const key = r.category;
-    byCategory[key] = byCategory[key] || { receivable: 0, payable: 0 };
-    if (r.direction === 'receivable') byCategory[key].receivable += amt;
-    else byCategory[key].payable += amt;
-  }
-  const margin = receivable - payable;
-  const marginRate = receivable ? (margin / receivable) * 100 : 0;
+  const rows = await finance.findRecordsByOrderId(order.id);
+  const marginData = finance.summarizeOrderMargin(rows);
   ok(res, {
     orderId: order.id, orderNo: order.orderNo, customer: order.customer,
-    receivable, payable, received, paid,
-    margin, marginRate: Number(marginRate.toFixed(2)),
-    receivableBalance: receivable - received, payableBalance: payable - paid,
-    byCategory, itemCount: rows.length,
+    ...marginData,
   });
 });
 
-// 毛利汇总（按客户/业务员/航线）
+// 毛利汇总（按客户/业务员/航线）；聚合逻辑在 financeService.summarizeProfitGroups
 const profitSummary = asyncHandler(async (req, res) => {
   const { groupBy = 'customer' } = req.query; // customer | sales | route
   const query = await scopedOrderQuery(req, {
@@ -382,35 +366,9 @@ const profitSummary = asyncHandler(async (req, res) => {
   // B2 数据隔离：财务仅统计可见订单，杜绝跨范围泄漏（同时消除全表扫描）
   const orderIds = orders.map((o) => o.id);
   const records = orderIds.length
-    ? await FinanceRecord.findAll({
-        where: { orderId: { [Op.in]: orderIds } },
-        attributes: ['orderId', 'direction', 'amount', 'localAmount', 'exchangeRate'],
-      })
+    ? await finance.findRecordsByOrderIds(orderIds, { attributes: ['orderId', 'direction', 'amount', 'localAmount', 'exchangeRate'] })
     : [];
-  const byOrder = {};
-  for (const r of records) {
-    const oid = r.orderId;
-    byOrder[oid] = byOrder[oid] || { receivable: 0, payable: 0 };
-    // P3.7 本币口径：localAmount 优先
-    const amt = r.localAmount != null ? Number(r.localAmount) : Number(r.amount);
-    if (r.direction === 'receivable') byOrder[oid].receivable += amt;
-    else byOrder[oid].payable += amt;
-  }
-  const groups = {};
-  for (const o of orders) {
-    const g =
-      groupBy === 'sales' ? (o.salesId ? `业务员#${o.salesId}` : '未分配') :
-      groupBy === 'route' ? `${o.originPort || '?'}→${o.destPort || '?'}` :
-      (o.customer?.name || '未知客户');
-    groups[g] = groups[g] || { receivable: 0, payable: 0, orderCount: 0 };
-    const fin = byOrder[o.id] || { receivable: 0, payable: 0 };
-    groups[g].receivable += fin.receivable;
-    groups[g].payable += fin.payable;
-    groups[g].orderCount += 1;
-  }
-  const list = Object.entries(groups)
-    .map(([name, v]) => ({ name, ...v, margin: v.receivable - v.payable, marginRate: v.receivable ? Number((((v.receivable - v.payable) / v.receivable) * 100).toFixed(2)) : 0 }))
-    .sort((a, b) => b.margin - a.margin);
+  const list = finance.summarizeProfitGroups(orders, records, groupBy);
   ok(res, { groupBy, list });
 });
 

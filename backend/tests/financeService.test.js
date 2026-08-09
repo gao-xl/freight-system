@@ -130,3 +130,94 @@ test('findRecordsForAggregation: 透传聚合 where + 附加 opts', async () => 
   assert.deepEqual(captured.where, { groupId: 5 });
   assert.deepEqual(captured.attributes, attrs);
 });
+
+// ===== 聚合计算收口（F2）：控制器直连模型逻辑下沉后，纯函数可单测 =====
+
+test('summarizeRecords: 应收应付按 direction 归集，利润=应收-应付', () => {
+  const s = finance.summarizeRecords([
+    { direction: 'receivable', amount: 100, paidAmount: 40 },
+    { direction: 'receivable', amount: 50, paidAmount: 0 },
+    { direction: 'payable', amount: 30, paidAmount: 10 },
+  ]);
+  assert.equal(s.receivable, 150);
+  assert.equal(s.received, 40);
+  assert.equal(s.receivableBalance, 110);
+  assert.equal(s.payable, 30);
+  assert.equal(s.paid, 10);
+  assert.equal(s.payableBalance, 20);
+  assert.equal(s.profit, 120);
+});
+
+test('summarizeMonthlyTrend: 按 createdAt 归月，产出 12 个月序列', () => {
+  const rows = [
+    { direction: 'receivable', amount: 100, createdAt: '2026-01-15T00:00:00Z' },
+    { direction: 'payable', amount: 40, createdAt: '2026-01-20T00:00:00Z' },
+    { direction: 'receivable', amount: 200, createdAt: '2026-12-05T00:00:00Z' },
+  ];
+  const months = finance.summarizeMonthlyTrend(rows);
+  assert.equal(months.length, 12);
+  assert.equal(months[0].receivable, 100);
+  assert.equal(months[0].payable, 40);
+  assert.equal(months[11].receivable, 200);
+  assert.equal(months[1].receivable, 0, '无记录月份应为 0');
+});
+
+test('summarizeReconcile: 对账单逐行余额 + 应收/应付/总余额', () => {
+  const r = finance.summarizeReconcile([
+    { id: 1, direction: 'receivable', category: 'frt', description: 'a', currency: 'USD', amount: 100, paidAmount: 30, status: 'partial', invoiceNo: 'AR-1', dueDate: null, order: { orderNo: 'SO1' } },
+    { id: 2, direction: 'payable', category: 'frt', description: 'b', currency: 'USD', amount: 60, paidAmount: 60, status: 'paid', invoiceNo: null, dueDate: null, order: { orderNo: 'SO1' } },
+  ]);
+  assert.equal(r.receivable, 100);
+  assert.equal(r.payable, 60);
+  assert.equal(r.balance, 70, '应收行余额+70，应付行已结清余额0，累计70');
+  assert.equal(r.itemCount, 2);
+  assert.equal(r.items[0].balance, 70);
+  assert.equal(r.items[0].orderNo, 'SO1');
+});
+
+test('bucketAgAging: 未收按账龄分桶，本币未收 = localAmount * (open/amount)', () => {
+  const now0 = new Date();
+  const daysAgo = (d) => new Date(now0.getTime() - d * 86400000).toISOString();
+  const out = finance.bucketAgAging([
+    { direction: 'receivable', amount: 100, paidAmount: 20, localAmount: 700, dueDate: daysAgo(10), createdAt: daysAgo(40), order: { order: 1, customer: { id: 1, code: 'C1', name: '客户A' } } },
+    { direction: 'receivable', amount: 100, paidAmount: 0, localAmount: 700, dueDate: daysAgo(70), createdAt: daysAgo(90), order: { order: 1, customer: { id: 1, code: 'C1', name: '客户A' } } },
+    { direction: 'receivable', amount: 100, paidAmount: 100, localAmount: 700, dueDate: daysAgo(10), createdAt: daysAgo(40), order: { order: 1, customer: { id: 1, code: 'C1', name: '客户A' } } },
+  ]);
+  // 第1条：未收80，本币 700*(80/100)=560，10天 → 0-30
+  assert.equal(out.buckets['0-30'].total, 560);
+  // 第2条：未收100，本币700，70天 → 61-90
+  assert.equal(out.buckets['61-90'].total, 700);
+  // 第3条：结清，不入未收分桶
+  assert.equal(out.totalBalance, 1260);
+  assert.equal(out.customers[0].balance, 1260);
+});
+
+test('summarizeOrderMargin: 单票毛利，本币口径 localAmount 优先', () => {
+  const m = finance.summarizeOrderMargin([
+    { direction: 'receivable', amount: 100, paidAmount: 40, localAmount: 700, exchangeRate: 7, category: 'frt' },
+    { direction: 'payable', amount: 30, paidAmount: 10, localAmount: 210, exchangeRate: 7, category: 'frt' },
+  ]);
+  assert.equal(m.receivable, 700);
+  assert.equal(m.payable, 210);
+  assert.equal(m.margin, 490);
+  assert.equal(m.itemCount, 2);
+  assert.equal(m.byCategory.frt.receivable, 700);
+  assert.equal(m.byCategory.frt.payable, 210);
+});
+
+test('summarizeProfitGroups: 按客户分组毛利，marginRate = 毛利/应收', () => {
+  const orders = [
+    { id: 1, salesId: 3, originPort: 'SHA', destPort: 'LAX', customer: { name: '客户A' } },
+    { id: 2, salesId: 3, originPort: 'SHA', destPort: 'LAX', customer: { name: '客户A' } },
+  ];
+  const records = [
+    { orderId: 1, direction: 'receivable', amount: 100, localAmount: 100, exchangeRate: 1 },
+    { orderId: 1, direction: 'payable', amount: 60, localAmount: 60, exchangeRate: 1 },
+    { orderId: 2, direction: 'receivable', amount: 100, localAmount: 100, exchangeRate: 1 },
+  ];
+  const list = finance.summarizeProfitGroups(orders, records, 'customer');
+  assert.equal(list.length, 1);
+  assert.equal(list[0].orderCount, 2);
+  assert.equal(list[0].margin, 140, '应收200-应付60');
+  assert.equal(list[0].marginRate, 70);
+});

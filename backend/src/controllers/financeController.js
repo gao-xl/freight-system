@@ -6,6 +6,7 @@ const { scopedWhere, scopedFindOne } = require('../middleware/dataScope');
 const { exportBuffer } = require('../services/exportService');
 const { sequelize } = require('../models');
 const { financeSummaryByCurrency, checkCustomerCredit } = require('../services/currencyService');
+const finance = require('../domains/finance/financeService');
 const {
   periodCodeFromDate,
   getOrCreatePeriod,
@@ -46,26 +47,11 @@ const base = crudController({
   beforeWrite,
 });
 
-// 财务汇总：应收/应付/已收/已付/利润
+// 财务汇总：应收/应付/已收/已付/利润（聚合逻辑在 financeService.summarizeRecords）
 const summary = asyncHandler(async (req, res) => {
   const finalWhere = await scopedWhere(req, {});
-  const rows = await FinanceRecord.findAll({ where: finalWhere, attributes: ['direction', 'amount', 'paidAmount', 'status'] });
-  let receivable = 0, payable = 0, received = 0, paid = 0;
-  for (const r of rows) {
-    const amt = Number(r.amount);
-    const paidAmt = Number(r.paidAmount);
-    if (r.direction === 'receivable') { receivable += amt; received += paidAmt; }
-    else { payable += amt; paid += paidAmt; }
-  }
-  ok(res, {
-    receivable,        // 应收总额
-    receivableBalance: receivable - received, // 未收
-    received,
-    payable,           // 应付总额
-    payableBalance: payable - paid,           // 未付
-    paid,
-    profit: receivable - payable,             // 毛利
-  });
+  const data = await finance.getFinancialSummary(finalWhere);
+  ok(res, data);
 });
 
 // 月度应收应付趋势
@@ -75,18 +61,8 @@ const monthlyTrend = asyncHandler(async (req, res) => {
   const end = new Date(`${year + 1}-01-01`);
   const baseWhere = { createdAt: { [Op.gte]: start, [Op.lt]: end } };
   const finalWhere = await scopedWhere(req, baseWhere);
-  const rows = await FinanceRecord.findAll({
-    where: finalWhere,
-    attributes: ['direction', 'amount', 'createdAt'],
-  });
-  const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, receivable: 0, payable: 0 }));
-  for (const r of rows) {
-    const m = new Date(r.createdAt).getMonth();
-    const amt = Number(r.amount);
-    if (r.direction === 'receivable') months[m].receivable += amt;
-    else months[m].payable += amt;
-  }
-  ok(res, months);
+  const data = await finance.getMonthlyTrend(year, finalWhere);
+  ok(res, data);
 });
 
 // Excel 导出财务流水
@@ -128,7 +104,7 @@ const exportExcel = asyncHandler(async (req, res) => {
   res.send(Buffer.from(buf));
 });
 
-// 对账单生成（按订单或客户汇总应收/应付）
+// 对账单生成（按订单或客户汇总应收/应付；聚合逻辑在 financeService.summarizeReconcile）
 const reconcile = asyncHandler(async (req, res) => {
   const { orderId, customerId } = req.query;
   let where = {};
@@ -136,32 +112,12 @@ const reconcile = asyncHandler(async (req, res) => {
   if (customerId) where.counterpartyId = customerId;
   where = await scopedWhere(req, where);
 
-  const rows = await FinanceRecord.findAll({
-    where,
-    include: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],
-    order: [['id', 'ASC']],
-  });
-
-  let receivable = 0, payable = 0, balance = 0;
-  const items = rows.map((r) => {
-    const amt = Number(r.amount);
-    const paid = Number(r.paidAmount);
-    const bal = amt - paid;
-    if (r.direction === 'receivable') { receivable += amt; balance += bal; }
-    else { payable += amt; balance -= bal; }
-    return {
-      id: r.id, direction: r.direction, category: r.category, description: r.description,
-      currency: r.currency, amount: amt, paidAmount: paid, balance: bal, status: r.status,
-      invoiceNo: r.invoiceNo, dueDate: r.dueDate, orderNo: r.order?.orderNo || '',
-    };
-  });
+  const data = await finance.buildReconcile(where);
 
   ok(res, {
     orderId: orderId ? Number(orderId) : null,
     customerId: customerId ? Number(customerId) : null,
-    receivable, payable, balance,
-    itemCount: items.length,
-    items,
+    ...data,
   });
 });
 
@@ -552,68 +508,11 @@ const batchCreate = asyncHandler(async (req, res) => {
 
 // N5 AR 账龄：按客户聚合未收（应收-已收），账龄分桶 0-30/31-60/61-90/90+/已结清
 // 口径：dueDate 优先（未设到期日按 createdAt）；未收原币 = amount - paidAmount；本币未收 = localAmount * (1 - paidAmount/amount)
+// 聚合逻辑在 financeService.bucketAgAging
 const aging = asyncHandler(async (req, res) => {
   const finalWhere = await scopedWhere(req, { direction: 'receivable' });
-  const rows = await FinanceRecord.findAll({
-    where: finalWhere,
-    include: [
-      { model: Order, as: 'order', attributes: ['id', 'orderNo'], include: [{ model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] }] },
-    ],
-  });
-  const now = new Date();
-  const buckets = { '0-30': [], '31-60': [], '61-90': [], '90+': [], settled: [] };
-  const byCustomer = new Map(); // customerId -> { customer, total, balance, buckets: {key: base} }
-  const bucketKey = (days) => (days <= 30 ? '0-30' : days <= 60 ? '31-60' : days <= 90 ? '61-90' : '90+');
-  const keyOf = (cid) => String(cid || 0);
-
-  for (const r of rows) {
-    const amt = Number(r.amount) || 0;
-    const paid = Number(r.paidAmount) || 0;
-    const open = amt - paid; // 未收原币
-    const localAmt = Number(r.localAmount);
-    const openBase = localAmt ? Number((localAmt * (open / (amt || 1))).toFixed(2)) : open; // 本币未收
-    const customer = r.order?.customer || null;
-    const cid = customer?.id || 0;
-    const cname = customer ? `${customer.name} (${customer.code})` : '未关联客户';
-    if (open <= 0.001) {
-      if (!byCustomer.has(cid)) byCustomer.set(cid, { id: cid, name: cname, total: 0, balance: 0, buckets: {} });
-      const c = byCustomer.get(cid);
-      c.total += openBase; // 结清的不加 balance，但计入总额？结清=0 余额，跳过
-      continue;
-    }
-    const baseDate = r.dueDate ? new Date(r.dueDate) : new Date(r.createdAt);
-    const days = Math.max(0, Math.floor((now - baseDate) / 86400000));
-    const key = bucketKey(days);
-    if (!byCustomer.has(cid)) byCustomer.set(cid, { id: cid, name: cname, total: 0, balance: 0, buckets: {} });
-    const c = byCustomer.get(cid);
-    c.balance += openBase;
-    c.total += openBase;
-    c.buckets[key] = (c.buckets[key] || 0) + openBase;
-  }
-
-  const customerList = [...byCustomer.values()].sort((a, b) => b.balance - a.balance);
-  for (const c of customerList) {
-    for (const key of Object.keys(buckets)) {
-      if (c.buckets[key]) buckets[key].push({ customerId: c.id, name: c.name, balance: c.buckets[key] });
-    }
-  }
-  for (const key of Object.keys(buckets)) buckets[key].sort((a, b) => b.balance - a.balance);
-
-  const totalBalance = customerList.reduce((s, c) => s + c.balance, 0);
-  const agedTotal = Object.keys(buckets).filter((k) => k !== 'settled').reduce((s, k) => s + buckets[k].reduce((x, i) => x + i.balance, 0), 0);
-  ok(res, {
-    generatedAt: now.toISOString(),
-    totalBalance,       // 未收总余额（本币）
-    agedTotal,          // 已逾期+未到期分桶合计
-    buckets: {
-      '0-30': { list: buckets['0-30'], total: buckets['0-30'].reduce((s, i) => s + i.balance, 0) },
-      '31-60': { list: buckets['31-60'], total: buckets['31-60'].reduce((s, i) => s + i.balance, 0) },
-      '61-90': { list: buckets['61-90'], total: buckets['61-90'].reduce((s, i) => s + i.balance, 0) },
-      '90+': { list: buckets['90+'], total: buckets['90+'].reduce((s, i) => s + i.balance, 0) },
-      settled: { count: rows.length - customerList.reduce((s, c) => s + c.buckets['0-30'] + c.buckets['31-60'] + c.buckets['61-90'] + c.buckets['90+'], 0), total: 0 },
-    },
-    customers: customerList.map((c) => ({ customerId: c.id, name: c.name, balance: c.balance, total: c.total, buckets: c.buckets })),
-  });
+  const data = await finance.getAgAging(finalWhere);
+  ok(res, data);
 });
 
 module.exports = {
