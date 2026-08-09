@@ -35,9 +35,13 @@ async function runMigrations() {
       await migration.up(q, Sequelize);
     } catch (e) {
       // 幂等容错：部分存量迁移（如 accounting-period）直接 addIndex，会撞 sync 从模型建的索引
-      // 索引已存在且符合模型定义，跳过是安全的；其余错误照常抛出中止
+      // 索引已存在且符合模型定义，跳过是安全的；其余错误照常抛出中止。
+      // 用 SQLSTATE 42P07（duplicate_object）判断而非正则匹配错误文本——后者对中文/非英文
+      // 错误信息（如「关系 ... 已经存在」）会失效，导致本应幂等跳过的迁移中止整个启动。
       const msg = String(e && e.message || '');
-      if (/already exists/i.test(msg)) {
+      const sqlstate = e && e.original && e.original.code;
+      const isAlreadyExists = sqlstate === '42P07' || /already exists/i.test(msg);
+      if (isAlreadyExists) {
         logger.warn(`[MIGRATE] ${file} 跳过（目标已存在，幂等容错）：${msg}`);
       } else {
         logger.error(`[MIGRATE] 迁移失败 ${file}，启动中止（可用 AUTO_MIGRATE=false 关闭自动迁移后人工排查）`, {

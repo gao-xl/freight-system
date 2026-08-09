@@ -12,7 +12,7 @@ module.exports = {
       });
       // 回填：code = module:action（PostgreSQL 支持 || 拼接）
       await queryInterface.sequelize.query(
-        "UPDATE `Permissions` SET code = module || ':' || action WHERE code IS NULL OR code = ''"
+        "UPDATE \"Permissions\" SET code = module || ':' || action WHERE code IS NULL OR code = ''"
       );
       const indexes = await queryInterface.showIndex('Permissions');
       if (!indexes.some((i) => i.name === 'permissions_code')) {

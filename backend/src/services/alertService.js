@@ -79,7 +79,10 @@ async function ruleOverdueReceivable() {
 async function ruleCustomsDeadline() {
   const now = new Date();
   const customs = await CustomsDeclaration.findAll({
-    where: { status: { [Op.notIn]: ['released', 'cancelled'] } },
+    // 排除已放行/已关闭的报关单；CustomsDeclaration.status 枚举为
+    // ('prepared','submitted','inspecting','released','rejected','closed')，
+    // 终止态是 closed（无 cancelled）。误用 cancelled 会被 PostgreSQL 枚举强校验拒绝。
+    where: { status: { [Op.notIn]: ['released', 'closed'] } },
     include: [{ model: Order, as: 'order', attributes: ['orderNo', 'cutoffTime', 'terminal'] }],
   });
   for (const c of customs) {

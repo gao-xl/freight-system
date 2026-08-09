@@ -14,7 +14,7 @@ module.exports = {
     ];
 
     const existing = await queryInterface.sequelize.query(
-      "SELECT code FROM `Permissions` WHERE code IN (:codes)",
+      "SELECT code FROM \"Permissions\" WHERE code IN (:codes)",
       { replacements: { codes: permsToAdd.map((p) => p.code) }, type: Sequelize.QueryTypes.SELECT }
     );
     const existingCodes = new Set(existing.map((r) => r.code));
@@ -29,18 +29,18 @@ module.exports = {
 
     // 为内置角色映射上新权限
     const roles = await queryInterface.sequelize.query(
-      "SELECT id, code FROM `Roles` WHERE code IN ('admin', 'manager', 'finance')",
+      "SELECT id, code FROM \"Roles\" WHERE code IN ('admin', 'manager', 'finance')",
       { type: Sequelize.QueryTypes.SELECT }
     );
     const roleByCode = Object.fromEntries(roles.map((r) => [r.code, r.id]));
 
     const allPerms = await queryInterface.sequelize.query(
-      "SELECT id, code FROM `Permissions` WHERE code IN (:codes)",
+      "SELECT id, code FROM \"Permissions\" WHERE code IN (:codes)",
       { replacements: { codes: permsToAdd.map((p) => p.code) }, type: Sequelize.QueryTypes.SELECT }
     );
 
     const existingLinks = await queryInterface.sequelize.query(
-      "SELECT roleId, permissionId FROM `RolePermissions`",
+      "SELECT \"roleId\", \"permissionId\" FROM \"RolePermissions\"",
       { type: Sequelize.QueryTypes.SELECT }
     );
     const linkKey = new Set(existingLinks.map((l) => `${l.roleId}:${l.permissionId}`));
@@ -64,17 +64,17 @@ module.exports = {
   async down(queryInterface, Sequelize) {
     const codes = ['finance:close', 'finance:lock', 'finance:unlock'];
     const perms = await queryInterface.sequelize.query(
-      "SELECT id FROM `Permissions` WHERE code IN (:codes)",
+      "SELECT id FROM \"Permissions\" WHERE code IN (:codes)",
       { replacements: { codes }, type: Sequelize.QueryTypes.SELECT }
     );
     const ids = perms.map((p) => p.id);
     if (ids.length) {
       await queryInterface.sequelize.query(
-        "DELETE FROM `RolePermissions` WHERE permissionId IN (:ids)",
+        "DELETE FROM \"RolePermissions\" WHERE \"permissionId\" IN (:ids)",
         { replacements: { ids }, type: Sequelize.QueryTypes.DELETE }
       );
       await queryInterface.sequelize.query(
-        "DELETE FROM `Permissions` WHERE id IN (:ids)",
+        "DELETE FROM \"Permissions\" WHERE id IN (:ids)",
         { replacements: { ids }, type: Sequelize.QueryTypes.DELETE }
       );
     }

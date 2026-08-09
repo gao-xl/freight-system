@@ -154,8 +154,8 @@ function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`[SHUTDOWN] 收到 ${signal}，开始优雅停机（等待在途请求完成，上限 ${SHUTDOWN_TIMEOUT_MS / 1000}s）...`);
-  // 停止定时任务，避免停机窗口内重复触发
-  stopAlertScheduler();
+  // 停止定时任务，避免停机窗口内重复触发；并等待在途扫描/自动化完成，防止连接池关闭后被调用
+  const schedulerDrain = stopAlertScheduler();
   stopDataRetention();
   if (!server) {
     process.exit(0);
@@ -170,6 +170,8 @@ function shutdown(signal) {
   forceTimer.unref(); // 不阻止进程自然退出
   server.close(async () => {
     if (forceTimer) clearTimeout(forceTimer);
+    // 等待在途扫描/自动化完成后再关闭连接池，避免「连接池已关闭仍被调用」竞态
+    await schedulerDrain;
     await closeDb();
     logger.info('[SHUTDOWN] 已安全退出');
     process.exit(0);
@@ -186,8 +188,19 @@ async function start() {
   if (config.isProd) {
     logger.info('[DB] 生产环境：跳过 sequelize.sync()，表结构由 migration 全量管理');
   } else {
-    await sequelize.sync();
-    logger.info('[DB] 数据库同步完成（开发/测试）');
+    try {
+      await sequelize.sync();
+      logger.info('[DB] 数据库同步完成（开发/测试）');
+    } catch (e) {
+      // sync 幂等容错：非 force 模式下，模型 indexes 里的唯一索引在存量库已存在时会抛 42P07
+      // （Sequelize 对唯一索引不加 IF NOT EXISTS）。表与其余索引已由 sync 创建，此处应容忍并继续，
+      // 使「seed 后启动服务」「存量 sync 库原地补齐」均不因重复索引而启动失败。
+      if (e && e.original && e.original.code === '42P07') {
+        logger.warn(`[DB] sync 跳过已存在的对象（${e.original.routine || 'index'}）：${String(e.original.sql || '').slice(0, 200)}`);
+      } else {
+        throw e;
+      }
+    }
   }
   if (config.autoMigrate) {
     const applied = await runMigrations();
