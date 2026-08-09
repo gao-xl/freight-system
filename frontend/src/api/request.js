@@ -33,7 +33,8 @@ request.interceptors.response.use(
         ElMessage.error('登录已过期，请重新登录');
         router.push('/login');
       }
-    } else {
+    } else if (!error.config?.silent) {
+      // silent 请求（如门户 fail-open 下载/查询）由调用方按业务兜底提示，不在此统一弹错
       ElMessage.error(error.response?.data?.message || error.message || '网络错误');
     }
     return Promise.reject(error);

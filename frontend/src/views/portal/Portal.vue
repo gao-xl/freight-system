@@ -41,7 +41,14 @@
               <el-table-column prop="destPort" label="目的港" width="110" />
               <el-table-column prop="containerNo" label="箱号" min-width="130" />
               <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusOf(ORDER_STATUS, row.status).type" size="small">{{ statusOf(ORDER_STATUS, row.status).text }}</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row.id)">详情</el-button></template></el-table-column>
+              <el-table-column label="操作" min-width="270" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click="openDetail(row.id)">详情</el-button>
+                  <el-button link type="primary" :icon="Download" @click="downloadOrderInvoice(row.id)">下载账单</el-button>
+                  <el-button link type="primary" :icon="Document" @click="downloadOrderBl(row.id)">下载提单</el-button>
+                  <el-button link type="primary" :icon="EditPen" @click="openSi(row)">补料</el-button>
+                </template>
+              </el-table-column>
             </el-table>
             <div class="pager"><el-pagination background layout="total, prev, pager, next" :total="total" v-model:current-page="query.page" :page-size="query.pageSize" @current-change="loadOrders()" /></div>
           </div>
@@ -56,14 +63,27 @@
               <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ row.amount }} {{ row.currency }}</template></el-table-column>
               <el-table-column label="已收" width="100" align="right"><template #default="{ row }">{{ row.paidAmount }}</template></el-table-column>
               <el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="statusOf(FIN_STATUS, row.status).type" size="small">{{ statusOf(FIN_STATUS, row.status).text }}</el-tag></template></el-table-column>
+              <el-table-column label="操作" width="110" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" :icon="Download" @click="downloadBill(row)">下载</el-button>
+                </template>
+              </el-table-column>
             </el-table>
             <div class="pager"><el-pagination background layout="total, prev, pager, next" :total="billTotal" v-model:current-page="billQuery.page" :page-size="billQuery.pageSize" @current-change="loadBills()" /></div>
           </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="运价查询" name="rates">
+          <PortalRates />
         </el-tab-pane>
       </el-tabs>
     </div>
 
     <el-dialog v-model="detailVisible" title="订单详情" width="min(760px, 92vw)" v-if="orderDetail">
+      <div class="detail-toolbar">
+        <el-button type="primary" plain size="small" :icon="Document" @click="downloadDetailBl">下载提单</el-button>
+        <el-button type="primary" plain size="small" :icon="EditPen" @click="openSi(orderDetail.order)">在线补料(SI)</el-button>
+      </div>
       <el-descriptions :column="detailCols" border size="small">
         <el-descriptions-item label="订单号">{{ orderDetail.order.orderNo }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ dictText(ORDER_TYPE, orderDetail.order.type) }}</el-descriptions-item>
@@ -86,15 +106,27 @@
         <el-table-column prop="description" label="说明" min-width="140" />
         <el-table-column label="金额" width="110" align="right"><template #default="{ row }">{{ row.amount }} {{ row.currency }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }">{{ statusOf(FIN_STATUS, row.status).text }}</template></el-table-column>
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" :icon="Download" @click="downloadInvoice(row)">下载</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-dialog>
+
+    <PortalSiDialog v-model="siVisible" :order-id="siOrder?.id" :order-no="siOrder?.orderNo" />
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { Download, Document, EditPen } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
 import { portalAPI } from '@/api';
+import { downloadBlob } from '@/utils/download';
+import PortalRates from './PortalRates.vue';
+import PortalSiDialog from './PortalSiDialog.vue';
 import { ORDER_STATUS, ORDER_TYPE, MODE, TRACK_STAGE, FIN_CATEGORY, FIN_STATUS, dictText, statusOf, money } from '@/utils/dicts';
 
 const router = useRouter();
@@ -107,6 +139,8 @@ const bills = ref([]);
 const billTotal = ref(0);
 const detailVisible = ref(false);
 const orderDetail = ref(null);
+const siVisible = ref(false);
+const siOrder = ref(null);
 const query = reactive({ page: 1, pageSize: 8, keyword: '', status: '' });
 const billQuery = reactive({ page: 1, pageSize: 8 });
 
@@ -146,27 +180,93 @@ function logout() {
   router.push('/login');
 }
 
+// ---- E3 下载（fail-open：404 → 轻提示，不弹错）----
+function downloadError(e, okText, notReadyText) {
+  if (e?.response?.status === 404) {
+    ElMessage.warning(notReadyText || '该服务暂未开放，请联系操作员');
+  } else {
+    ElMessage.error(e?.response?.data?.message || '下载失败，请稍后重试');
+  }
+}
+
+// 我的订单列表：下载账单（取订单首条应收费用作为账单）
+async function downloadOrderInvoice(orderId) {
+  try {
+    let d = orderDetail.value;
+    if (!d || d.order?.id !== orderId) d = await portalAPI.orderDetail(orderId);
+    const fin = (d.finance || []).find((f) => f.direction === 'receivable') || d.finance?.[0];
+    if (!fin) return ElMessage.info('该订单暂无账单');
+    const resp = await portalAPI.invoiceDownload(orderId, fin.id);
+    downloadBlob(resp, `账单-${d.order.orderNo || orderId}.pdf`);
+  } catch (e) { downloadError(e, '', '账单下载暂未开放'); }
+}
+
+// 我的订单列表：下载提单（取订单 BL 单证）
+async function downloadOrderBl(orderId) {
+  try {
+    let d = orderDetail.value;
+    if (!d || d.order?.id !== orderId) d = await portalAPI.orderDetail(orderId);
+    const bl = (d.documents || []).find((doc) => doc.docType === 'bl');
+    if (!bl) return ElMessage.info('该订单暂无提单');
+    const resp = await portalAPI.documentDownload(orderId, bl.id);
+    downloadBlob(resp, `提单-${d.order.orderNo || orderId}.pdf`);
+  } catch (e) { downloadError(e, '', '提单下载暂未开放'); }
+}
+
+// 我的账单：按费用行下载
+async function downloadBill(row) {
+  try {
+    const resp = await portalAPI.invoiceDownload(row.order?.id, row.id);
+    downloadBlob(resp, `账单-${row.order?.orderNo || row.id}.pdf`);
+  } catch (e) { downloadError(e, '', '账单下载暂未开放'); }
+}
+
+// 订单详情：下载提单
+async function downloadDetailBl() {
+  const bl = (orderDetail.value?.documents || []).find((doc) => doc.docType === 'bl');
+  if (!bl) return ElMessage.info('该订单暂无提单');
+  try {
+    const resp = await portalAPI.documentDownload(orderDetail.value.order.id, bl.id);
+    downloadBlob(resp, `提单-${orderDetail.value.order.orderNo}.pdf`);
+  } catch (e) { downloadError(e, '', '提单下载暂未开放'); }
+}
+
+// 订单详情：按费用行下载
+async function downloadInvoice(row) {
+  try {
+    const resp = await portalAPI.invoiceDownload(orderDetail.value.order.id, row.id);
+    downloadBlob(resp, `账单-${orderDetail.value.order.orderNo}-${row.id}.pdf`);
+  } catch (e) { downloadError(e, '', '账单下载暂未开放'); }
+}
+
+// 在线补料(SI)
+function openSi(row) {
+  siOrder.value = row;
+  siVisible.value = true;
+}
+
 onMounted(() => { initResize(); loadOverview(); loadOrders(1); loadBills(1); });
 onUnmounted(() => window.removeEventListener('resize', onResize));
 </script>
 
 <style scoped>
-.portal { min-height: 100vh; background: #f5f7fa; }
-.portal-header { background: #1f2d3d; color: #fff; padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.portal { min-height: 100vh; background: var(--bg-page); }
+.portal-header { background: var(--sidebar-bg); color: var(--sidebar-text-active); padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .logo { width: 30px; height: 30px; }
 .brand-name { font-size: 18px; font-weight: 700; }
 .brand-sub { font-size: 13px; opacity: .8; }
-.head-right a { color: #fff; }
+.head-right a { color: var(--sidebar-text-active); }
 .portal-body { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
 .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-.stat-card { background: #fff; border: 1px solid var(--brand); border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); min-width: 0; }
+.stat-card { background: var(--bg-card); border: 1px solid var(--brand); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); min-width: 0; }
 .label { color: var(--text-sub); font-size: 13px; }
 .value { font-size: 26px; font-weight: 700; margin-top: 6px; overflow-wrap: anywhere; }
-.portal-tabs { background: #fff; border-radius: 10px; padding: 16px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.portal-tabs { background: var(--bg-card); border-radius: var(--radius); padding: 16px 24px; box-shadow: var(--shadow-sm); }
 .table-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
 .left { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+.detail-toolbar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 @media (max-width: 768px) {
   .portal-header { padding: 14px 16px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
