@@ -73,6 +73,17 @@ describe('pg_restore --list 解析（parsePgRestoreList）', () => {
     const quoted = '2; 16385 16385 TABLE public "Weird Name" postgres\n3; 0 0 TABLE DATA public "Weird Name" postgres';
     assert.deepEqual(parsePgRestoreList(quoted), ['Weird Name']);
   });
+
+  test('处理真实 pg_restore 输出的 CRLF 行尾（Windows）', () => {
+    const sample = [
+      '306; 1259 93348 TABLE public AccountingPeriods freight\r',
+      '258; 1259 92644 TABLE public AlertRecords freight\r',
+      '0; 0 0 TABLE DATA public AccountingPeriods freight\r',
+      '12; 0 0 SEQUENCE public "Orders_id_seq" postgres\r',
+    ].join('\n');
+    const tables = parsePgRestoreList(sample);
+    assert.deepEqual(tables.sort(), ['AccountingPeriods', 'AlertRecords'].sort());
+  });
 });
 
 describe('服务器备份列表 / 删除（listServerBackups / deleteServerBackup）', () => {

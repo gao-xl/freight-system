@@ -117,7 +117,7 @@ function deleteServerBackup(filename) {
 function parsePgRestoreList(output) {
   const tables = new Set();
   for (const line of String(output || '').split('\n')) {
-    const m = line.match(/^\s*\d+;\s+\d+\s+\d+\s+(.+)$/);
+    const m = line.replace(/\r$/, '').match(/^\s*\d+;\s+\d+\s+\d+\s+(.+)$/);
     if (!m) continue;
     const tokens = m[1].trim().split(/\s+/);
     let type = tokens[0];
@@ -260,8 +260,7 @@ function restoreTableData(dumpFile, tables) {
       '--no-privileges',
       '--no-password',
       '--data-only',
-      ...tables.map((t) => '--table'),
-      ...tables,
+      ...tables.flatMap((t) => ['--table', t]),
       dumpFile,
     ];
     if (cfg.ssl) args.push('--sslmode=require');
