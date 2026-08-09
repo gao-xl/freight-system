@@ -14,6 +14,7 @@ const { ModuleRegistry } = require('./core/moduleRegistry');
 const { startAlertScheduler } = require('./services/alertScheduler');
 const { subscribeEvents: subscribeAlertEvents } = require('./services/alertService');
 const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
+const { subscribe: subscribeNotificationEvents } = require('./services/notificationService');
 // Onboarding 地基：启动自动迁移 + 启动自检（bootstrap）
 const { runMigrations } = require('./services/migrateRunner');
 const { ensureBootstrap } = require('./services/bootstrapService');
@@ -137,7 +138,9 @@ async function start() {
   startAlertScheduler();
   subscribeAlertEvents();
   subscribeAutomationEvents();
-  logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化）');
+  // E2 通知推送：订阅预警/业务事件，出站邮件/企微/通用 Webhook（渠道缺配置自动跳过）
+  subscribeNotificationEvents();
+  logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化 + 通知推送）');
   app.listen(config.port, () => {
     logger.info(`[SERVER] 货运代理管理系统后端已启动: http://localhost:${config.port}`);
   });

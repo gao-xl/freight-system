@@ -46,6 +46,7 @@ const AccountingPeriod = require('./AccountingPeriod');
 const FeeTemplate = require('./FeeTemplate'); // N1 费用模板
 const PaymentRecord = require('./PaymentRecord'); // N3 收款/付款单
 const DemoDataLog = require('./DemoDataLog'); // Onboarding 示例数据批次
+const NotificationRecord = require('./NotificationRecord'); // E2 通知推送记录
 
 // 关联关系
 Order.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
@@ -189,4 +190,5 @@ module.exports = {
   FeeTemplate,
   PaymentRecord,
   DemoDataLog,
+  NotificationRecord,
 };

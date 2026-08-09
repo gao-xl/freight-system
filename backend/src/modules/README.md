@@ -4,21 +4,25 @@
 
 ## 插件 1：notification（出站通知）
 
-**演示能力**：事件总线订阅 → 企业微信机器人 Webhook 推送
+**演示能力**：插件作为「配置/兼容 + 推送记录」面，出站推送由内置服务统一完成
 
-- 订阅事件：`order.created` / `booking.shipped` / `finance.created` / `alert.created`
-- 配置存储：`IntegrationConfig` 表（code=`wechat_webhook`），不写死密钥
-- 自身接口：
+- E2 正式化后，事件驱动的出站推送（邮件 / 企微 Webhook / 通用 Webhook）由内置服务
+  `src/services/notificationService.js` 负责：订阅 `alert.created` / `alert.resolved`（预警产生即推送，
+  与 E1 自动拉取联动），推送结果落库 `NotificationRecord`。
+- 本模块保留：
+  - 企微 Webhook 配置入口：`IntegrationConfig` 表（code=`wechat_webhook`），内置服务在未配
+    `WECHAT_WEBHOOK` 环境变量时回退读取该配置（单一路径，不两套并存）
   - `GET  /api/plugins/notification/config` 查看配置
   - `PUT  /api/plugins/notification/config` 保存配置 `{ webhookUrl, enabled, remark }`
-  - `POST /api/plugins/notification/test` 手动测试推送
-- 开关：`enabled=false` 或未配置 URL 时静默跳过，不影响主流程
-- 失败隔离：推送异常仅记日志，绝不抛错影响业务
+  - `POST /api/plugins/notification/test` 手动测试推送（委托内置服务，支持 `channel: email|wechat_webhook|webhook`）
+  - `GET  /api/notifications` 推送记录查询（管理端）
+- 开关：渠道缺配置/未启用时静默跳过，不影响主流程；推送失败仅记日志与记录（status=failed），绝不抛错影响业务
+- 环境变量方式：也可直接在 `.env` 配 `WECHAT_WEBHOOK` / `SMTP_*` / `WEBHOOK_URL`（见 `.env.example`）
 
-**启用步骤**：
+**启用步骤（企微）**：
 1. 注册一个企业微信群机器人，拿到 Webhook URL
 2. `PUT /api/plugins/notification/config` 写入 URL 并 `enabled: true`
-3. 创建一笔订单，企微群即收到「新订单创建」推送
+3. 触发一条预警（如运行规则扫描），企微群即收到预警推送，`GET /api/notifications` 可查记录
 
 ## 插件 2：qingdao-port（青岛港专项）
 

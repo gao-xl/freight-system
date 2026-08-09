@@ -72,13 +72,31 @@ function validateBizType(bizType) {
 }
 
 // 写入预警（复用 alertService 的幂等逻辑，避免循环依赖）
+// E2：仅在"新建"时发射 alert.created 事件（通知推送服务订阅；重复命中不重复推送）
 async function upsertAlert(alert) {
   const existing = await AlertRecord.findOne({ where: { dedupKey: alert.dedupKey } });
   if (existing) {
     await existing.update({ level: alert.level, title: alert.title, message: alert.message, dueAt: alert.dueAt, status: 'active' });
     return existing;
   }
-  return AlertRecord.create({ ...alert, status: 'active' });
+  const created = await AlertRecord.create({ ...alert, status: 'active' });
+  try {
+    require('./eventBus').emit('alert.created', {
+      alertId: created.id,
+      type: created.type,
+      level: created.level,
+      orderId: created.orderId,
+      bookingId: created.bookingId,
+      financeId: created.financeId,
+      title: created.title,
+      message: created.message,
+      dedupKey: created.dedupKey,
+      dueAt: created.dueAt,
+    });
+  } catch (e) {
+    // 事件发射失败不影响预警落库
+  }
+  return created;
 }
 
 // ── 内置执行器注册表（ruleType → 执行函数） ──

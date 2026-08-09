@@ -66,4 +66,20 @@ module.exports = {
     ais: process.env.TRACK_AUTO_PULL_AIS !== 'off', // AIS 船位（每 2h）
     yard: process.env.TRACK_AUTO_PULL_YARD !== 'off', // 场站状态（每 4h）
   },
+  // E2 通知推送：渠道缺配置/未启用时自动跳过（fail-open），默认零副作用
+  notification: {
+    smtpHost: process.env.SMTP_HOST || '',
+    smtpPort: parseInt(process.env.SMTP_PORT) || 465,
+    smtpUser: process.env.SMTP_USER || '',
+    smtpPass: process.env.SMTP_PASS || '',
+    smtpFrom: process.env.SMTP_FROM || '',
+    emailTo: process.env.NOTIFY_EMAIL_TO || '',
+    smtpEnabled: process.env.NOTIFY_EMAIL !== 'off', // NOTIFY_EMAIL=off 关闭邮件渠道
+    wechatWebhook: process.env.WECHAT_WEBHOOK || '',
+    wechatEnabled: process.env.NOTIFY_WECHAT !== 'off', // NOTIFY_WECHAT=off 关闭企微渠道
+    webhookUrl: process.env.WEBHOOK_URL || '',
+    webhookEnabled: process.env.NOTIFY_WEBHOOK !== 'off', // NOTIFY_WEBHOOK=off 关闭通用渠道
+    // 可选订阅的关键业务事件（逗号分隔），默认只推送预警；如 order.created,order.transitioned
+    businessEvents: process.env.NOTIFY_BUSINESS_EVENTS || '',
+  },
 };

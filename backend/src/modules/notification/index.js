@@ -1,29 +1,28 @@
 'use strict';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 官方示例插件 ①：notification（出站通知）
+// notification 模块（出站通知）
 //
-// 演示目标：不改核心代码，仅用「事件订阅 + 配置表」实现一个可用功能
-//   —— 订单创建 / 订舱装船等事件发生时，自动向企业微信群机器人 Webhook 推送消息。
-//
-// 它是「写插件」recipe 的可运行范本，对应《二开指南》recipe 3：
-//   1. 监听事件总线（events.onAsync('order.created', ...)）
-//   2. 用 IntegrationConfig 表做开关与配置（不写死密钥）
-//   3. 自身暴露 /plugins/notification/* 接口（读配置 / 测试发送）
-//
-// 用法（非技术文档见 docs/plugins/notification.md）：
-//   - 管理员在「外部对接」里启用 code='wechat_webhook' 的集成并填 Webhook URL
-//   - 或直接调 PUT /api/plugins/notification/config 存 { webhookUrl, enabled }
-//   - 事件发生后自动推送；可用 POST /api/plugins/notification/test 验证
+// 关系说明（E2 正式化后）：
+//   - 事件驱动的出站推送（邮件 / 企微 Webhook / 通用 Webhook）已正式化为内置服务
+//     src/services/notificationService.js，由 server.js 在启动时订阅事件，统一落库 NotificationRecord。
+//   - 本模块保留为「配置/兼容 + 记录查询」面：
+//       1. 企微 Webhook 配置入口（IntegrationConfig code=wechat_webhook），
+//          notificationService 在未配 WECHAT_WEBHOOK 环境变量时回退读取该配置 → 单一路径，不两套并存。
+//       2. 手动测试发送：POST /plugins/notification/test → 委托 notificationService.sendTest。
+//       3. 推送记录查询：GET /api/notifications（管理端）。
+//   - 本模块不再自行订阅事件（避免与内置服务重复推送）。
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { logger } = require('../../utils/logger');
+const notificationService = require('../../services/notificationService');
+const notificationController = require('../../controllers/notificationController');
 
 // 配置键（存在 IntegrationConfig 表，code 固定）
 const CONFIG_CODE = 'wechat_webhook';
 
-// 订阅的事件（可在 events 字段声明，注册表可查）
-const SUBSCRIBED_EVENTS = ['order.created', 'booking.shipped', 'finance.created', 'alert.created'];
+// 本模块声明关注的事件（供注册表展示；实际订阅由 notificationService 统一完成）
+const SUBSCRIBED_EVENTS = ['alert.created', 'alert.resolved'];
 
 // 读取通知配置（IntegrationConfig 里 code 对应行；未配置时返回 null）
 async function getConfig() {
@@ -49,72 +48,14 @@ async function saveConfig({ webhookUrl, enabled = true, remark = '' }) {
   return getConfig();
 }
 
-// 实际发送：企业微信机器人 Webhook（POST JSON）
-async function sendWebhook(webhookUrl, content) {
-  const res = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      msgtype: 'text',
-      text: { content: `[货代系统]\n${content}` },
-    }),
-  });
-  if (!res.ok) throw new Error(`Webhook HTTP ${res.status}`);
-  const body = await res.json();
-  if (body.errcode !== 0) throw new Error(`企微返回 errcode=${body.errcode} ${body.errmsg || ''}`);
-  return body;
-}
-
-// 事件 → 消息文案
-function formatMessage(eventName, payload = {}) {
-  switch (eventName) {
-    case 'order.created':
-      return `新订单创建：${payload.orderNo || `#${payload.orderId}`}`;
-    case 'booking.shipped':
-      return `订舱已装船：订单 #${payload.orderId}${payload.bookingNo ? `（${payload.bookingNo}）` : ''}`;
-    case 'finance.created':
-      return `新财务记录：#${payload.financeId || payload.id || ''} ${payload.amount ? `金额 ${payload.amount}` : ''}`;
-    case 'alert.created':
-      return `【预警】${payload.title || '新预警'}：${payload.message || ''}`;
-    default:
-      return `事件 ${eventName}：${JSON.stringify(payload).slice(0, 120)}`;
-  }
-}
-
-// 订阅处理：事件 → 读配置 → 推送（失败仅记日志，绝不抛错影响主流程）
-function handleEvent(eventName) {
-  return async (payload = {}) => {
-    try {
-      const cfg = await getConfig();
-      if (!cfg || !cfg.enabled || !cfg.webhookUrl) return; // 未启用/未配置则静默跳过
-      await sendWebhook(cfg.webhookUrl, formatMessage(eventName, payload));
-      logger.info(`[NOTIFY] 已推送事件 ${eventName} 至企微`);
-    } catch (e) {
-      logger.error(`[NOTIFY] 推送失败 ${eventName}`, { message: e.message });
-    }
-  };
-}
-
-// 启动订阅（幂等：标记避免重复订阅）
-let subscribed = false;
-function subscribe() {
-  if (subscribed) return;
-  const events = require('../../services/eventBus');
-  for (const ev of SUBSCRIBED_EVENTS) {
-    events.onAsync(ev, handleEvent(ev));
-  }
-  subscribed = true;
-  logger.info(`[NOTIFY] 已订阅事件: ${SUBSCRIBED_EVENTS.join(', ')}`);
-}
-
 // 模块定义（ModuleRegistry 协议）
 module.exports = {
   name: 'notification',
-  title: '出站通知（官方示例插件）',
+  title: '出站通知（配置/兼容 + 推送记录）',
   dependencies: ['customer'],
   events: SUBSCRIBED_EVENTS,
 
-  // 路由：自身配置接口。用 mw.guard 拿权限守卫（核心自动注入）
+  // 路由：自身配置接口 + 推送记录查询。用 mw.guard 拿权限守卫（核心自动注入）
   routes(router, mw = {}) {
     const guard = mw.guard || ((p) => (req, res, next) => next()); // 无守卫时放行
     const { ok, fail, asyncHandler } = require('../../utils/response');
@@ -131,22 +72,20 @@ module.exports = {
       ok(res, await saveConfig({ webhookUrl, enabled, remark }), '通知配置已保存');
     }));
 
-    // POST /plugins/notification/test  { content? }  手动测试推送
+    // POST /plugins/notification/test  { content? }  手动测试推送（委托内置服务，支持 email/wechat_webhook/webhook）
     router.post('/plugins/notification/test', guard('integration', 'update'), asyncHandler(async (req, res) => {
-      const cfg = await getConfig();
-      if (!cfg || !cfg.webhookUrl) return fail(res, '请先配置 Webhook URL', 1, 400);
-      if (!cfg.enabled) return fail(res, '通知未启用', 1, 400);
-      try {
-        await sendWebhook(cfg.webhookUrl, req.body?.content || '测试消息：通知插件工作正常');
-        ok(res, null, '测试推送成功');
-      } catch (e) {
-        fail(res, `推送失败: ${e.message}`, 1, 400);
-      }
+      const channel = req.body?.channel || 'wechat_webhook';
+      const r = await notificationService.sendTest({ channel, content: req.body?.content });
+      if (r.skipped) return fail(res, `渠道 ${channel} 未配置或未启用，请先配置`, 1, 400);
+      if (!r.sent) return fail(res, `推送失败: ${r.error || '未知错误'}`, 1, 400);
+      ok(res, null, '测试推送成功');
     }));
 
-    // 路由挂载后自动订阅事件（幂等）
-    subscribe();
+    // E2 推送记录查询（管理端）：GET /notifications?page=1&pageSize=20&eventType=&channel=&status=
+    router.get('/notifications', guard('system', 'read'), notificationController.list);
+
+    logger.info('[NOTIFY] 事件订阅由内置 notificationService 统一负责（server.js 启动时注册），本模块仅提供配置与记录查询');
   },
 
-  services: { getNotifyConfig: getConfig, sendNotify: sendWebhook },
+  services: { getNotifyConfig: getConfig, sendNotify: (content) => notificationService.sendTest({ channel: 'wechat_webhook', content }) },
 };

@@ -6,13 +6,31 @@ const { logger } = require('../utils/logger');
 // 规则：ETA临近 / 船期变更 / 报关临期 / 超期应收 / 截港时间 / 青岛港卡点
 
 // 写入预警（幂等：按 dedupKey 去重，已存在则更新而非重复插入）
+// E2：仅在"新建"时发射 alert.created 事件（通知推送服务订阅；重复扫描命中已有预警不重复推送）
 async function upsertAlert({ type, level, orderId, bookingId, financeId, title, message, dueAt, dedupKey }) {
   const existing = await AlertRecord.findOne({ where: { dedupKey } });
   if (existing) {
     await existing.update({ level, title, message, dueAt, status: 'active' });
     return existing;
   }
-  return AlertRecord.create({ type, level, orderId, bookingId, financeId, title, message, dueAt, dedupKey, status: 'active' });
+  const created = await AlertRecord.create({ type, level, orderId, bookingId, financeId, title, message, dueAt, dedupKey, status: 'active' });
+  try {
+    require('./eventBus').emit('alert.created', {
+      alertId: created.id,
+      type,
+      level,
+      orderId,
+      bookingId,
+      financeId,
+      title,
+      message,
+      dedupKey,
+      dueAt,
+    });
+  } catch (e) {
+    // 事件发射失败不影响预警落库
+  }
+  return created;
 }
 
 // 规则1：ETA 临近（7 天内到港，未完成）
@@ -165,6 +183,11 @@ async function resolveAlert(id, action) {
   if (!rec) return null;
   const status = action === 'resolve' ? 'resolved' : 'ignored';
   await rec.update({ status, resolvedAt: new Date() });
+  try {
+    require('./eventBus').emit('alert.resolved', { alertId: rec.id, title: rec.title, status, orderId: rec.orderId });
+  } catch (e) {
+    // 事件发射失败不影响处理结果
+  }
   return rec;
 }
 
