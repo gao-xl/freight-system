@@ -2,6 +2,7 @@ const { Order, Customer, Booking, CustomsDeclaration, ShipmentTrack, FinanceReco
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { Op } = require('sequelize');
 const printService = require('../services/printService');
+const { recommend: recommendService } = require('../services/freightRateRecommendService');
 
 // C5 客户自助门户：customer 角色用户仅可查看自己客户（customerId）的数据
 // 全部为只读查询，不提供任何写操作。
@@ -210,7 +211,33 @@ const rates = asyncHandler(async (req, res) => {
     order: [['rate', 'ASC']],
     limit: 50,
   });
-  ok(res, { list: rows, total: rows.length });
+  // P1 运价比价：mode=compare 时按 承运商+箱型 分组，返回每家最优价并标记全场最低（best）
+  const mode = String(req.query.mode || '').toLowerCase();
+  if (mode === 'compare') {
+    const bestByKey = new Map();
+    for (const r of rows) {
+      const key = `${r.carrier}#${r.containerType}`;
+      if (!bestByKey.has(key)) bestByKey.set(key, r);
+    }
+    const grouped = [...bestByKey.values()];
+    const minByType = new Map();
+    for (const r of grouped) {
+      const cur = minByType.get(r.containerType);
+      if (!cur || Number(r.rate) < Number(cur)) minByType.set(r.containerType, Number(r.rate));
+    }
+    const list = grouped.map((r) => ({
+      ...r.toJSON(),
+      best: Number(r.rate) <= (minByType.get(r.containerType) ?? Number.POSITIVE_INFINITY),
+    }));
+    return ok(res, { list, total: list.length, mode: 'compare' });
+  }
+  // P2 运价智能推荐：mode=recommend 时结合历史成交报价给出最优建议
+  if (mode === 'recommend') {
+    const result = await recommendService({ originPort: from, destPort: to, containerType });
+    if (result.error) return fail(res, result.error, 1, 400);
+    return ok(res, { ...result, mode: 'recommend' });
+  }
+  ok(res, { list: rows, total: rows.length, mode: 'list' });
 });
 
 module.exports = { overview, myOrders, orderDetail, myBills, downloadInvoice, downloadDocument, submitSi, rates };

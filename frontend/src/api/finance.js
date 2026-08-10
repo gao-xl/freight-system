@@ -12,6 +12,7 @@ const crud = (resource) => ({
 export const financeAPI = {
   ...crud('finance'),
   currencySummary: (p) => request.get('/finance/currency-summary', { params: p }),
+  currencyReconcile: (p) => request.get('/finance/currency-reconcile', { params: p }), // P3 币种级对账
   creditCheck: (id, p) => request.get(`/finance/customers/${id}/credit`, { params: p }),
 };
 export const financeBatchAPI = (data) => request.post('/finance/batch', data); // N1 批量建费

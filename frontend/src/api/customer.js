@@ -21,3 +21,13 @@ export const customerFollowsAPI = (id) => request.get(`/customers/${id}/follows`
 export const createCustomerFollowAPI = (id, data) => request.post(`/customers/${id}/follows`, data);
 export const updateCustomerFollowAPI = (followId, data) => request.put(`/customers/follows/${followId}`, data);
 export const deleteCustomerFollowAPI = (followId) => request.delete(`/customers/follows/${followId}`);
+// P1 客户多联系人
+export const customerContactsAPI = (id) => request.get(`/customers/${id}/contacts`);
+export const createCustomerContactAPI = (id, data) => request.post(`/customers/${id}/contacts`, data);
+export const updateCustomerContactAPI = (contactId, data) => request.put(`/customers/contacts/${contactId}`, data);
+export const deleteCustomerContactAPI = (contactId) => request.delete(`/customers/contacts/${contactId}`);
+// P1 客户附件
+export const customerAttachmentsAPI = (id) => request.get(`/customers/${id}/attachments`);
+export const createCustomerAttachmentAPI = (id, formData) => request.post(`/customers/${id}/attachments`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+export const customerAttachmentDownloadAPI = (attachId) => request.get(`/customers/attachments/${attachId}/download`, { responseType: 'blob' });
+export const deleteCustomerAttachmentAPI = (attachId) => request.delete(`/customers/attachments/${attachId}`);

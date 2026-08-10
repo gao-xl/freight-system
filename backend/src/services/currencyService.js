@@ -77,4 +77,45 @@ async function checkCustomerCredit(customerId, baseCurrency = 'CNY') {
   return { ok: usedBase <= limit, usedBase, limit, currency: baseCurrency, message: usedBase > limit ? `信用额度超限：已用 ${usedBase}，额度 ${limit}` : '' };
 }
 
-module.exports = { convertTo, financeSummaryByCurrency, customerReceivableBalance, checkCustomerCredit };
+// P3 币种级对账：按币种统计应收/实收、应付/实付，并标记未核销（对账差异）
+// 返回每币种的对账明细与整体对账状态
+async function currencyReconcile(baseCurrency = 'USD', where = {}) {
+  const rows = await findRecordsForAggregation(where, { attributes: ['direction', 'currency', 'amount', 'paidAmount'] });
+  const byCurrency = new Map();
+  for (const r of rows) {
+    const key = (r.currency || baseCurrency).toUpperCase();
+    const g = byCurrency.get(key) || {
+      currency: key,
+      receivable: 0, received: 0,
+      payable: 0, paid: 0,
+      receivableBalance: 0, payableBalance: 0,
+    };
+    const amt = Number(r.amount), paidAmt = Number(r.paidAmount);
+    if (r.direction === 'receivable') {
+      g.receivable += amt;
+      g.received += paidAmt;
+      g.receivableBalance += (amt - paidAmt);
+    } else {
+      g.payable += amt;
+      g.paid += paidAmt;
+      g.payableBalance += (amt - paidAmt);
+    }
+    byCurrency.set(key, g);
+  }
+  const list = [...byCurrency.values()].map((g) => ({
+    ...g,
+    receivable: Number(g.receivable.toFixed(2)),
+    received: Number(g.received.toFixed(2)),
+    payable: Number(g.payable.toFixed(2)),
+    paid: Number(g.paid.toFixed(2)),
+    receivableBalance: Number(g.receivableBalance.toFixed(2)),
+    payableBalance: Number(g.payableBalance.toFixed(2)),
+    // 对账状态：余额接近 0 为已核销，否则未核销
+    receivableStatus: Math.abs(g.receivableBalance) < 0.01 ? 'settled' : (g.receivableBalance > 0 ? 'unsettled' : 'overpaid'),
+    payableStatus: Math.abs(g.payableBalance) < 0.01 ? 'settled' : (g.payableBalance > 0 ? 'unsettled' : 'overpaid'),
+  }));
+  const unsettled = list.filter((g) => g.receivableStatus !== 'settled' || g.payableStatus !== 'settled');
+  return { baseCurrency, list, unsettledCount: unsettled.length, reconciled: unsettled.length === 0 };
+}
+
+module.exports = { convertTo, financeSummaryByCurrency, customerReceivableBalance, checkCustomerCredit, currencyReconcile };

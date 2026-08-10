@@ -108,6 +108,34 @@
           <el-pagination layout="total, prev, pager, next" :total="auditTotal" :page-size="auditQuery.pageSize" :current-page="auditQuery.page" @current-change="(p)=>{auditQuery.page=p;loadAudit();}" />
         </div>
       </el-tab-pane>
+      <el-tab-pane label="发票号段" name="numberSeg">
+        <div class="toolbar">
+          <el-button v-permission="'system:finance'" type="primary" @click="openNumberSeg()"><el-icon><Plus /></el-icon>新增号段</el-button>
+          <el-button @click="loadNumberSegs"><el-icon><Refresh /></el-icon>刷新</el-button>
+        </div>
+        <el-alert type="info" :closable="false" show-icon title="开票时按号段顺序自动分配发票号（行级锁保证并发不重号）。未配置号段的发票将回退为随机号。可设置起始/结束序号、序号位数与是否启用。" />
+        <el-table :data="numberSegs" v-loading="loadingNumberSegs" stripe size="small">
+          <el-table-column label="业务类型" width="130">
+            <template #default="{row}"><el-tag size="small" :type="row.bizType==='invoice_ar'?'danger':'warning'">{{ row.bizType==='invoice_ar'?'应收发票':'应付发票' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column prop="prefix" label="前缀" width="100" />
+          <el-table-column prop="currentSeq" label="当前号" width="120" />
+          <el-table-column label="号段范围" min-width="160">
+            <template #default="{row}">{{ row.startSeq }} ~ {{ row.endSeq ? row.endSeq : '不限' }}</template>
+          </el-table-column>
+          <el-table-column prop="digit" label="序号位数" width="90" />
+          <el-table-column label="状态" width="90">
+            <template #default="{row}"><el-tag :type="row.enabled?'success':'info'" size="small">{{ row.enabled?'启用':'停用' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+          <el-table-column label="操作" width="130" fixed="right">
+            <template #default="{row}">
+              <el-button link type="primary" @click="openNumberSeg(row)">编辑</el-button>
+              <el-button link type="danger" @click="removeNumberSeg(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
       <el-tab-pane label="示例数据" name="demo">
         <DemoDataManager />
       </el-tab-pane>
@@ -155,6 +183,30 @@
       </template>
     </el-dialog>
 
+    <!-- 发票号段表单 -->
+    <el-dialog v-model="numberSegDlg" :title="numberSegForm.id ? '编辑号段' : '新增号段'" width="520px">
+      <el-form :model="numberSegForm" label-width="100px">
+        <el-form-item label="业务类型">
+          <el-select v-model="numberSegForm.bizType" style="width:100%" :disabled="!!numberSegForm.id">
+            <el-option label="应收发票" value="invoice_ar" />
+            <el-option label="应付发票" value="invoice_ap" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="前缀"><el-input v-model="numberSegForm.prefix" placeholder="如 AR / AP" :disabled="!!numberSegForm.id" /></el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="起始序号"><el-input-number v-model="numberSegForm.startSeq" :min="1" :disabled="!!numberSegForm.id" style="width:100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="结束序号"><el-input-number v-model="numberSegForm.endSeq" :min="0" style="width:100%" /><span class="muted">0=不限</span></el-form-item></el-col>
+        </el-row>
+        <el-form-item label="序号位数"><el-input-number v-model="numberSegForm.digit" :min="4" :max="12" style="width:100%" /></el-form-item>
+        <el-form-item label="启用"><el-switch v-model="numberSegForm.enabled" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="numberSegForm.remark" type="textarea" :rows="2" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="numberSegDlg=false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveNumberSeg">保存</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 分配用户角色 -->
     <el-dialog v-model="userRoleDlg" title="分配角色" width="460px">
       <el-checkbox-group v-model="userRoleForm.roleIds">
@@ -186,7 +238,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { userAPI, roleAPI, permissionAPI, auditLogAPI } from '@/api';
+import { userAPI, roleAPI, permissionAPI, auditLogAPI, numberSegmentAPI } from '@/api';
 import DemoDataManager from '@/components/DemoDataManager.vue';
 import BackupRestore from '@/components/BackupRestore.vue';
 
@@ -211,6 +263,40 @@ const moduleName = {
   quotation: '报价', integration: '对接', system: '系统',
 };
 const moduleNames = Object.keys(moduleName);
+
+// P1 发票号段
+const numberSegDlg = ref(false);
+const numberSegForm = ref({ bizType: 'invoice_ar', prefix: '', startSeq: 1, endSeq: 0, digit: 8, enabled: true, remark: '' });
+const numberSegs = ref([]);
+const loadingNumberSegs = ref(false);
+async function loadNumberSegs() {
+  loadingNumberSegs.value = true;
+  try { numberSegs.value = await numberSegmentAPI.list(); }
+  finally { loadingNumberSegs.value = false; }
+}
+function openNumberSeg(row) {
+  numberSegForm.value = row
+    ? { ...row, enabled: !!row.enabled }
+    : { bizType: 'invoice_ar', prefix: '', startSeq: 1, endSeq: 0, digit: 8, enabled: true, remark: '' };
+  numberSegDlg.value = true;
+}
+async function saveNumberSeg() {
+  if (!numberSegForm.value.prefix) return ElMessage.warning('请填写前缀');
+  saving.value = true;
+  try {
+    if (numberSegForm.value.id) await numberSegmentAPI.update(numberSegForm.value.id, numberSegForm.value);
+    else await numberSegmentAPI.create(numberSegForm.value);
+    ElMessage.success('保存成功');
+    numberSegDlg.value = false;
+    await loadNumberSegs();
+  } finally { saving.value = false; }
+}
+async function removeNumberSeg(row) {
+  await ElMessageBox.confirm('确认删除该号段？删除后该业务类型将回退为随机号。', '提示', { type: 'warning' });
+  await numberSegmentAPI.remove(row.id);
+  ElMessage.success('已删除');
+  await loadNumberSegs();
+}
 
 // 审计日志
 const auditQuery = ref({ page: 1, pageSize: 20, username: '', module: '', action: '' });
@@ -332,6 +418,7 @@ onMounted(async () => {
   loadRoles();
   permissions.value = await permissionAPI();
   loadAudit();
+  loadNumberSegs();
 });
 </script>
 

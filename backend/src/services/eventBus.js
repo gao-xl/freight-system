@@ -9,6 +9,8 @@
 // 领域事件（控制器/服务手动发射）：{module}.{domain-action}
 const { EventEmitter } = require('events');
 const { logger } = require('../utils/logger');
+// F8 可观测性：业务事件计数埋点（prometheus）
+const metricsService = require('../services/metricsService');
 
 const emitter = new EventEmitter();
 // 防止监听器泄漏警告
@@ -61,6 +63,8 @@ const EVENT_TYPES = {
 function emit(eventName, payload) {
   const envelope = { event: eventName, payload, time: new Date().toISOString() };
   logger.info(`[EVENT] ${eventName}`, payload && typeof payload === 'object' ? payload : { payload });
+  // F8 业务事件计数（prometheus 指标）
+  metricsService.recordEvent(eventName);
   emitter.emit(eventName, envelope);
   return envelope;
 }

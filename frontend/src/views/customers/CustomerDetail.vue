@@ -72,6 +72,68 @@
         </el-descriptions>
       </el-tab-pane>
 
+      <el-tab-pane :label="`联系人(${contacts.length})`" name="contact">
+        <div class="page-card">
+          <div class="table-topbar">
+            <el-button type="primary" size="small" @click="openContactDialog()"><el-icon><Plus /></el-icon>新增联系人</el-button>
+            <el-button size="small" @click="loadContacts"><el-icon><Refresh /></el-icon>刷新</el-button>
+          </div>
+          <el-table :data="contacts" size="small">
+            <el-table-column label="主" width="50"><template #default="{ row }"><el-tag v-if="row.isPrimary" size="small" type="danger">主</el-tag></template></el-table-column>
+            <el-table-column prop="name" label="姓名" min-width="100" />
+            <el-table-column prop="position" label="职务" width="110" />
+            <el-table-column prop="department" label="部门" width="110" />
+            <el-table-column prop="phone" label="电话" width="120" />
+            <el-table-column prop="mobile" label="手机" width="130" />
+            <el-table-column prop="email" label="邮箱" min-width="160" />
+            <el-table-column label="语言" width="70"><template #default="{ row }">{{ row.language === 'en' ? 'English' : '中文' }}</template></el-table-column>
+            <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openContactDialog(row)">编辑</el-button>
+                <el-button link type="danger" size="small" @click="removeContact(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!contacts.length" description="暂无联系人" :image-size="60" />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane :label="`附件(${attachments.length})`" name="attachment">
+        <div class="page-card">
+          <div class="table-topbar">
+            <el-upload
+              :show-file-list="false"
+              :http-request="uploadAttachment"
+              :before-upload="precheckAttachment"
+              :accept="'.pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx,.txt,.csv'"
+              :disabled="uploading"
+            >
+              <el-button type="primary" size="small" :loading="uploading"><el-icon><Upload /></el-icon>上传附件</el-button>
+            </el-upload>
+            <el-select v-model="attCategory" placeholder="全部分类" size="small" clearable style="width:140px" @change="loadAttachments">
+              <el-option v-for="(t, k) in ATT_CATEGORY" :key="k" :label="t" :value="k" />
+            </el-select>
+            <div style="margin-left:auto"><el-button size="small" @click="loadAttachments"><el-icon><Refresh /></el-icon>刷新</el-button></div>
+          </div>
+          <el-table :data="filteredAttachments" size="small">
+            <el-table-column label="分类" width="100"><template #default="{ row }"><el-tag size="small">{{ dictText(ATT_CATEGORY, row.category) }}</el-tag></template></el-table-column>
+            <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="originalName" label="文件名" min-width="180" show-overflow-tooltip />
+            <el-table-column label="大小" width="90" align="right"><template #default="{ row }">{{ fileSize(row.size) }}</template></el-table-column>
+            <el-table-column label="上传时间" width="150"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
+            <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="downloadAttachment(row)">下载</el-button>
+                <el-button link type="danger" size="small" @click="removeAttachment(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!filteredAttachments.length" description="暂无附件" :image-size="60" />
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane :label="`跟进记录(${follows.length})`" name="follow">
         <div class="page-card">
           <div class="table-topbar">
@@ -100,6 +162,35 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 新增/编辑联系人弹窗 -->
+    <el-dialog v-model="contactDialogVisible" :title="contactForm.id ? '编辑联系人' : '新增联系人'" width="560px" destroy-on-close>
+      <el-form :model="contactForm" label-width="80px">
+        <el-form-item label="姓名" required><el-input v-model="contactForm.name" placeholder="联系人姓名" /></el-form-item>
+        <el-form-item label="主联系人"><el-switch v-model="contactForm.isPrimary" active-text="设为该客户主联系人" /></el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="职务"><el-input v-model="contactForm.position" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="部门"><el-input v-model="contactForm.department" /></el-form-item></el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="电话"><el-input v-model="contactForm.phone" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="手机"><el-input v-model="contactForm.mobile" /></el-form-item></el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="14"><el-form-item label="邮箱"><el-input v-model="contactForm.email" /></el-form-item></el-col>
+          <el-col :span="10"><el-form-item label="语言">
+            <el-select v-model="contactForm.language" style="width:100%">
+              <el-option label="中文" value="cn" /><el-option label="English" value="en" />
+            </el-select>
+          </el-form-item></el-col>
+        </el-row>
+        <el-form-item label="备注"><el-input v-model="contactForm.remark" type="textarea" :rows="2" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="contactDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveContact">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 新增/编辑跟进弹窗 -->
     <el-dialog v-model="followDialogVisible" :title="followForm.id ? '编辑跟进' : '新增跟进'" width="560px" destroy-on-close>
@@ -131,10 +222,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { customerAPI, customerOverviewAPI, customerFollowsAPI, createCustomerFollowAPI, updateCustomerFollowAPI, deleteCustomerFollowAPI } from '@/api';
+import { customerAPI, customerOverviewAPI, customerFollowsAPI, createCustomerFollowAPI, updateCustomerFollowAPI, deleteCustomerFollowAPI, customerContactsAPI, createCustomerContactAPI, updateCustomerContactAPI, deleteCustomerContactAPI, customerAttachmentsAPI, createCustomerAttachmentAPI, customerAttachmentDownloadAPI, deleteCustomerAttachmentAPI } from '@/api';
 import { CUSTOMER_TYPE, QUOTATION_STATUS, dictText, money } from '@/utils/dicts';
 import { useResponsiveColumns } from '@/composables/useResponsive';
 
@@ -155,10 +246,21 @@ const FOLLOW_TYPE = { call: '电话', visit: '拜访', email: '邮件', wechat: 
 const route = useRoute();
 const detail = ref(null);
 const follows = ref([]);
+const contacts = ref([]);
+const attachments = ref([]);
 const tab = ref('info');
 const saving = ref(false);
 const followDialogVisible = ref(false);
 const followForm = ref({});
+const contactDialogVisible = ref(false);
+const contactForm = ref({});
+const uploading = ref(false);
+const attCategory = ref('');
+const ATT_CATEGORY = { license: '营业执照', contract: '合同', authorization: '授权书', other: '其他' };
+const filteredAttachments = computed(() => {
+  if (!attCategory.value) return attachments.value;
+  return attachments.value.filter((a) => a.category === attCategory.value);
+});
 
 const levelTag = (l) => ({ A: 'danger', B: 'warning', C: 'primary', D: 'info' }[l] || 'info');
 const followType = (t) => ({ call: 'primary', visit: 'success', email: 'info', wechat: 'warning', quotation: 'danger', order: 'danger', meeting: 'primary', other: 'info' }[t] || 'info');
@@ -168,9 +270,35 @@ const isOverdue = (d) => d && new Date(d).getTime() < Date.now();
 async function load() {
   detail.value = await customerAPI.get(route.params.id);
   await loadFollows();
+  await loadContacts();
+  await loadAttachments();
 }
 async function loadFollows() {
   follows.value = await customerFollowsAPI(route.params.id);
+}
+async function loadContacts() {
+  contacts.value = await customerContactsAPI(route.params.id);
+}
+function openContactDialog(row) {
+  contactForm.value = row ? { ...row, isPrimary: !!row.isPrimary } : { language: 'cn', isPrimary: false };
+  contactDialogVisible.value = true;
+}
+async function saveContact() {
+  if (!contactForm.value.name) return ElMessage.warning('请填写联系人姓名');
+  saving.value = true;
+  try {
+    if (contactForm.value.id) await updateCustomerContactAPI(contactForm.value.id, contactForm.value);
+    else await createCustomerContactAPI(route.params.id, contactForm.value);
+    ElMessage.success('保存成功');
+    contactDialogVisible.value = false;
+    await loadContacts();
+  } finally { saving.value = false; }
+}
+async function removeContact(row) {
+  await ElMessageBox.confirm('确认删除该联系人？', '提示', { type: 'warning' });
+  await deleteCustomerContactAPI(row.id);
+  ElMessage.success('已删除');
+  await loadContacts();
 }
 function openFollowDialog(row) {
   followForm.value = row
@@ -194,6 +322,64 @@ async function removeFollow(row) {
   await deleteCustomerFollowAPI(row.id);
   ElMessage.success('已删除');
   await load();
+}
+
+// ---- P1 客户附件 ----
+async function loadAttachments() {
+  attachments.value = await customerAttachmentsAPI(route.params.id);
+}
+const fileSize = (b) => {
+  if (!b && b !== 0) return '-';
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1024 / 1024).toFixed(2)} MB`;
+};
+async function uploadAttachment(opt) {
+  const file = opt.file;
+  uploading.value = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    await createCustomerAttachmentAPI(route.params.id, fd);
+    ElMessage.success('上传成功');
+    await loadAttachments();
+  } catch { /* request 拦截器已提示 */ }
+  finally { uploading.value = false; }
+}
+// P2 附件预检：上传前在客户端校验类型与大小，减少无效上传
+const MAX_ATTACH_SIZE = 20 * 1024 * 1024; // 与后端 multer limits.fileSize 一致
+const ALLOWED_ATTACH_EXT = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'];
+function precheckAttachment(file) {
+  const name = file.name || '';
+  const ext = (name.includes('.') ? '.' + name.split('.').pop().toLowerCase() : '');
+  if (!ALLOWED_ATTACH_EXT.includes(ext)) {
+    ElMessage.error(`不支持的文件类型，仅允许 ${ALLOWED_ATTACH_EXT.join(', ')}`);
+    return false;
+  }
+  if (file.size > MAX_ATTACH_SIZE) {
+    ElMessage.error(`文件大小不能超过 ${fileSize(MAX_ATTACH_SIZE)}`);
+    return false;
+  }
+  return true;
+}
+async function downloadAttachment(row) {
+  const resp = await customerAttachmentDownloadAPI(row.id);
+  if (!resp?.data) return;
+  const blob = new Blob([resp.data]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = row.originalName || `attachment-${row.id}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function removeAttachment(row) {
+  await ElMessageBox.confirm('确认删除该附件？删除后文件将一并移除，不可恢复。', '提示', { type: 'warning' });
+  await deleteCustomerAttachmentAPI(row.id);
+  ElMessage.success('已删除');
+  await loadAttachments();
 }
 
 onMounted(() => { load(); loadOverview(); });

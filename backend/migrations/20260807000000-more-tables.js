@@ -470,5 +470,32 @@ module.exports = {
       'Groups',
     ];
     for (const t of tables) await queryInterface.dropTable(t);
+    // 清理 ENUM 类型，确保回滚后重新迁移不会因 ENUM 已存在而失败
+    const enums = [
+      'enum_Groups_status',
+      'enum_Quotations_type', 'enum_Quotations_mode', 'enum_Quotations_serviceType', 'enum_Quotations_status',
+      'enum_QuotationItems_category', 'enum_QuotationItems_direction',
+      'enum_CustomerFollows_type', 'enum_CustomerFollows_status',
+      'enum_IntegrationConfigs_authType',
+      'enum_QingdaoNodes_node', 'enum_QingdaoNodes_status', 'enum_QingdaoNodes_source',
+      'enum_AlertRecords_type', 'enum_AlertRecords_level', 'enum_AlertRecords_status',
+      'enum_YardRecords_source',
+      'enum_YardMetas_mode',
+      'enum_PrintTemplates_docType',
+      'enum_Invoices_invoiceType', 'enum_Invoices_status',
+      'enum_ReleaseRecords_releaseType', 'enum_ReleaseRecords_approvalStatus',
+      'enum_FlowNodes_bizType',
+      'enum_OrderNodes_status',
+      'enum_CustomFields_bizType', 'enum_CustomFields_fieldType',
+      'enum_OrderContainers_sizeType', 'enum_OrderContainers_status',
+      'enum_EdiMessages_direction', 'enum_EdiMessages_status',
+      'enum_PaymentTransactions_type', 'enum_PaymentTransactions_status',
+      'enum_Departments_status',
+      'enum_CompanyAccounts_currency', 'enum_CompanyAccounts_accountType', 'enum_CompanyAccounts_status',
+      'enum_InvoiceTitles_status',
+    ];
+    for (const e of enums) {
+      await queryInterface.sequelize.query(`DROP TYPE IF EXISTS "${e}"`);
+    }
   },
 };

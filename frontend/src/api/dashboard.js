@@ -7,3 +7,4 @@ export const recentOrdersAPI = (limit = 8) => request.get(`/dashboard/recent-ord
 export const dashboardMetricsAPI = () => request.get('/dashboard/metrics');
 export const dashboardAgingAPI = () => request.get('/dashboard/aging');
 export const salesPerformanceAPI = () => request.get('/dashboard/sales-performance');
+export const teamWorkloadAPI = () => request.get('/dashboard/team-workload');

@@ -164,4 +164,73 @@ const salesPerformance = asyncHandler(async (req, res) => {
   ok(res, { list });
 });
 
-module.exports = { dashboard, orderStatusDist, modeDist, recentOrders, metrics, aging, salesPerformance };
+// F9 团队工作量视图：按成员聚合订单负载（销售/操作双维度）+ 待办密度
+// 面向主管/经理：一屏看清「谁在忙、谁手上有多少单、谁有积压」
+// 数据隔离：订单先按当前用户可见范围过滤，杜绝跨范围泄漏；admin=all 看全量
+const teamWorkload = asyncHandler(async (req, res) => {
+  const orderWhere = await scopedWhere(req, {});
+  const orders = await Order.findAll({
+    where: orderWhere,
+    attributes: ['id', 'salesId', 'ownerId', 'status', 'createdAt'],
+  });
+  const now = Date.now();
+  const monthAgo = new Date(now - 30 * 24 * 3600 * 1000);
+
+  // 按用户聚合：销售负责（salesId）与操作负责（ownerId）都计入
+  const agg = new Map();
+  const touch = (uid) => {
+    if (!uid) return;
+    if (!agg.has(uid)) agg.set(uid, { total: 0, active: 0, completed: 0, cancelled: 0, newThisMonth: 0 });
+    return agg.get(uid);
+  };
+  for (const o of orders) {
+    const st = o.status;
+    for (const uid of [o.salesId, o.ownerId]) {
+      const a = touch(uid);
+      if (!a) continue;
+      a.total += 1;
+      const isMonth = new Date(o.createdAt) >= monthAgo;
+      if (isMonth) a.newThisMonth += 1;
+      if (st === 'completed') a.completed += 1;
+      else if (st === 'cancelled') a.cancelled += 1;
+      else if (['confirmed', 'in_progress'].includes(st)) a.active += 1;
+    }
+  }
+
+  const ids = [...agg.keys()];
+  const users = ids.length
+    ? await User.findAll({ where: { id: { [Op.in]: ids } }, attributes: ['id', 'name', 'username', 'role', 'status'] })
+    : [];
+  const roles = ['admin', 'manager', 'operator', 'finance', 'viewer'];
+  const roleRank = Object.fromEntries(roles.map((r, i) => [r, i]));
+  const list = users
+    .map((u) => {
+      const a = agg.get(u.id);
+      return {
+        userId: u.id,
+        name: u.name || u.username,
+        role: u.role,
+        status: u.status,
+        orderTotal: a.total,
+        orderActive: a.active,
+        orderCompleted: a.completed,
+        orderCancelled: a.cancelled,
+        orderNewThisMonth: a.newThisMonth,
+        // 负载率：活跃订单 / 总订单（排除已完成/取消），越高说明手头在办的越多
+        loadRate: a.total ? Number(((a.active / a.total) * 100).toFixed(1)) : 0,
+      };
+    })
+    .sort((x, y) => (roleRank[x.role] ?? 99) - (roleRank[y.role] ?? 99) || y.orderTotal - x.orderTotal);
+
+  const totals = list.reduce((acc, m) => {
+    acc.orderTotal += m.orderTotal;
+    acc.orderActive += m.orderActive;
+    acc.orderCompleted += m.orderCompleted;
+    acc.orderNewThisMonth += m.orderNewThisMonth;
+    return acc;
+  }, { orderTotal: 0, orderActive: 0, orderCompleted: 0, orderNewThisMonth: 0 });
+
+  ok(res, { list, totals });
+});
+
+module.exports = { dashboard, orderStatusDist, modeDist, recentOrders, metrics, aging, salesPerformance, teamWorkload };

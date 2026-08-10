@@ -24,7 +24,8 @@ module.exports = {
     await queryInterface.addIndex('NotificationRecords', ['status']);
     await queryInterface.addIndex('NotificationRecords', ['targetType', 'targetId']);
   },
-  async down(queryInterface) {
+  async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('NotificationRecords');
+    await queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_NotificationRecords_status"');
   },
 };

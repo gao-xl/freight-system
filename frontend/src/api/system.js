@@ -36,6 +36,13 @@ export const customFieldAPI = {
 };
 // 系统审计日志
 export const auditLogAPI = (params) => request.get('/system/audit-logs', { params });
+// P1 发票号段管理
+export const numberSegmentAPI = {
+  list: (params) => request.get('/number-segments', { params }),
+  create: (data) => request.post('/number-segments', data),
+  update: (id, data) => request.put(`/number-segments/${id}`, data),
+  remove: (id) => request.delete(`/number-segments/${id}`),
+};
 // 公司设置（公司信息/部门/银行账号/开票抬头）
 export const companyAPI = {
   profile: () => request.get('/company/profile'),

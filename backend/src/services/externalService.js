@@ -4,14 +4,15 @@ const { Op } = require('sequelize');
 const { ExchangeRate } = require('../models');
 const { IntegrationClient } = require('../integrations');
 const { logger } = require('../utils/logger');
+// F7 统一缓存服务：内存默认 / Redis（REDIS_URL）可选，fail-open 降级
+const cache = require('./cacheService');
 
-// 简单内存缓存（多实例需换 Redis）
-const cache = new Map();
+// 统一缓存封装：ttlMs 毫秒 → 内部秒；多实例共享缓存由 cacheService 决定
 async function withCache(key, ttlMs, fn) {
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.ts < ttlMs) return hit.data;
+  const hit = await cache.get(key);
+  if (hit !== null && hit !== undefined) return hit;
   const data = await fn();
-  cache.set(key, { data, ts: Date.now() });
+  await cache.set(key, data, Math.ceil(ttlMs / 1000));
   return data;
 }
 
@@ -36,20 +37,27 @@ async function getRate(base = 'USD', target = 'CNY') {
   return rate != null ? Number(rate) : null;
 }
 
-// 批量刷新汇率（定时任务调用）
-async function refreshExchangeRates(targets = ['CNY', 'EUR', 'JPY', 'HKD', 'GBP']) {
+// 批量刷新汇率（定时任务调用）——目标币种与基准币种可用环境变量配置
+// FX_BASE=USD  FX_TARGETS=CNY,EUR,JPY,HKD,GBP
+async function refreshExchangeRates(targets, base) {
+  const list = (targets || process.env.FX_TARGETS || 'CNY,EUR,JPY,HKD,GBP')
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  const based = (base || process.env.FX_BASE || 'USD').toUpperCase();
   const client = await IntegrationClient.get('exchange_rate');
   if (!client.cfg || !client.cfg.enabled) {
     logger.info('[EXTERNAL] 汇率对接未启用，跳过刷新');
     return 0;
   }
-  const data = await client.query({ base: 'USD' });
+  const data = await client.query({ base: based });
   const today = new Date().toISOString().slice(0, 10);
   let n = 0;
-  for (const t of targets) {
+  for (const t of list) {
+    if (t === based) continue;
     const rate = data?.rates?.[t];
     if (rate) {
-      await ExchangeRate.upsert({ baseCurrency: 'USD', targetCurrency: t, rate, rateDate: today });
+      await ExchangeRate.upsert({ baseCurrency: based, targetCurrency: t, rate, rateDate: today });
       n++;
     }
   }

@@ -15,7 +15,7 @@ function base() {
     username: process.env.DB_USER || 'freight',
     password: process.env.DB_PASSWORD || '',
     ssl: process.env.DB_SSL === 'true',
-    pool: { max: parseInt(process.env.DB_POOL_MAX) || 10, min: 0, idle: 10000 },
+    pool: { max: parseInt(process.env.DB_POOL_MAX) || 30, min: 0, idle: 10000 },
     ...common,
   };
 }

@@ -42,7 +42,8 @@ module.exports = {
     ssl: process.env.DB_SSL === 'true',
     // 单条 SQL 超时（ms）：防止慢查询/失控查询占死连接池，默认 10s
     statementTimeout: parseInt(process.env.DB_STATEMENT_TIMEOUT) || 10000,
-    pool: { max: parseInt(process.env.DB_POOL_MAX) || 10, min: 0, idle: 10000 },
+    // 连接池：默认 30 以应对并发请求（生产并发较开发更高，避免池满载排队）
+    pool: { max: parseInt(process.env.DB_POOL_MAX) || 30, min: 0, idle: 10000 },
     logging: false,
   },
   // AuditLog 保留天数：0 表示关闭自动清理（默认关闭，避免意外删审计）；>0 启用每日清理
@@ -86,5 +87,9 @@ module.exports = {
     webhookEnabled: process.env.NOTIFY_WEBHOOK !== 'off', // NOTIFY_WEBHOOK=off 关闭通用渠道
     // 可选订阅的关键业务事件（逗号分隔），默认只推送预警；如 order.created,order.transitioned
     businessEvents: process.env.NOTIFY_BUSINESS_EVENTS || '',
+  },
+  // F7 缓存：REDIS_URL 已设置时启用 Redis 共享缓存，否则退回进程内内存缓存（单实例）
+  cache: {
+    redisUrl: process.env.REDIS_URL || '',
   },
 };

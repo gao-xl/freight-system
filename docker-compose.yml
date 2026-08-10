@@ -95,6 +95,10 @@ services:
       # 后端直连端口。只用浏览器访问的话可以整行注释掉，让后端只在内网可达
       - "${BACKEND_PORT:-3000}:3000"
 
+    # USE_REDIS=1 时连同伴生 Redis（服务名 redis）
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
     volumes:
       # 上传文件与备份落在宿主机目录里，容器重建/升级镜像都不会丢
       - ./backend/uploads:/app/uploads
@@ -141,5 +145,27 @@ services:
           cpus: "0.5"
           memory: 256M
 
+# F7 共享缓存：可选。设置 USE_REDIS=1 时启用 Redis 多实例共享缓存；
+  # 未启用时后端自动降级进程内内存缓存（单实例零依赖）。
+  redis:
+    image: redis:7-alpine
+    container_name: freight-redis
+    restart: unless-stopped
+    profiles: ["cache"]            # 默认不启动；docker compose --profile cache up -d 启用
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
 volumes:
   pg-data:
+  redis-data:

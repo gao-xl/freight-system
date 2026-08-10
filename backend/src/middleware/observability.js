@@ -6,6 +6,8 @@
 // 零依赖、零副作用：失败不阻塞主流程，仅记录
 const crypto = require('crypto');
 const { logger } = require('../utils/logger');
+// F8 可观测性：RED 指标埋点（prometheus）
+const metricsService = require('../services/metricsService');
 
 // 慢请求阈值（ms），可经环境变量覆盖；默认 1000ms
 const SLOW_THRESHOLD = parseInt(process.env.SLOW_REQUEST_MS) || 1000;
@@ -33,6 +35,12 @@ function observability(req, res, next) {
       durationMs: Math.round(durationMs * 10) / 10,
       ip: req.ip,
     });
+
+    // F8 指标埋点：RED 计数 + 耗时直方图（只对 API 路由埋点，健康检查除外避免噪音）
+    if (req.path.startsWith('/api') && req.path !== '/api/health') {
+      metricsService.recordHttp({ method: req.method, route: routePath, status, durationMs });
+      if (durationMs >= SLOW_THRESHOLD) metricsService.recordSlow({ method: req.method, route: routePath });
+    }
   });
 
   next();

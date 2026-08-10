@@ -1,0 +1,66 @@
+# CD 部署流水线（F10 基础设施）
+# 触发：推送到 main（镜像已由 ci.yml 的 docker-build 作业构建并推送）
+# 动作：SSH 到目标服务器 → docker compose pull → up -d → 探活 /api/health 与 /api/metrics
+# 前置：仓库需配置 Secrets：
+#   DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY（私钥） / DEPLOY_PATH（docker-compose 目录）
+# 未配置 DEPLOY_HOST 时该作业自动跳过（fail-open），不影响 CI 通过。
+
+name: Deploy
+
+on:
+  workflow_dispatch:        # 手动触发
+    inputs:
+      env:
+        description: 部署环境
+        required: false
+        default: production
+        type: string
+      tag:
+        description: 镜像标签（默认 main）
+        required: false
+        default: main
+        type: string
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: 部署与探活
+    runs-on: ubuntu-latest
+    if: ${{ secrets.DEPLOY_HOST != '' }}   # 未配置服务器则跳过
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 配置 SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: 拉取镜像并重启服务
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=15 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "cd ${{ secrets.DEPLOY_PATH }} && \
+             docker compose pull && \
+             docker compose up -d --remove-orphans && \
+             docker image prune -f || true"
+
+      - name: 等待后端健康
+        run: |
+          for i in $(seq 1 30); do
+            if ssh -o StrictHostKeyChecking=no "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+              "curl -sf http://127.0.0.1:${{ secrets.DEPLOY_HEALTH_PORT || 3000 }}/api/health | grep -q '\"status\":\"up\"'"; then
+              echo "健康检查通过";
+              exit 0;
+            fi
+            sleep 5;
+          done
+          echo "健康检查超时" && exit 1
+
+      - name: 校验指标端点可抓取
+        run: |
+          ssh -o StrictHostKeyChecking=no "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "curl -sf http://127.0.0.1:${{ secrets.DEPLOY_HEALTH_PORT || 3000 }}/api/metrics | head -n 5"
+
+      - name: 记录部署完成
+        run: echo "部署完成：${{ github.sha }} → ${{ secrets.DEPLOY_HOST }}（${{ github.event.inputs.env || 'production' }}）"

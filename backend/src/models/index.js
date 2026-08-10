@@ -2,6 +2,7 @@ const sequelize = require('../db');
 const User = require('./User');
 const Customer = require('./Customer');
 const CustomerFollow = require('./CustomerFollow');
+const Contact = require('./Contact'); // P1 客户多联系人
 const Supplier = require('./Supplier');
 const Order = require('./Order');
 const Booking = require('./Booking');
@@ -47,7 +48,11 @@ const FeeTemplate = require('./FeeTemplate'); // N1 费用模板
 const PaymentRecord = require('./PaymentRecord'); // N3 收款/付款单
 const DemoDataLog = require('./DemoDataLog'); // Onboarding 示例数据批次
 const NotificationRecord = require('./NotificationRecord'); // E2 通知推送记录
+const MessageRecord = require('./MessageRecord'); // F6 统一消息中心（站内消息）
+const MessagePreference = require('./MessagePreference'); // F6 消息订阅偏好
 const Session = require('./Session'); // M3 登录会话（refresh token 哈希）
+const NumberSegment = require('./NumberSegment'); // P1 发票号段
+const CustomerAttachment = require('./CustomerAttachment'); // P1 客户附件
 
 // 关联关系
 Order.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
@@ -58,6 +63,14 @@ CustomerFollow.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' })
 Customer.hasMany(CustomerFollow, { as: 'follows', foreignKey: 'customerId' });
 CustomerFollow.belongsTo(User, { as: 'operator', foreignKey: 'operatorId' });
 User.hasMany(CustomerFollow, { as: 'follows', foreignKey: 'operatorId' });
+
+// P1 客户多联系人关联
+Contact.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
+Customer.hasMany(Contact, { as: 'contacts', foreignKey: 'customerId' });
+
+// P1 客户附件关联
+CustomerAttachment.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
+Customer.hasMany(CustomerAttachment, { as: 'attachments', foreignKey: 'customerId' });
 
 Booking.belongsTo(Order, { as: 'order', foreignKey: 'orderId' });
 Booking.belongsTo(Supplier, { as: 'supplier', foreignKey: 'supplierId' });
@@ -151,6 +164,7 @@ module.exports = {
   User,
   Customer,
   CustomerFollow,
+  Contact,
   Supplier,
   Order,
   Booking,
@@ -196,5 +210,9 @@ module.exports = {
   PaymentRecord,
   DemoDataLog,
   NotificationRecord,
+  MessageRecord,
+  MessagePreference,
   Session,
+  NumberSegment,
+  CustomerAttachment,
 };

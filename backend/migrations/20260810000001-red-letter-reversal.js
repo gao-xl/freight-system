@@ -43,5 +43,6 @@ module.exports = {
     await queryInterface.removeColumn('FinanceRecords', 'reversedAt');
     await queryInterface.removeColumn('FinanceRecords', 'reverseType');
     await queryInterface.removeColumn('FinanceRecords', 'reverseRef');
+    await queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_FinanceRecords_reverseType"');
   },
 };

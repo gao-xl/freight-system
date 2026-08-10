@@ -137,6 +137,43 @@
         <div ref="salesRef" class="chart"></div>
       </div>
     </div>
+
+    <!-- F9 团队工作量视图：经理/管理员视角，看清成员订单负载 -->
+    <div class="page-card" style="margin-top:16px">
+      <div class="card-title">
+        团队工作量
+        <el-tag size="small" type="info" style="margin-left:8px">订单负载</el-tag>
+      </div>
+      <el-table :data="workload.list" size="small" v-loading="workloadLoading">
+        <el-table-column prop="name" label="成员" min-width="130">
+          <template #default="{ row }">
+            <span>{{ row.name }}</span>
+            <el-tag size="small" :type="row.status === 'active' ? 'success' : 'info'" style="margin-left:6px">
+              {{ row.status === 'active' ? '在职' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="角色" width="90">
+          <template #default="{ row }">{{ roleText(row.role) }}</template>
+        </el-table-column>
+        <el-table-column prop="orderTotal" label="订单总数" width="90" align="right" sortable />
+        <el-table-column prop="orderActive" label="进行中" width="90" align="right" sortable>
+          <template #default="{ row }">
+            <span :style="row.orderActive ? 'color:var(--warning);font-weight:600' : ''">{{ row.orderActive }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="orderNewThisMonth" label="本月新增" width="90" align="right" sortable />
+        <el-table-column prop="orderCompleted" label="已完成" width="90" align="right" sortable />
+        <el-table-column label="负载率" width="150" sortable :sort-by="(r) => r.loadRate">
+          <template #default="{ row }">
+            <el-progress :percentage="row.loadRate" :stroke-width="12" :color="loadColor(row.loadRate)" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="workload-totals" v-if="workload.totals">
+        团队合计：订单 {{ workload.totals.orderTotal }} · 进行中 {{ workload.totals.orderActive }} · 本月新增 {{ workload.totals.orderNewThisMonth }}
+      </div>
+    </div>
   </div>
 </template>
 
@@ -144,7 +181,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
 import { useRouter } from 'vue-router';
-import { dashboardAPI, orderStatusDistAPI, modeDistAPI, recentOrdersAPI, dashboardMetricsAPI, dashboardAgingAPI, salesPerformanceAPI, todoAPI } from '@/api';
+import { dashboardAPI, orderStatusDistAPI, modeDistAPI, recentOrdersAPI, dashboardMetricsAPI, dashboardAgingAPI, salesPerformanceAPI, teamWorkloadAPI, todoAPI } from '@/api';
 import OnboardingChecklist from '@/components/OnboardingChecklist.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useOnboardingStore } from '@/stores/onboarding';
@@ -158,6 +195,8 @@ const recent = ref([]);
 const metric = ref({});
 const aging = ref({ unbilled: {}, bands: [], settled: {} });
 const sales = ref([]);
+const workload = ref({ list: [], totals: null });
+const workloadLoading = ref(false);
 const todoTotal = ref(0);
 const todoSummary = ref({});
 const statusRef = ref();
@@ -228,6 +267,9 @@ const statusMap = {
   completed: ['已完成', 'success'], cancelled: ['已取消', 'danger'],
 };
 const modeMap = { sea: '海运', air: '空运', land: '陆运', rail: '铁路' };
+const roleTextMap = { admin: '管理员', manager: '经理', operator: '操作员', finance: '财务', viewer: '只读', customer: '客户' };
+const roleText = (r) => roleTextMap[r] || r;
+const loadColor = (p) => (p >= 70 ? 'var(--danger, #dc2626)' : p >= 40 ? 'var(--warning, #d97706)' : 'var(--success, #16a34a)');
 const statusText = (s) => statusMap[s]?.[0] || s;
 const statusType = (s) => statusMap[s]?.[1] || 'info';
 const goDetail = (row) => router.push(`/orders/${row.id}`);
@@ -333,6 +375,13 @@ onMounted(async () => {
     renderAging();
     renderSales();
   } catch (e) { /* 指标接口失败不阻塞主看板 */ }
+  // F9 团队工作量（经理/管理员视角，失败静默）
+  try {
+    workloadLoading.value = true;
+    const w = await teamWorkloadAPI();
+    workload.value = w;
+  } catch (e) { /* 权限不足或异常时静默隐藏 */ }
+  finally { workloadLoading.value = false; }
   window.addEventListener('resize', resize);
 });
 
@@ -402,6 +451,7 @@ onBeforeUnmount(() => {
 .chart-card.wide { grid-column: 1 / -1; }
 .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-main); }
 .chart { height: 300px; }
+.workload-totals { margin-top: 12px; font-size: 13px; color: var(--text-sub); background: var(--bg-lighter, #f7f9fc); border-radius: 8px; padding: 10px 14px; }
 
 /* 卡片渐次浮现 */
 .stat-grid { animation: fadeUp .3s ease both; }

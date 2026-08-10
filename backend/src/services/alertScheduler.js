@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const { runAllRules } = require('./alertService');
 const { runAutomations } = require('./automationService');
 const { startTrackingAutoPull } = require('./trackingAutoPull');
+const { refreshExchangeRates } = require('./externalService');
 const { trackJobResult } = require('./jobFailureAlert');
 const { logger } = require('../utils/logger');
 
@@ -54,7 +55,20 @@ function startAlertScheduler() {
   track(runAutomations().catch((e) => logger.error('[AUTOMATION] 首次执行失败', { message: e.message })));
   // E1 外部跟踪自动拉取（船期 6h / AIS 2h / 场站 4h，复用本调度入口注册）
   jobs.push(...startTrackingAutoPull());
-  logger.info('[SCHEDULER] 预警+自动化任务已注册（每 30 分钟）');
+  // P3 汇率自动同步：每日 01:00 刷新汇率并落库（目标币种/基准可用 FX_TARGETS/FX_BASE 配置）
+  const fxJob = cron.schedule('0 1 * * *', () => {
+    track((async () => {
+      try {
+        const n = await refreshExchangeRates();
+        logger.info(`[EXTERNAL] 每日汇率同步完成，更新 ${n} 条`);
+      } catch (e) {
+        logger.error('[EXTERNAL] 汇率同步失败', { message: e.message });
+        await trackJobResult('scheduler:exchange-rate', e);
+      }
+    })());
+  });
+  jobs.push(fxJob);
+  logger.info('[SCHEDULER] 预警+自动化+汇率同步任务已注册');
   return job;
 }
 

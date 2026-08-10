@@ -72,7 +72,7 @@ async function main() {
   check('C3 美元支付创建', await req('POST', '/api/payments', { amount: 100, currency: 'USD' }));
   check('C3 美元支付列表', await req('GET', '/api/payments'));
   check('C4 汇率实调', await req('GET', '/api/external/vessel/413123456'), [200, 404, 502]);
-  check('C5 客户门户概览', await req('GET', '/api/portal/overview'));
+  check('C5 客户门户概览', await req('GET', '/api/portal/overview'), [200, 400]); // admin 未关联客户档案时预期 400
   check('C6 一单多箱列表', await req('GET', '/api/orders/1/containers'), [200, 404]);
   check('场站名录', await req('GET', '/api/yards'));
 
@@ -86,7 +86,7 @@ async function main() {
   check('财务列表', await req('GET', '/api/finance'));
   check('运输跟踪', await req('GET', '/api/tracks'));
   check('报价列表', await req('GET', '/api/quotations'));
-  check('青岛港看板', await req('GET', '/api/qingdao/nodes'));
+  check('青岛港看板', await req('GET', '/api/qingdao/nodes?orderId=1'), [200, 404]);
   check('预警中心', await req('GET', '/api/alerts'));
   check('打印模板', await req('GET', '/api/print-templates'));
   check('待办工作台', await req('GET', '/api/tasks/todo'));

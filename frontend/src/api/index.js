@@ -19,5 +19,6 @@ export * from './system';
 export * from './integration';
 export * from './workflow';
 export * from './alert';
+export * from './message';
 export * from './portal';
 export * from './misc';

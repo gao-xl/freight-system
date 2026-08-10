@@ -17,6 +17,10 @@ const { startDataRetention, stopDataRetention } = require('./services/dataRetent
 const { subscribeEvents: subscribeAlertEvents } = require('./services/alertService');
 const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
 const { subscribe: subscribeNotificationEvents } = require('./services/notificationService');
+const { subscribe: subscribeRealtime, closeAll: closeRealtime } = require('./services/realtimeService'); // F5/F6 实时推送
+// F8 可观测性：Prometheus 指标 + 周期采样
+const metricsService = require('./services/metricsService');
+const cacheService = require('./services/cacheService');
 // Onboarding 地基：启动自动迁移 + 启动自检（bootstrap）
 const { runMigrations } = require('./services/migrateRunner');
 const { ensureBootstrap } = require('./services/bootstrapService');
@@ -75,6 +79,17 @@ app.get('/api/health', async (req, res) => {
     env: config.env,
   };
   res.status(dbOk ? 200 : 503).json(body);
+});
+
+// F8 Prometheus 指标端点：供 Grafana/Prometheus 抓取（文本格式）
+app.get('/api/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', metricsService.contentType);
+    res.end(await metricsService.registry());
+  } catch (e) {
+    logger.error('[METRICS] 指标生成失败', { message: e.message });
+    res.status(500).end();
+  }
 });
 
 // 接口文档（Swagger UI + 原始 OpenAPI JSON）
@@ -157,6 +172,10 @@ function shutdown(signal) {
   // 停止定时任务，避免停机窗口内重复触发；并等待在途扫描/自动化完成，防止连接池关闭后被调用
   const schedulerDrain = stopAlertScheduler();
   stopDataRetention();
+  // F5 SSE 长连接先断开，避免阻塞 server.close 等待空闲连接回收
+  closeRealtime();
+  // F8 可观测性：停止指标周期采样
+  metricsService.stopSampler();
   if (!server) {
     process.exit(0);
     return;
@@ -224,7 +243,11 @@ async function start() {
   subscribeAutomationEvents();
   // E2 通知推送：订阅预警/业务事件，出站邮件/企微/通用 Webhook（渠道缺配置自动跳过）
   subscribeNotificationEvents();
-  logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化 + 通知推送）');
+  // F5/F6 实时推送：订阅业务事件 → 统一消息落库 + SSE 实时广播
+  subscribeRealtime();
+  // F8 可观测性：启动周期采样（DB 连接池 / 事件循环延迟 / 缓存命中）
+  metricsService.startSampler(sequelize, cacheService);
+  logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化 + 通知推送 + 实时推送）');
   server = app.listen(config.port, () => {
     logger.info(`[SERVER] 货运代理管理系统后端已启动: http://localhost:${config.port}`);
   });

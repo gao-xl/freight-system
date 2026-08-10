@@ -73,6 +73,28 @@
     </div>
 
     <div class="page-card" style="margin-bottom:16px">
+      <div class="card-title">
+        币种级对账（核销差异）
+        <el-tag :type="reconcile.reconciled ? 'success' : 'warning'" size="small" style="margin-left:8px">
+          {{ reconcile.reconciled ? '全部已核销' : `${reconcile.unsettledCount} 个币种存在未核销差异` }}
+        </el-tag>
+        <el-button link type="primary" style="float:right" @click="loadReconcile"><el-icon><Refresh /></el-icon>刷新</el-button>
+      </div>
+      <el-table :data="reconcile.list" size="small" v-loading="recLoading">
+        <el-table-column prop="currency" label="币种" width="90" />
+        <el-table-column label="应收已核销" width="130" align="right"><template #default="{ row }">{{ money(row.receivableBalance) }}</template></el-table-column>
+        <el-table-column label="应收状态" width="110">
+          <template #default="{ row }"><el-tag :type="REC_STATUS[row.receivableStatus]?.type || 'info'" size="small">{{ REC_STATUS[row.receivableStatus]?.text || row.receivableStatus }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="应付未核销" width="130" align="right"><template #default="{ row }">{{ money(row.payableBalance) }}</template></el-table-column>
+        <el-table-column label="应付状态" width="110">
+          <template #default="{ row }"><el-tag :type="REC_STATUS[row.payableStatus]?.type || 'info'" size="small">{{ REC_STATUS[row.payableStatus]?.text || row.payableStatus }}</el-tag></template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!recLoading && !reconcile.list?.length" description="暂无财务记录" :image-size="50" />
+    </div>
+
+    <div class="page-card" style="margin-bottom:16px">
       <div class="card-title">账期管理（结账 / 扎帐 / 锁帐）</div>
       <div class="period-toolbar">
         <el-select v-model="periodYear" style="width:130px" @change="loadPeriods">
@@ -730,6 +752,22 @@ async function loadCurrency() {
   } finally { curLoading.value = false; }
 }
 
+// P3 币种级对账
+const recLoading = ref(false);
+const reconcile = ref({ list: [], reconciled: true, unsettledCount: 0 });
+const REC_STATUS = {
+  settled: { text: '已核销', type: 'success' },
+  unsettled: { text: '未核销', type: 'warning' },
+  overpaid: { text: '多收/多付', type: 'danger' },
+};
+async function loadReconcile() {
+  recLoading.value = true;
+  try {
+    const data = await financeAPI.currencyReconcile({ base: 'USD' });
+    reconcile.value = { list: data.list || [], reconciled: data.reconciled, unsettledCount: data.unsettledCount };
+  } finally { recLoading.value = false; }
+}
+
 function openDialog(row) {
   form.value = row ? { ...row } : { direction: 'receivable', category: 'ocean_freight', status: 'unpaid', currency: 'USD', amount: 0, paidAmount: 0 };
   dialogVisible.value = true;
@@ -763,7 +801,7 @@ function goOrder(row) { if (row.order?.id) router.push(`/orders/${row.order.id}`
 
 function resize() { trendChart?.resize(); }
 
-onMounted(() => { load(1); loadOptions(); loadSummary(); loadCurrency(); loadPeriods(); loadAging(); window.addEventListener('resize', resize); });
+onMounted(() => { load(1); loadOptions(); loadSummary(); loadCurrency(); loadReconcile(); loadPeriods(); loadAging(); window.addEventListener('resize', resize); });
 onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart?.dispose(); });
 </script>
 

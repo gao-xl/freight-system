@@ -1,4 +1,4 @@
-const { Customer, Order, FinanceRecord, CustomerFollow, User, Invoice, Quotation } = require('../services/dataAccess');
+const { Customer, Order, FinanceRecord, CustomerFollow, User, Invoice, Quotation, Contact, sequelize } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');
@@ -36,11 +36,6 @@ const stats = asyncHandler(async (req, res) => {
   }
   ok(res, result);
 });
-
-module.exports = {
-  ...base,
-  stats,
-};
 
 // N4 客户360°聚合：订单/财务/发票/报价/信用/跟进 一屏概览
 const overview = asyncHandler(async (req, res) => {
@@ -236,6 +231,75 @@ const importTemplate = asyncHandler(async (req, res) => {
   res.send(Buffer.from(buf));
 });
 
+// ===== P1 客户多联系人 =====
+
+// 列出客户联系人 GET /customers/:id/contacts
+const listContacts = asyncHandler(async (req, res) => {
+  const customer = await scopedFindOne(req, Customer, { id: req.params.id });
+  if (!customer) return fail(res, '客户不存在或无权访问', 1, 404);
+  const rows = await Contact.findAll({
+    where: { customerId: customer.id },
+    order: [['isPrimary', 'DESC'], ['id', 'ASC']],
+  });
+  ok(res, rows);
+});
+
+// 新增联系人 POST /customers/:id/contacts
+const createContact = asyncHandler(async (req, res) => {
+  const customer = await scopedFindOne(req, Customer, { id: req.params.id });
+  if (!customer) return fail(res, '客户不存在或无权访问', 1, 404);
+  const { name, position, department, phone, mobile, email, wechat, isPrimary, language, remark } = req.body;
+  if (!name) return fail(res, '请填写联系人姓名', 1, 400);
+  const t = await sequelize.transaction();
+  try {
+    if (isPrimary) {
+      // 同一客户仅允许一个主联系人，先取消现有主联系人
+      await Contact.update({ isPrimary: false }, { where: { customerId: customer.id, isPrimary: true }, transaction: t });
+    }
+    const contact = await Contact.create({
+      customerId: customer.id, name, position, department, phone, mobile, email,
+      wechat, isPrimary: !!isPrimary, language: language || 'cn', remark,
+      groupId: customer.groupId, ownerId: customer.ownerId,
+    }, { transaction: t });
+    await t.commit();
+    ok(res, contact, '联系人已添加');
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+});
+
+// 更新联系人 PUT /customers/contacts/:contactId
+const updateContact = asyncHandler(async (req, res) => {
+  const contact = await Contact.findByPk(req.params.contactId);
+  if (!contact) return fail(res, '联系人不存在', 1, 404);
+  const customer = await scopedFindOne(req, Customer, { id: contact.customerId });
+  if (!customer) return fail(res, '客户不存在或无权访问', 1, 404);
+  const { name, position, department, phone, mobile, email, wechat, isPrimary, language, remark } = req.body;
+  const t = await sequelize.transaction();
+  try {
+    if (isPrimary) {
+      await Contact.update({ isPrimary: false }, { where: { customerId: customer.id, isPrimary: true, id: { [Op.ne]: contact.id } }, transaction: t });
+    }
+    await contact.update({ name, position, department, phone, mobile, email, wechat, isPrimary: !!isPrimary, language, remark }, { transaction: t });
+    await t.commit();
+    ok(res, contact, '联系人已更新');
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+});
+
+// 删除联系人 DELETE /customers/contacts/:contactId
+const removeContact = asyncHandler(async (req, res) => {
+  const contact = await Contact.findByPk(req.params.contactId);
+  if (!contact) return fail(res, '联系人不存在', 1, 404);
+  const customer = await scopedFindOne(req, Customer, { id: contact.customerId });
+  if (!customer) return fail(res, '客户不存在或无权访问', 1, 404);
+  await contact.destroy();
+  ok(res, null, '联系人已删除');
+});
+
 module.exports = {
   ...base,
   stats,
@@ -247,4 +311,8 @@ module.exports = {
   pendingFollows,
   importExcel,
   importTemplate,
+  listContacts,
+  createContact,
+  updateContact,
+  removeContact,
 };

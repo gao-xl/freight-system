@@ -28,7 +28,7 @@ function buildPermissions() {
   PERMS.push(...addPerms('yard', ['read', 'update'], (a) => `${({ read: '查看', update: '查询/维护' })[a]}场站信息`));
   PERMS.push(...addPerms('print', ['read', 'write'], (a) => `${({ read: '查看/打印', write: '设计模板' })[a]}`));
   PERMS.push(...addPerms('release', ['read', 'create', 'approve'], (a) => `${({ read: '查看', create: '申请', approve: '审批' })[a]}放单`));
-  PERMS.push(...addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company'], (a) => `${({ user: '用户', role: '角色', permission: '权限', audit: '审计', group: '小组', custom: '自定义字段', company: '公司设置' })[a]}管理`));
+  PERMS.push(...addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company', 'finance'], (a) => `${({ user: '用户', role: '角色', permission: '权限', audit: '审计', group: '小组', custom: '自定义字段', company: '公司设置', finance: '发票号段' })[a]}管理`));
   // 系统运维通配：备份/恢复、健康检查、自动化运行等 admin 专属接口统一走 system:*
   PERMS.push({ module: 'system', action: '*', name: '系统运维（备份/恢复/健康检查/自动化）', code: 'system:*' });
   return PERMS;

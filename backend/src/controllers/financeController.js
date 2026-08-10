@@ -6,6 +6,7 @@ const { scopedWhere, scopedFindOne } = require('../middleware/dataScope');
 const { exportBuffer } = require('../services/exportService');
 const { sequelize } = require('../services/dataAccess');
 const { financeSummaryByCurrency, checkCustomerCredit } = require('../services/currencyService');
+const currencySvc = require('../services/currencyService');
 const finance = require('../domains/finance/financeService');
 const {
   buildDigitalTaxExcel,
@@ -166,24 +167,30 @@ const createInvoice = asyncHandler(async (req, res) => {
     cid = order.customerId;
   }
   await assertOrderEditable(orderId);
-  const me = await require('../services/dataAccess').User.findByPk(req.user.id);
-  // D13：发票号唯一约束冲突时重试生成新号（最多 3 次）
-  let inv = null;
-  for (let attempt = 0; attempt < 3 && !inv; attempt++) {
-    const invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
-    try {
-      inv = await Invoice.create({
-        invoiceNo, invoiceType, orderId, customerId: cid, supplierId: sid,
-        amount: amt, currency: currency || 'USD', taxRate: taxRate || 0, taxAmount: tax, totalAmount: amt + tax,
-        status: 'draft', remark, createdBy: req.user?.id,
-        groupId: me?.groupId || null, ownerId: req.user.id,
-      });
-    } catch (e) {
-      if (e.name === 'SequelizeUniqueConstraintError' && attempt < 2) continue;
-      throw e;
-    }
+  const DataAccess = require('../services/dataAccess');
+  const me = await DataAccess.User.findByPk(req.user.id);
+  const { nextNumber } = require('../services/numberingService');
+  // P1 发票号段：配置号段则按顺序自动发号；未配置则回退旧随机号
+  const t = await DataAccess.sequelize.transaction();
+  try {
+    let invoiceNo = await nextNumber({
+      bizType: invoiceType === 'receivable' ? 'invoice_ar' : 'invoice_ap',
+      groupId: me?.groupId || null,
+      transaction: t,
+    });
+    if (!invoiceNo) invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
+    const inv = await Invoice.create({
+      invoiceNo, invoiceType, orderId, customerId: cid, supplierId: sid,
+      amount: amt, currency: currency || 'USD', taxRate: taxRate || 0, taxAmount: tax, totalAmount: amt + tax,
+      status: 'draft', remark, createdBy: req.user?.id,
+      groupId: me?.groupId || null, ownerId: req.user.id,
+    }, { transaction: t });
+    await t.commit();
+    ok(res, inv, '开票记录已创建');
+  } catch (e) {
+    await t.rollback();
+    throw e;
   }
-  ok(res, inv, '开票记录已创建');
 });
 
 // 开票（草稿 → 已开）
@@ -243,30 +250,29 @@ const createInvoiceFromFees = asyncHandler(async (req, res) => {
   }
   const me = await require('../services/dataAccess').User.findByPk(req.user.id);
   const prefix = invoiceType === 'receivable' ? 'AR' : 'AP';
+  const { nextNumber } = require('../services/numberingService');
   const created = [];
   const t = await sequelize.transaction();
   try {
     for (const [currency, list] of Object.entries(byCurrency)) {
       const amt = Number(list.reduce((s, f) => s + Number(f.amount), 0).toFixed(2));
       const tax = Number(taxRate) ? Number((amt * Number(taxRate) / 100).toFixed(2)) : 0;
-      let inv = null;
-      for (let attempt = 0; attempt < 3 && !inv; attempt++) {
-        const invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
-        try {
-          inv = await Invoice.create({
-            invoiceNo, invoiceType, orderId,
-            customerId: invoiceType === 'receivable' ? order.customerId : null,
-            supplierId: null,
-            amount: amt, currency, taxRate: Number(taxRate) || 0, taxAmount: tax, totalAmount: Number((amt + tax).toFixed(2)),
-            items: JSON.stringify(list.map((f) => ({ financeId: f.id, description: f.description, amount: Number(f.amount), currency: f.currency }))),
-            status: 'draft', createdBy: req.user?.id,
-            groupId: me?.groupId || null, ownerId: req.user.id,
-          }, { transaction: t });
-        } catch (e) {
-          if (e.name === 'SequelizeUniqueConstraintError' && attempt < 2) continue;
-          throw e;
-        }
-      }
+      // P1 发票号段：配置号段则顺序发号，未配置回退随机号
+      let invoiceNo = await nextNumber({
+        bizType: invoiceType === 'receivable' ? 'invoice_ar' : 'invoice_ap',
+        groupId: me?.groupId || null,
+        transaction: t,
+      });
+      if (!invoiceNo) invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
+      const inv = await Invoice.create({
+        invoiceNo, invoiceType, orderId,
+        customerId: invoiceType === 'receivable' ? order.customerId : null,
+        supplierId: null,
+        amount: amt, currency, taxRate: Number(taxRate) || 0, taxAmount: tax, totalAmount: Number((amt + tax).toFixed(2)),
+        items: JSON.stringify(list.map((f) => ({ financeId: f.id, description: f.description, amount: Number(f.amount), currency: f.currency }))),
+        status: 'draft', createdBy: req.user?.id,
+        groupId: me?.groupId || null, ownerId: req.user.id,
+      }, { transaction: t });
       for (const f of list) await f.update({ invoiceNo: inv.invoiceNo }, { transaction: t });
       created.push(inv);
     }
@@ -425,6 +431,14 @@ const currencySummary = asyncHandler(async (req, res) => {  const base = (req.qu
   // B2 数据隔离：汇总仅统计当前用户可见范围的财务记录（admin=all 不受限）
   const where = await scopedWhere(req, {});
   const data = await financeSummaryByCurrency(base, where);
+  ok(res, data);
+});
+
+// P3 币种级对账：按币种统计应收/实收、应付/实付，并标记未核销差异
+const currencyReconcile = asyncHandler(async (req, res) => {
+  const base = (req.query.base || 'USD').toUpperCase();
+  const where = await scopedWhere(req, {});
+  const data = await currencySvc.currencyReconcile(base, where);
   ok(res, data);
 });
 
@@ -839,7 +853,7 @@ const exportDigitalTax = asyncHandler(async (req, res) => {
 
 module.exports = {
   ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, batchIssueInvoice, createInvoiceFromFees,
-  cancelInvoice, writeoff, batchWriteoff, currencySummary, creditCheck, createPayment, paymentList,
+  cancelInvoice, writeoff, batchWriteoff, currencySummary, currencyReconcile, creditCheck, createPayment, paymentList,
   periods, ensurePeriods, closePeriod, lockPeriod, unlockPeriod, periodStatement, batchCreate, aging,
   reverse, getReversals, digitalTaxPreview, exportDigitalTax,
 };

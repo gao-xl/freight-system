@@ -77,6 +77,10 @@
             </el-option>
           </el-select>
 
+          <el-badge v-if="auth.isLoggedIn" :value="msgCount" :max="99" :hidden="!msgCount" type="danger" class="alert-badge">
+            <div class="icon-btn" @click="router.push('/messages')"><el-icon><Message /></el-icon></div>
+          </el-badge>
+
           <el-badge v-if="auth.hasPermission('alert:read')" :value="alertCount" :max="99" :hidden="!alertCount" class="alert-badge">
             <div class="icon-btn" @click="router.push('/alerts')"><el-icon><Bell /></el-icon></div>
           </el-badge>
@@ -134,9 +138,10 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElNotification } from 'element-plus';
 import { useAuthStore } from '@/stores/auth';
-import { changePasswordAPI, alertAPI, globalSearchAPI } from '@/api';
+import { changePasswordAPI, alertAPI, messageAPI, globalSearchAPI } from '@/api';
+import { createSSE } from '@/utils/sse';
 import HelpCenterDrawer from '@/components/HelpCenterDrawer.vue';
 
 const route = useRoute();
@@ -146,7 +151,12 @@ const collapsed = ref(false);
 const pwdVisible = ref(false);
 const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' });
 const alertCount = ref(0);
+const msgCount = ref(0);
+// F6 订阅偏好缓存：关闭的分类不弹实时提示（默认全开）
+const prefEnabled = ref({ alert: true, order: true, finance: true, approval: true, system: true });
+const EVENT_CATEGORY = { 'alert.created': 'alert', 'alert.resolved': 'alert', 'order.transitioned': 'order', 'finance.billed': 'finance' };
 let alertTimer = null;
+let sseStop = null;
 
 const quickSearch = ref('');
 const searchResults = ref([]);
@@ -161,6 +171,7 @@ const menuGroups = [
     label: '工作台',
     items: [
       { path: '/tasks', title: '待办工作台', icon: 'Memo', permission: undefined },
+      { path: '/messages', title: '消息中心', icon: 'Message', permission: undefined },
       { path: '/dashboard', title: '经营看板', icon: 'Odometer', permission: 'dashboard:read' },
     ],
   },
@@ -311,16 +322,62 @@ async function loadAlertCount() {
   } catch (e) { /* 忽略 */ }
 }
 
+async function loadMsgUnread() {
+  if (!auth.isLoggedIn) return;
+  try {
+    msgCount.value = (await messageAPI.unreadCount()).count || 0;
+  } catch (e) { /* 忽略 */ }
+}
+
+// F5 实时推送：SSE 事件 → 刷新未读/预警角标 + 轻提示（断线自动重连）
+function startRealtime() {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  sseStop = createSSE({
+    url: '/api/events/stream',
+    token,
+    onEvent(data) {
+      if (!data || data.type !== 'event') return;
+      loadMsgUnread();
+      if (data.event === 'alert.created') loadAlertCount();
+      const ev = data.event || '';
+      const cat = EVENT_CATEGORY[ev];
+      if (cat && prefEnabled.value[cat] !== false && (ev === 'alert.created' || ev === 'alert.resolved' || ev === 'order.transitioned' || ev === 'finance.billed')) {
+        ElNotification({
+          title: { 'alert.created': '新预警', 'alert.resolved': '预警解除', 'order.transitioned': '订单动态', 'finance.billed': '财务动态' }[ev] || '实时提醒',
+          message: data.payload?.title || ev,
+          type: ev === 'alert.created' ? 'warning' : 'info',
+          duration: 4000,
+        });
+      }
+    },
+  });
+}
+
+// 拉取订阅偏好：关闭的分类不弹实时提示
+async function loadMsgPrefs() {
+  if (!auth.isLoggedIn) return;
+  try {
+    const { prefs } = await messageAPI.getPrefs();
+    prefEnabled.value = { alert: true, order: true, finance: true, approval: true, system: true, ...prefs };
+  } catch { /* 默认全开 */ }
+}
+
 onMounted(() => {
   applyResponsive();
   window.addEventListener('resize', applyResponsive);
   loadAlertCount();
-  alertTimer = setInterval(loadAlertCount, 60000);
+  loadMsgUnread();
+  loadMsgPrefs();
+  startRealtime();
+  // 轮询兜底：SSE 断线/异常时仍能刷新角标
+  alertTimer = setInterval(() => { loadAlertCount(); loadMsgUnread(); }, 60000);
   searchMenu('');
 });
 onUnmounted(() => {
   window.removeEventListener('resize', applyResponsive);
   clearInterval(alertTimer);
+  if (sseStop) sseStop();
 });
 </script>
 

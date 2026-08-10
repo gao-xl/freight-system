@@ -20,6 +20,7 @@ const quotation = require('../controllers/quotationController');
 const role = require('../controllers/roleController');
 const system = require('../controllers/systemController');
 const alert = require('../controllers/alertController');
+const message = require('../controllers/messageController'); // F6 统一消息中心
 const yard = require('../controllers/yardController');
 const external = require('../controllers/externalController');
 const print = require('../controllers/printTemplateController');
@@ -42,6 +43,8 @@ const businessRule = require('../controllers/businessRuleController');
 const workflow = require('../controllers/workflowController');
 const report = require('../controllers/reportController');
 const searchCtrl = require('../controllers/searchController');
+const numberSegment = require('../controllers/numberSegmentController'); // P1 发票号段
+const customerAttachment = require('../controllers/customerAttachmentController'); // P1 客户附件
 
 const router = express.Router();
 
@@ -145,6 +148,18 @@ router.post('/system/restore', authRequired, requirePermission('system', '*'), r
 // 控制器通过 scopedWhere/scopedFindOne 等辅助函数消费该范围，实现行级数据隔离
 router.use(authRequired, dataScope);
 
+// F5 实时推送：SSE 长连接（fetch 携带 Bearer，鉴权已过 authRequired）
+const realtime = require('../services/realtimeService');
+router.get('/events/stream', realtime.handleSSE);
+
+// F6 统一消息中心：站内消息（数据隔离只看自己的）
+router.get('/messages', message.list);
+router.get('/messages/unread-count', message.unreadCount);
+router.post('/messages/:id/read', message.read);
+router.post('/messages/read-all', message.readAll);
+router.get('/message-preferences', message.getPrefs);
+router.put('/message-preferences', message.updatePrefs);
+
 // 全局搜索：跨客户/供应商/订单/报价（各模块按权限点过滤，数据范围沿用 dataScope）
 router.get('/search', searchCtrl.search);
 
@@ -161,6 +176,12 @@ router.put('/users/:id', authRequired, requirePermission('system', 'user'), vali
 router.delete('/users/:id', authRequired, requirePermission('system', 'user'), system.removeUser);
 router.put('/users/:id/roles', authRequired, requirePermission('system', 'user'), validate(S.assignRoles), system.assignRoles);
 router.get('/system/audit-logs', authRequired, requirePermission('system', 'audit'), system.auditLogs);
+
+// P1 发票号段管理（admin，system 模块）
+router.get('/number-segments', authRequired, requirePermission('system', 'finance'), numberSegment.list);
+router.post('/number-segments', authRequired, requirePermission('system', 'finance'), numberSegment.create);
+router.put('/number-segments/:id', authRequired, requirePermission('system', 'finance'), numberSegment.update);
+router.delete('/number-segments/:id', authRequired, requirePermission('system', 'finance'), numberSegment.remove);
 
 // 接口密钥（脚本/第三方系统认证），路由细节见 src/routes/apiKey.js
 router.use('/api-keys', require('./apiKey'));
@@ -228,6 +249,7 @@ router.get('/dashboard/recent-orders', guard('dashboard', 'read'), dashboard.rec
 router.get('/dashboard/metrics', guard('dashboard', 'read'), dashboard.metrics);
 router.get('/dashboard/aging', guard('dashboard', 'read'), dashboard.aging);
 router.get('/dashboard/sales-performance', guard('dashboard', 'read'), dashboard.salesPerformance);
+router.get('/dashboard/team-workload', guard('dashboard', 'read'), dashboard.teamWorkload); // F9 团队工作量
 
 // P2.3 Excel 批量导入（客户/供应商/订单）
 // 模板下载用对应模块 read 权限，导入写入用 create 权限；复用上方 uploadMemory（内存 10MB）
@@ -245,6 +267,16 @@ router.post('/customers/batch-update', guard('customer', 'update'), customer.bat
 router.post('/customers/:id/restore', guard('customer', 'update'), customer.restore); // U5 回收站恢复
 router.get('/customers/:id', guard('customer', 'read'), customer.get);
 router.get('/customers/:id/overview', guard('customer', 'read'), customer.overview); // N4 客户360°
+router.get('/customers/:id/contacts', guard('customer', 'read'), customer.listContacts); // P1 多联系人
+router.post('/customers/:id/contacts', guard('customer', 'update'), customer.createContact);
+router.put('/customers/contacts/:contactId', guard('customer', 'update'), customer.updateContact);
+router.delete('/customers/contacts/:contactId', guard('customer', 'delete'), customer.removeContact);
+
+// P1 客户附件
+router.get('/customers/:id/attachments', guard('customer', 'read'), customerAttachment.list);
+router.post('/customers/:id/attachments', guard('customer', 'update'), customerAttachment.upload.single('file'), customerAttachment.create);
+router.get('/customers/attachments/:id/download', guard('customer', 'read'), customerAttachment.download);
+router.delete('/customers/attachments/:id', guard('customer', 'delete'), customerAttachment.remove);
 router.get('/customers/:id/follows', guard('customer', 'read'), customer.listFollows);
 router.post('/customers/:id/follows', guard('customer', 'update'), validate(S.followCreate), customer.createFollow);
 router.put('/customers/follows/:followId', guard('customer', 'update'), validate(S.followUpdate), customer.updateFollow);
@@ -341,6 +373,7 @@ router.get('/finance', guard('finance', 'read'), finance.list);
 router.get('/finance/export', guard('finance', 'read'), finance.exportExcel);
 router.get('/finance/summary', guard('finance', 'read'), finance.summary);
 router.get('/finance/currency-summary', guard('finance', 'read'), finance.currencySummary); // B6 多币种汇总
+router.get('/finance/currency-reconcile', guard('finance', 'read'), finance.currencyReconcile); // P3 币种级对账
 router.get('/finance/customers/:customerId/credit', guard('finance', 'read'), finance.creditCheck); // B6 信用额度
 router.get('/finance/monthly-trend', guard('finance', 'read'), finance.monthlyTrend);
 router.get('/finance/reconcile', guard('finance', 'read'), finance.reconcile);
@@ -398,6 +431,8 @@ router.post('/quotations/:id/convert-order', authRequired, requirePermission('qu
 
 // P2.7 本地运价小库（服务报价；权限沿用 quotation 模块）
 router.get('/freight-rates/search', guard('quotation', 'read'), freightRate.search); // 检索需在 :id 之前
+router.get('/freight-rates/compare', guard('quotation', 'read'), freightRate.compare); // P1 运价比价：按承运商分组取最优
+router.get('/freight-rates/recommend', guard('quotation', 'read'), freightRate.recommend); // P2 运价智能推荐：历史成交基准 + 最优建议
 router.get('/freight-rates', guard('quotation', 'read'), freightRate.list);
 router.get('/freight-rates/:id', guard('quotation', 'read'), freightRate.get);
 router.post('/freight-rates/batch-delete', guard('quotation', 'delete'), freightRate.batchRemove);

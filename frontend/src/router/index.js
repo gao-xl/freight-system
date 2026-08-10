@@ -38,6 +38,7 @@ const routes = [
       { path: 'quotations/:id', name: 'quotationDetail', component: () => import('@/views/quotations/QuotationDetail.vue'), meta: { title: '报价详情', hidden: true, permission: 'quotation:read' } },
       { path: 'integrations', name: 'integrations', component: () => import('@/views/integrations/IntegrationList.vue'), meta: { title: '外部对接', icon: 'Connection', permission: 'integration:read' } },
       { path: 'alerts', name: 'alerts', component: () => import('@/views/alerts/AlertCenter.vue'), meta: { title: '预警中心', icon: 'Bell', permission: 'alert:read' } },
+      { path: 'messages', name: 'messages', component: () => import('@/views/messages/MessageCenter.vue'), meta: { title: '消息中心', icon: 'Message', permission: undefined } },
       { path: 'system', name: 'system', component: () => import('@/views/system/SystemManage.vue'), meta: { title: '系统管理', icon: 'Setting', permission: 'system:user' } },
       { path: 'system/health', name: 'health', component: () => import('@/views/system/HealthCheck.vue'), meta: { title: '系统健康', icon: 'Monitor', permission: 'system:user' } },
       { path: 'system/groups', name: 'groups', component: () => import('@/views/system/GroupManage.vue'), meta: { title: '小组管理', hidden: true, permission: 'system:group' } },

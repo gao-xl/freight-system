@@ -14,6 +14,8 @@ backend/public/docs/
 .env
 .env.*
 !.env.example
+# 测试环境变量（仅含测试库凭据，无生产密钥；CI 需要随仓库检出以支持 --env-file）
+!.env.test
 
 # 数据库文件（含用户/客户/订单及密码哈希）
 data/*.db
