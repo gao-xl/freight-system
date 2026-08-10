@@ -5,7 +5,7 @@ module.exports = {
   async up(queryInterface, Sequelize) {
     // 检查是否已存在同类型默认模板
     const existing = await queryInterface.sequelize.query(
-      `SELECT docType FROM "PrintTemplates" WHERE isDefault = true AND docType IN ($1, $2, $3, $4)`,
+      `SELECT "docType" FROM "PrintTemplates" WHERE "isDefault" = true AND "docType" IN ($1, $2, $3, $4)`,
       { bind: ['bl', 'debit_note', 'statement', 'packing_list'], type: Sequelize.QueryTypes.SELECT },
     );
 
@@ -181,7 +181,7 @@ module.exports = {
 
   async down(queryInterface, Sequelize) {
     await queryInterface.sequelize.query(
-      `DELETE FROM "PrintTemplates" WHERE isDefault = true AND docType IN ($1, $2, $3, $4)`,
+      `DELETE FROM "PrintTemplates" WHERE "isDefault" = true AND "docType" IN ($1, $2, $3, $4)`,
       { bind: ['bl', 'debit_note', 'statement', 'packing_list'] },
     );
     console.log('[Migration] 已删除默认打印模板');
