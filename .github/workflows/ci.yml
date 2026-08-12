@@ -45,8 +45,17 @@ jobs:
         run: npm run lint
 
       - name: 冒烟测试（启动 → 登录 → 业务接口 → 自动化幂等）
-        run: npm test
+        run: |
+          # 先在空库上重建表结构并插入演示数据（seed 用 sequelize.sync({force:true}) 重建全部表）
+          # 注：seed 直读 DB_* 配置，故此处同时设置 DB_* 与 TEST_DB_*（后者供 smoke.test.js 内部映射）
+          npm run seed
+          npm test
         env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_NAME: freight_test
+          DB_USER: freight
+          DB_PASSWORD: freight
           TEST_DB_HOST: 127.0.0.1
           TEST_DB_PORT: 5432
           TEST_DB_NAME: freight_test
@@ -178,7 +187,8 @@ jobs:
           IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/
           IMAGE_TAG: ${{ github.ref_name }}
           PLATFORMS: linux/amd64,linux/arm64
-          # bake 会合并根目录 docker-compose.yml 的 pg 服务并做变量插值校验，
-          # pg 不在本次构建目标内，设占位值仅用于通过 ${DB_PASSWORD:?} 校验，不影响产物。
+          # 用 -f docker-bake.hcl 显式只加载 HCL 定义，避免 bake 默认再合并根目录
+          # docker-compose.yml（其 backend 服务引用 env_file: .env，CI runner 无该文件会报错）。
+          # 占位 DB_PASSWORD 仅为防御性保留，HCL 构建本身不读取 compose。
           DB_PASSWORD: ci-placeholder
-        run: docker buildx bake --push
+        run: docker buildx bake -f docker-bake.hcl --push
