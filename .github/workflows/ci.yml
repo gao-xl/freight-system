@@ -178,4 +178,7 @@ jobs:
           IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/
           IMAGE_TAG: ${{ github.ref_name }}
           PLATFORMS: linux/amd64,linux/arm64
+          # bake 会合并根目录 docker-compose.yml 的 pg 服务并做变量插值校验，
+          # pg 不在本次构建目标内，设占位值仅用于通过 ${DB_PASSWORD:?} 校验，不影响产物。
+          DB_PASSWORD: ci-placeholder
         run: docker buildx bake --push
