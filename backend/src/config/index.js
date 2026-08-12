@@ -94,6 +94,10 @@ module.exports = {
   // F7 缓存：REDIS_URL 已设置时启用 Redis 共享缓存，否则退回进程内内存缓存（单实例）
   cache: {
     redisUrl: process.env.REDIS_URL || '',
+    // 方案 A：高频只读接口读缓存 TTL（秒）。看板类短 TTL（容忍 30s 短暂过期），
+    // 运价类参考数据给较长 TTL + 写事件失效（见 freight-rate 模块订阅）。
+    dashboardTtl: parseInt(process.env.CACHE_DASHBOARD_TTL) || 30,
+    rateTtl: parseInt(process.env.CACHE_RATE_TTL) || 300,
   },
   // PDF 渲染：低配服务器可选项，用于规避无头浏览器(Chromium)的打印峰值内存
   //   PDF_RENDERER=chromium（默认） 无头浏览器渲染，版式最完整，峰值内存最高
@@ -101,6 +105,12 @@ module.exports = {
   //   PDF_RENDERER=off             关闭 PDF 生成（单证仍保留 HTML 预览/打印能力）
   pdf: {
     renderer: process.env.PDF_RENDERER || 'chromium',
+    // 并发渲染上限：低配服务器务必设 1，防止多用户同时打印时 Chromium 内存叠加导致 OOM。
+    // 超过该值的打印请求排队等待（信号量），不阻塞其它普通接口。
+    maxConcurrency: parseInt(process.env.PDF_MAX_CONCURRENCY) || 1,
+    // 渲染结果缓存 TTL（秒）：同一单据重复打印时复用上次结果，显著降低渲染与查库压力。
+    // 0 或缺失表示关闭缓存（数据极其敏感、每次都要最新时设为 0）。
+    cacheTtl: parseInt(process.env.PDF_CACHE_TTL) || 60,
   },
   // 备份调度（强制月度备份 + 超期提醒/补备）
   // 默认强制开启（fail-closed）：BACKUP_AUTO=off 才整体关闭（仅特殊场景，如外部 cron 已接管）

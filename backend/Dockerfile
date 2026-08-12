@@ -39,21 +39,18 @@ ENV NODE_ENV=production \
     DB_HOST=pg \
     DB_PORT=5432 \
     TZ=Asia/Shanghai \
-    PDF_BROWSER_PATH=/usr/bin/chromium-browser \
     NODE_OPTIONS="--max-old-space-size=320"
 
-# 说明：NODE_OPTIONS 封顶 Node V8 堆（2核/1G），避免进程膨胀挤爆内存；堆≠总 RSS，chromium 打印峰值另靠 swap 兜底。
+# 说明：NODE_OPTIONS 封顶 Node V8 堆（2核/1G），避免进程膨胀挤爆内存；堆≠总 RSS。
 
 # tini    以 PID 1 接管信号，docker stop 能真正优雅停服而不是被 SIGKILL
 # su-exec 入口脚本修好挂载卷属主后降权到 node 用户运行
 # tzdata  预警时间、审计日志要按本地时区记录，Alpine 默认只有 UTC
 # postgresql-client：提供 pg_dump/pg_restore，供备份/恢复脚本转储业务库
-# chromium + font-noto-cjk：D1 PDF 渲染（puppeteer-core 无头浏览器），
-#   Alpine 默认无中文字体，不装 CJK 字体 PDF 中文会缺字形；
-#   chromium 在容器内需 --no-sandbox（pdfRenderer args 已带）
+# font-noto-cjk：pdfkit 中文字体（D1 PDF 渲染），Alpine 默认无 CJK 字体，不装 PDF 中文会缺字形。
+#   已移除 chromium 无头浏览器（镜像瘦身 2.33GB→1.21GB），渲染走 PDF_RENDERER=pdfkit。
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories \
-    && apk add --no-cache tini su-exec tzdata postgresql-client chromium font-noto-cjk \
-    && ln -sf /usr/bin/chromium-browser /usr/local/bin/chromium
+    && apk add --no-cache tini su-exec tzdata postgresql-client font-noto-cjk
 
 COPY --from=deps /app/node_modules ./node_modules
 

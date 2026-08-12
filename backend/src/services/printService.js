@@ -1,13 +1,38 @@
 // 打印模板渲染引擎
 // 模板 JSON + 业务数据JSON → 解析字段 → 渲染 HTML → 生成 PDF/返回
 const fs = require('fs');
+const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { PrintTemplate } = require('../models');
 const { logger } = require('../utils/logger');
 const config = require('../config');
+const { Semaphore } = require('../utils/semaphore');
 const { defaultContent } = require('../data/printFields');
 const { htmlToPdf } = require('./pdfRenderer');
 const { scopedWhere } = require('../middleware/dataScope');
+
+// 全局 PDF 渲染信号量：限制同时进行的渲染数量（默认 1），
+// 防止多用户并发打印时 Chromium 内存叠加把低配服务器打崩。
+// 超出限额的打印请求进入排队，普通接口不受影响。
+const pdfSemaphore = new Semaphore(config.pdf.maxConcurrency);
+
+// 渲染结果缓存：同 key（单据+模板+参数）在 TTL 内重复打印直接复用，
+// 避免反复渲染 PDF 与重复查库。TTL 由 PDF_CACHE_TTL 控制（默认 60s，0=关闭）。
+const pdfCache = new Map();
+function cacheKey(templateId, docType, bizId, opts) {
+  return crypto.createHash('md5').update(JSON.stringify({ templateId, docType, bizId, opts })).digest('hex');
+}
+function cacheGet(key) {
+  const hit = pdfCache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.expireAt) { pdfCache.delete(key); return null; }
+  return hit.value;
+}
+function cacheSet(key, value, ttlMs) {
+  if (!ttlMs) return;
+  if (pdfCache.size >= 200) pdfCache.clear(); // 触发式兜底，防止无限增长
+  pdfCache.set(key, { value, expireAt: Date.now() + ttlMs });
+}
 
 // 轻量 pdfkit（PDF_RENDERER=pdfkit）渲染中文所需字体。
 // 单证全是中文，pdfkit 默认 Helvetica 不含 CJK 字形，必须注册中文字体。
@@ -352,31 +377,44 @@ async function toPdf(html, pageSize) {
 
 // 主渲染入口（opts：D4 对账单聚合参数 { customerId, from, to }；req：当前请求，用于数据范围过滤）
 async function render(templateId, docType, bizId, opts = {}, req = null) {
-  let tpl = null;
-  if (templateId) {
-    tpl = await PrintTemplate.findByPk(templateId);
+  const ttlMs = (config.pdf.cacheTtl || 0) * 1000;
+  const cKey = cacheKey(templateId, docType, bizId, opts);
+  // 缓存命中：直接复用上次渲染结果（带 TTL，降低重复渲染与查库压力）
+  const cached = cacheGet(cKey);
+  if (cached) {
+    logger.debug('[PRINT] 命中缓存', { docType, bizId, templateId });
+    return cached;
   }
-  if (!tpl && docType) {
-    tpl = await PrintTemplate.findOne({ where: { docType, isDefault: true } });
-  }
-  if (!tpl && docType) {
-    // 无模板时用默认内容
-    tpl = { docType, content: JSON.stringify(defaultContent(docType)), pageSize: 'A4', header: '', footer: '' };
-  }
-  const bizData = await loadBizData(tpl.docType || docType, bizId, opts, req);
-  const content = typeof tpl.content === 'string' ? JSON.parse(tpl.content) : tpl.content;
-  const blocks = resolveFields(content.blocks || [], bizData);
-  // 表格数据注入
-  for (const b of blocks) {
-    if (b.type === 'table') {
-      if (b.key === 'quotation.items') b.data = bizData.quotation?.items || [];
-      if (b.key === 'finance') b.data = bizData.finance || [];
+  // 未命中：进入信号量排队，限制并发渲染，防止 Chromium 内存叠加 OOM
+  return pdfSemaphore.run(async () => {
+    let tpl = null;
+    if (templateId) {
+      tpl = await PrintTemplate.findByPk(templateId);
     }
-  }
-  const html = renderHTML(tpl, blocks, tpl.header, tpl.footer);
-  const pdf = await toPdf(html, tpl.pageSize);
-  logger.info('[PRINT] 渲染完成', { docType: tpl.docType, bizId, templateId });
-  return { html, pdf, tpl };
+    if (!tpl && docType) {
+      tpl = await PrintTemplate.findOne({ where: { docType, isDefault: true } });
+    }
+    if (!tpl && docType) {
+      // 无模板时用默认内容
+      tpl = { docType, content: JSON.stringify(defaultContent(docType)), pageSize: 'A4', header: '', footer: '' };
+    }
+    const bizData = await loadBizData(tpl.docType || docType, bizId, opts, req);
+    const content = typeof tpl.content === 'string' ? JSON.parse(tpl.content) : tpl.content;
+    const blocks = resolveFields(content.blocks || [], bizData);
+    // 表格数据注入
+    for (const b of blocks) {
+      if (b.type === 'table') {
+        if (b.key === 'quotation.items') b.data = bizData.quotation?.items || [];
+        if (b.key === 'finance') b.data = bizData.finance || [];
+      }
+    }
+    const html = renderHTML(tpl, blocks, tpl.header, tpl.footer);
+    const pdf = await toPdf(html, tpl.pageSize);
+    logger.info('[PRINT] 渲染完成', { docType: tpl.docType, bizId, templateId });
+    const result = { html, pdf, tpl };
+    cacheSet(cKey, result, ttlMs);
+    return result;
+  });
 }
 
 module.exports = { render, resolveFields, renderHTML, loadBizData, getByPath, formatValue, escapeHtml, safeUrl };
