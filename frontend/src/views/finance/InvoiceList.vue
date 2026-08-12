@@ -118,7 +118,9 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { invoiceAPI, financeAPI, orderAPI } from '@/api';
 import { FIN_CATEGORY, FIN_STATUS, dictText, money } from '@/utils/dicts';
 import DigitalTaxExportDialog from './DigitalTaxExportDialog.vue';
+import { useAuthStore } from '@/stores/auth';
 
+const auth = useAuthStore();
 const INV_STATUS = {
   draft: { text: '草稿', type: 'info' }, issued: { text: '已开票', type: 'success' },
   paid: { text: '已核销', type: 'primary' }, cancelled: { text: '已作废', type: 'danger' },
@@ -179,7 +181,10 @@ async function doCancel(row) {
     load(query.page);
   } catch { /* 取消 */ }
 }
-function printInv(row) { window.open(`/api/print/invoice/${row.id}`, '_blank'); }
+function printInv(row) {
+  if (!auth.isPdfEnabled) { ElMessage.warning('PDF 功能已关闭（服务器低配可选项），请开启后再打印'); return; }
+  window.open(`/api/print/invoice/${row.id}`, '_blank');
+}
 
 function onSelectionChange(rows) { selectedRows.value = rows; }
 function openDigitalTax() {

@@ -5,12 +5,15 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: localStorage.getItem('token') || '',
     user: JSON.parse(localStorage.getItem('user') || 'null'),
+    // 能力开关：PDF 渲染模式（低配服务器可选项）。默认 chromium=开启；off 时前端隐藏/禁用打印并提示
+    pdfRenderer: 'chromium',
   }),
   getters: {
     isLoggedIn: (s) => !!s.token,
     displayName: (s) => s.user?.name || s.user?.username || '',
     role: (s) => s.user?.role || '',
     permissions: (s) => s.user?.permissions || [],
+    isPdfEnabled: (s) => s.pdfRenderer !== 'off',
   },
   actions: {
     // 持久化 access token 与 user 元数据（P0-2：refresh token 在 httpOnly cookie，不入 localStorage）
@@ -37,6 +40,17 @@ export const useAuthStore = defineStore('auth', {
       const user = await meAPI();
       this.user = user;
       localStorage.setItem('user', JSON.stringify(user));
+    },
+    // 加载能力开关（PDF 渲染模式等），PDF 关闭时前端据此隐藏/禁用打印按钮
+    async loadCapabilities() {
+      try {
+        const res = await fetch('/api/system/capabilities', { headers: { Authorization: `Bearer ${this.token}` } });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (json?.data?.pdf?.renderer) this.pdfRenderer = json.data.pdf.renderer;
+      } catch (e) {
+        // 忽略：能力获取失败时保持默认（chromium 开启态）
+      }
     },
     // 权限判断：支持 'module:action' 或模块通配
     hasPermission(need) {

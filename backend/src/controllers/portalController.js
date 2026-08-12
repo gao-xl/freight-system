@@ -119,6 +119,7 @@ const downloadInvoice = asyncHandler(async (req, res) => {
   const invoice = await Invoice.findOne({ where: { id: bizId, orderId: order.id } });
   if (invoice) {
     const { pdf } = await printService.render(null, 'invoice', invoice.id);
+    if (!pdf) return fail(res, 'PDF 功能已关闭（服务器低配可选项），请联系管理员开启', 1, 503);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.id}.pdf"`);
     return res.send(pdf);
@@ -126,6 +127,7 @@ const downloadInvoice = asyncHandler(async (req, res) => {
   const fin = await FinanceRecord.findOne({ where: { id: bizId, orderId: order.id } });
   if (fin) {
     const { pdf } = await printService.render(null, 'debit_note', order.id);
+    if (!pdf) return fail(res, 'PDF 功能已关闭（服务器低配可选项），请联系管理员开启', 1, 503);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="debit-note-${order.id}.pdf"`);
     return res.send(pdf);
@@ -147,6 +149,7 @@ const downloadDocument = asyncHandler(async (req, res) => {
     return fail(res, '该单证暂不支持门户下载', 1, 400);
   }
   const { pdf } = await printService.render(null, doc.docType, order.id);
+  if (!pdf) return fail(res, 'PDF 功能已关闭（服务器低配可选项），请联系管理员开启', 1, 503);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${doc.docType}-${order.id}.pdf"`);
   res.send(pdf);

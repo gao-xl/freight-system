@@ -126,6 +126,8 @@ router.post('/onboarding/wizard/done', authRequired, onboarding.wizardDone);
 // 系统健康（admin）与默认设置（登录）；health 与公开 /api/health 并存，/api/health 保持原样
 router.get('/system/health', authRequired, requirePermission('system', '*'), system.health);
 router.get('/system/defaults', authRequired, system.getDefaults);
+// 能力开关（登录即可）：前端据此隐藏/禁用 PDF 打印按钮等
+router.get('/system/capabilities', authRequired, system.capabilities);
 // L3 修复：系统默认设置写接口仅鉴权 → 增加 system:* 权限守卫，限制为管理员
 router.put('/system/defaults', authRequired, requirePermission('system', '*'), system.putDefaults);
 

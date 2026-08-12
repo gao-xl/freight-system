@@ -315,7 +315,14 @@ const putDefaults = asyncHandler(async (req, res) => {
   ok(res, { defaultCurrency: profile.defaultCurrency }, '默认设置已更新');
 });
 
+// 能力开关（登录即可）：暴露 PDF 渲染模式给前端，PDF 关闭时前端可隐藏/禁用打印按钮并给出提示
+// 前端频繁调用，返回轻量、无敏感信息
+const capabilities = (req, res) => {
+  const renderer = require('../config').pdf.renderer;
+  ok(res, { pdf: { renderer, enabled: renderer !== 'off' } });
+};
+
 module.exports = {
   permissionList, userList, createUser, updateUser, removeUser, assignRoles, auditLogs,
-  health, getDefaults, putDefaults,
+  health, getDefaults, putDefaults, capabilities,
 };

@@ -1,11 +1,51 @@
 // 打印模板渲染引擎
 // 模板 JSON + 业务数据JSON → 解析字段 → 渲染 HTML → 生成 PDF/返回
+const fs = require('fs');
 const { Op } = require('sequelize');
 const { PrintTemplate } = require('../models');
 const { logger } = require('../utils/logger');
+const config = require('../config');
 const { defaultContent } = require('../data/printFields');
 const { htmlToPdf } = require('./pdfRenderer');
 const { scopedWhere } = require('../middleware/dataScope');
+
+// 轻量 pdfkit（PDF_RENDERER=pdfkit）渲染中文所需字体。
+// 单证全是中文，pdfkit 默认 Helvetica 不含 CJK 字形，必须注册中文字体。
+// 优先容器内的 Noto CJK（Dockerfile 已装 font-noto-cjk），本地开发回退到常见字体。
+const CJK_FONT_CANDIDATES = [
+  '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc',
+  '/usr/share/fonts/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/noto/NotoSansCJK-Bold.ttc',
+  '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+  '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+  '/usr/share/fonts/truetype/arphic/ukai.ttc',
+  'C:/Windows/Fonts/msyh.ttc',
+  'C:/Windows/Fonts/simhei.ttf',
+  'C:/Windows/Fonts/simfang.ttf',
+];
+
+// 找到可用的中文字体：.ttc 是字体集合，需用 fontkit 取出具体字体（含 PostScript 名）；
+// .ttf/.otf 直接注册即可。找不到返回 null（pdfkit 回退内置 Helvetica）。
+function findCjkFont() {
+  for (const p of CJK_FONT_CANDIDATES) {
+    if (!fs.existsSync(p)) continue;
+    if (!p.toLowerCase().endsWith('.ttc')) return { path: p };
+    try {
+      const fk = require('fontkit');
+      const coll = fk.openSync(p);
+      const fonts = coll.fonts || [];
+      if (!fonts.length) continue;
+      // 优先简体中文风格（名称含 sc/simp/yahei/wqy/hei），否则取第一个
+      const target = fonts.find((f) => /sc|simp|yahei|wqy|hei|zh/i.test(`${f.postscriptName || ''} ${f.fullName || ''}`));
+      const font = target || fonts[0];
+      return { path: p, postscriptName: font.postscriptName };
+    } catch (e) {
+      logger.warn(`跳过中文字体 ${p}: ${e.message}`);
+    }
+  }
+  return null;
+}
 
 // 按点路径从数据对象取值，如 order.customer.name
 function getByPath(obj, path) {
@@ -261,11 +301,8 @@ async function loadBizData(docType, bizId, opts = {}, req = null) {
   return biz;
 }
 
-// 生成 PDF（D1 修复：优先 puppeteer-core 无头浏览器渲染，保留完整版式与中文；
-// 无可用浏览器环境时回退 pdfkit 纯文本——仅保证"能出 PDF"，版式降级）
-async function toPdf(html, pageSize) {
-  const buf = await htmlToPdf(html, pageSize);
-  if (buf) return buf;
+// 轻量 pdfkit 纯文本渲染（无 Chromium，几乎不占内存）；仅保留文字内容，版式降级
+function renderPdfkit(html, pageSize) {
   const PDFDocument = require('pdfkit');
   const doc = new PDFDocument({ size: pageSize || 'A4', margin: 40 });
   const chunks = [];
@@ -279,9 +316,37 @@ async function toPdf(html, pageSize) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  doc.font('Helvetica').fontSize(10).text(text, { align: 'left' });
+  // 注册中文字体，否则单证中文在 PDF 中会缺字形（空白/方块）
+  const font = findCjkFont();
+  try {
+    if (font) {
+      if (font.postscriptName) doc.registerFont('CJK', font.path, font.postscriptName);
+      else doc.registerFont('CJK', font.path);
+      doc.font('CJK');
+    } else {
+      doc.font('Helvetica');
+    }
+  } catch (e) {
+    logger.warn(`pdfkit 中文字体注册失败，回退 Helvetica: ${e.message}`);
+    doc.font('Helvetica');
+  }
+  doc.fontSize(10).text(text, { align: 'left' });
   doc.end();
   return done;
+}
+
+// 生成 PDF。
+//   低配服务器可选项（PDF_RENDERER）：
+//     chromium（默认）优先无头浏览器渲染（版式最完整），失败回退 pdfkit；
+//     pdfkit          只走轻量渲染，不拉起 Chromium（无内存峰值，版式降级）；
+//     off             关闭 PDF 生成，返回 null（由控制器对 PDF 请求返回 503，HTML 预览仍可用）。
+async function toPdf(html, pageSize) {
+  const renderer = config.pdf.renderer;
+  if (renderer === 'off') return null;
+  if (renderer === 'pdfkit') return renderPdfkit(html, pageSize);
+  const buf = await htmlToPdf(html, pageSize);
+  if (buf) return buf;
+  return renderPdfkit(html, pageSize);
 }
 
 // 主渲染入口（opts：D4 对账单聚合参数 { customerId, from, to }；req：当前请求，用于数据范围过滤）

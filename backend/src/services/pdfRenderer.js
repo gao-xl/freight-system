@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const { logger } = require('../utils/logger');
+const config = require('../config');
 
 const CANDIDATES = [
   process.env.PDF_BROWSER_PATH,
@@ -37,6 +38,8 @@ function findBrowser() {
 
 // HTML → PDF（Buffer）。失败返回 null（不抛错，由调用方决定回退策略）
 async function htmlToPdf(html, pageSize = 'A4') {
+  // 低配服务器可选项：PDF_RENDERER != chromium 时永不拉起无头浏览器（Chromium 是打印峰值内存来源）
+  if (config.pdf.renderer !== 'chromium') return null;
   const executablePath = findBrowser();
   if (!executablePath) return null;
 

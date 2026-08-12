@@ -1,5 +1,5 @@
 <template>
-  <div v-if="detail">
+  <div v-if="detail" class="od-root">
     <div class="page-card header-card">
       <div class="head-left">
         <el-button link @click="$router.back()"><el-icon><ArrowLeft /></el-icon></el-button>
@@ -735,12 +735,20 @@ function onMobileChange(e) {
 </script>
 
 <style scoped>
+.od-root { display: flex; flex-direction: column; min-height: 0; }
+.od-root > .header-card { flex-shrink: 0; }
 .header-card { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .head-left { display: flex; align-items: center; gap: 8px; }
 .hd-title { margin: 0; font-size: 20px; }
 .hd-sub { color: var(--text-sub); font-size: 13px; }
 .head-right { display: flex; align-items: center; gap: 12px; }
-.detail-tabs { background: #fff; border-radius: var(--radius); padding: 8px 20px 20px; box-shadow: var(--shadow); }
+/* 标签卡片撑满剩余高度；内容超高时在标签内容区内部滚动，避免页面下方留白 */
+.detail-tabs {
+  background: #fff; border-radius: var(--radius); padding: 8px 20px 20px; box-shadow: var(--shadow);
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+.detail-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: hidden; }
+.detail-tabs :deep(.el-tab-pane) { height: 100%; overflow: auto; }
 .tl-head { display: flex; align-items: center; gap: 10px; }
 .tl-loc { font-weight: 600; }
 .tl-desc { color: var(--text-main); margin: 4px 0; }

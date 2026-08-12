@@ -82,6 +82,11 @@ const print = asyncHandler(async (req, res) => {
     res.type('html').send(html);
     return;
   }
+  // 低配服务器可选项：PDF_RENDERER=off 时 PDF 生成关闭，返回 503 并给出清晰提示（HTML 预览不受影响）
+  if (!pdf) {
+    res.status(503).json({ code: 1, message: 'PDF 功能已关闭（服务器低配可选项），请设置 PDF_RENDERER=chromium/pdfkit 或改用 HTML 预览', data: null });
+    return;
+  }
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${docType}-${bizId}.pdf"`);
   res.send(pdf);

@@ -95,6 +95,13 @@ module.exports = {
   cache: {
     redisUrl: process.env.REDIS_URL || '',
   },
+  // PDF 渲染：低配服务器可选项，用于规避无头浏览器(Chromium)的打印峰值内存
+  //   PDF_RENDERER=chromium（默认） 无头浏览器渲染，版式最完整，峰值内存最高
+  //   PDF_RENDERER=pdfkit          轻量纯文本渲染，不拉起 Chromium，几乎不占内存，版式降级
+  //   PDF_RENDERER=off             关闭 PDF 生成（单证仍保留 HTML 预览/打印能力）
+  pdf: {
+    renderer: process.env.PDF_RENDERER || 'chromium',
+  },
   // 备份调度（强制月度备份 + 超期提醒/补备）
   // 默认强制开启（fail-closed）：BACKUP_AUTO=off 才整体关闭（仅特殊场景，如外部 cron 已接管）
   backup: {

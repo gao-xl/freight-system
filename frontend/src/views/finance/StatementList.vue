@@ -121,7 +121,9 @@ import { reactive, ref, computed, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { financeStatementAPI, customerAPI } from '@/api';
 import { FIN_DIRECTION, money } from '@/utils/dicts';
+import { useAuthStore } from '@/stores/auth';
 
+const auth = useAuthStore();
 const loading = ref(false);
 const customers = ref([]);
 const group = ref({ month: '', list: [] });
@@ -155,6 +157,7 @@ async function search() {
 
 // D4 打印月结对账单（按客户+期间聚合，后端 /print/statement 支持 customerId/from/to）
 function printStatement() {
+  if (!auth.isPdfEnabled) { ElMessage.warning('PDF 功能已关闭（服务器低配可选项），请开启后再打印'); return; }
   const m = query.month || currentMonth();
   const [y, mo] = m.split('-').map(Number);
   const lastDay = new Date(y, mo, 0).getDate();

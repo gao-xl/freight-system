@@ -368,6 +368,7 @@ async function loadMsgPrefs() {
 onMounted(() => {
   applyResponsive();
   window.addEventListener('resize', applyResponsive);
+  auth.loadCapabilities();
   loadAlertCount();
   loadMsgUnread();
   loadMsgPrefs();
@@ -516,7 +517,17 @@ onUnmounted(() => {
 }
 .caret { font-size: 12px; color: var(--text-muted); }
 
-.content { padding: 20px; overflow: auto; background: var(--bg-page); }
+/* 主内容区占满剩余高度；每个页面的根元素拉满铺满右侧，避免内容短时下方留白 */
+.content {
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+  background: var(--bg-page);
+  display: flex;
+  flex-direction: column;
+}
+.content > * { flex: 1; min-height: 0; }
 
 /* 页面过渡 */
 .page-enter-active, .page-leave-active { transition: opacity .18s ease, transform .18s ease; }
