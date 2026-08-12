@@ -146,12 +146,11 @@ jobs:
     # 推送到 main 时构建并推送多架构镜像（amd64 + arm64）到 GHCR，
     # 任意 x86/ARM 主机 docker compose 都能自动拉取匹配架构。
     # 仅推送 main，PR 不触发，避免未合并代码干扰镜像标签。
-    # 注意：该作业需要 QEMU + buildx + GHCR 凭据，仅适合专用构建 runner。
-    # 通过 [self-hosted, buildx] 双标签约束，避免普通 CI runner（如 2核1G 的
-    # 生产机）错误拾取后因无 privileged/凭据而失败，或拖垮低配主机内存。
+    # 在 GitHub 托管 runner（ubuntu-latest）上云端构建，QEMU 交叉编译 arm64，
+    # 避免低配生产机（2核1G）本地构建拖垮内存。
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     name: 多架构镜像构建与推送 (amd64+arm64)
-    runs-on: [self-hosted, buildx]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
