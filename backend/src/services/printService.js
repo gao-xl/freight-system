@@ -19,8 +19,19 @@ const pdfSemaphore = new Semaphore(config.pdf.maxConcurrency);
 // 渲染结果缓存：同 key（单据+模板+参数）在 TTL 内重复打印直接复用，
 // 避免反复渲染 PDF 与重复查库。TTL 由 PDF_CACHE_TTL 控制（默认 60s，0=关闭）。
 const pdfCache = new Map();
-function cacheKey(templateId, docType, bizId, opts) {
-  return crypto.createHash('md5').update(JSON.stringify({ templateId, docType, bizId, opts })).digest('hex');
+// 渲染缓存键：除单据/模板/参数外，必须纳入数据范围签名（scope + groupIds）。
+// 否则高权限用户（如 admin，scope=all）先渲染并缓存后，
+// 低权限用户（group/self）打印同单据时会命中该缓存，导致跨组/跨用户数据泄漏（H-01）。
+function cacheKey(templateId, docType, bizId, opts, scopeSig) {
+  return crypto.createHash('md5').update(JSON.stringify({ templateId, docType, bizId, opts, scope: scopeSig })).digest('hex');
+}
+
+// 生成稳定的数据范围签名（用于缓存键隔离）。req 为空（模板预览等无请求场景）时退化为 'default'。
+function scopeSignature(req) {
+  if (!req || !req.dataScope) return 'default';
+  const ds = req.dataScope;
+  const gids = Array.isArray(ds.groupIds) ? [...ds.groupIds].sort((a, b) => a - b).join(',') : '';
+  return `${ds.scope}:${gids}`;
 }
 function cacheGet(key) {
   const hit = pdfCache.get(key);
@@ -378,7 +389,7 @@ async function toPdf(html, pageSize) {
 // 主渲染入口（opts：D4 对账单聚合参数 { customerId, from, to }；req：当前请求，用于数据范围过滤）
 async function render(templateId, docType, bizId, opts = {}, req = null) {
   const ttlMs = (config.pdf.cacheTtl || 0) * 1000;
-  const cKey = cacheKey(templateId, docType, bizId, opts);
+  const cKey = cacheKey(templateId, docType, bizId, opts, scopeSignature(req));
   // 缓存命中：直接复用上次渲染结果（带 TTL，降低重复渲染与查库压力）
   const cached = cacheGet(cKey);
   if (cached) {
