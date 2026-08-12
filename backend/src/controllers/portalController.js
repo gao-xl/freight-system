@@ -3,6 +3,8 @@ const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { Op } = require('sequelize');
 const printService = require('../services/printService');
 const { recommend: recommendService } = require('../services/freightRateRecommendService');
+const { readThrough } = require('../services/readCache');
+const config = require('../config');
 
 // C5 客户自助门户：customer 角色用户仅可查看自己客户（customerId）的数据
 // 全部为只读查询，不提供任何写操作。
@@ -185,12 +187,72 @@ const submitSi = asyncHandler(async (req, res) => {
 
 // GET /api/portal/rates?from=&to=&keyword=&containerType=
 // 运价查询：复用 FreightRate 检索（有效期过滤 + from→起运港 / to→目的港 + keyword 模糊），只读
+// 方案 A：list/compare 为纯参考数据检索，读缓存用较长 TTL + 写事件失效；
+// recommend 模式涉及历史成交报价，实时性要求高，不缓存。
 const rates = asyncHandler(async (req, res) => {
   const { from, to, keyword } = req.query;
+  const containerTypeRaw = String(req.query.containerType || '').toUpperCase();
+  const mode = String(req.query.mode || '').toLowerCase();
+  // 仅 list/compare 走读缓存；recommend 直接回源
+  if (mode !== 'recommend') {
+    const seed = ['portal-rate', from || '', to || '', keyword || '', containerTypeRaw, mode].join('|');
+    const data = await readThrough(req, 'rate', seed, config.cache.rateTtl, async () => {
+      const where = {};
+      if (from) where.originPort = from;
+      if (to) where.destPort = to;
+      const containerType = containerTypeRaw;
+      if (containerType) {
+        if (!['20GP', '40GP', '40HQ'].includes(containerType)) {
+          return { __error: 'containerType 仅支持 20GP/40GP/40HQ', __status: 400 };
+        }
+        where.containerType = containerType;
+      }
+      // 有效期过滤：空有效期视为长期有效
+      const today = new Date();
+      const conds = [
+        { [Op.or]: [{ validFrom: null }, { validFrom: { [Op.lte]: today } }] },
+        { [Op.or]: [{ validTo: null }, { validTo: { [Op.gte]: today } }] },
+      ];
+      if (keyword) {
+        conds.push({
+          [Op.or]: ['route', 'originPort', 'destPort'].map((f) => ({ [f]: { [Op.like]: `%${keyword}%` } })),
+        });
+      }
+      where[Op.and] = conds;
+      const rows = await FreightRate.findAll({
+        where,
+        order: [['rate', 'ASC']],
+        limit: 50,
+      });
+      // P1 运价比价：mode=compare 时按 承运商+箱型 分组，返回每家最优价并标记全场最低（best）
+      if (mode === 'compare') {
+        const bestByKey = new Map();
+        for (const r of rows) {
+          const key = `${r.carrier}#${r.containerType}`;
+          if (!bestByKey.has(key)) bestByKey.set(key, r);
+        }
+        const grouped = [...bestByKey.values()];
+        const minByType = new Map();
+        for (const r of grouped) {
+          const cur = minByType.get(r.containerType);
+          if (!cur || Number(r.rate) < Number(cur)) minByType.set(r.containerType, Number(r.rate));
+        }
+        const list = grouped.map((r) => ({
+          ...r.toJSON(),
+          best: Number(r.rate) <= (minByType.get(r.containerType) ?? Number.POSITIVE_INFINITY),
+        }));
+        return { list, total: list.length, mode: 'compare' };
+      }
+      return { list: rows, total: rows.length, mode: 'list' };
+    });
+    if (data.__error) return fail(res, data.__error, 1, data.__status);
+    return ok(res, data);
+  }
+  // recommend 分支（不缓存，原逻辑）
   const where = {};
   if (from) where.originPort = from;
   if (to) where.destPort = to;
-  const containerType = String(req.query.containerType || '').toUpperCase();
+  const containerType = containerTypeRaw;
   if (containerType) {
     if (!['20GP', '40GP', '40HQ'].includes(containerType)) {
       return fail(res, 'containerType 仅支持 20GP/40GP/40HQ', 1, 400);
@@ -214,33 +276,10 @@ const rates = asyncHandler(async (req, res) => {
     order: [['rate', 'ASC']],
     limit: 50,
   });
-  // P1 运价比价：mode=compare 时按 承运商+箱型 分组，返回每家最优价并标记全场最低（best）
-  const mode = String(req.query.mode || '').toLowerCase();
-  if (mode === 'compare') {
-    const bestByKey = new Map();
-    for (const r of rows) {
-      const key = `${r.carrier}#${r.containerType}`;
-      if (!bestByKey.has(key)) bestByKey.set(key, r);
-    }
-    const grouped = [...bestByKey.values()];
-    const minByType = new Map();
-    for (const r of grouped) {
-      const cur = minByType.get(r.containerType);
-      if (!cur || Number(r.rate) < Number(cur)) minByType.set(r.containerType, Number(r.rate));
-    }
-    const list = grouped.map((r) => ({
-      ...r.toJSON(),
-      best: Number(r.rate) <= (minByType.get(r.containerType) ?? Number.POSITIVE_INFINITY),
-    }));
-    return ok(res, { list, total: list.length, mode: 'compare' });
-  }
   // P2 运价智能推荐：mode=recommend 时结合历史成交报价给出最优建议
-  if (mode === 'recommend') {
-    const result = await recommendService({ originPort: from, destPort: to, containerType });
-    if (result.error) return fail(res, result.error, 1, 400);
-    return ok(res, { ...result, mode: 'recommend' });
-  }
-  ok(res, { list: rows, total: rows.length, mode: 'list' });
+  const result = await recommendService({ originPort: from, destPort: to, containerType });
+  if (result.error) return fail(res, result.error, 1, 400);
+  return ok(res, { ...result, mode: 'recommend' });
 });
 
 module.exports = { overview, myOrders, orderDetail, myBills, downloadInvoice, downloadDocument, submitSi, rates };

@@ -2,37 +2,44 @@ const { Order, Customer, Supplier, Booking, CustomsDeclaration, FinanceRecord, U
 const { ok, asyncHandler } = require('../utils/response');
 const { Op, fn, col } = require('sequelize');
 const { scopedWhere } = require('../middleware/dataScope');
+const { readThrough } = require('../services/readCache');
+const config = require('../config');
 
 // 看板统计数据（B2 数据隔离：所有业务统计均限制在当前用户可见范围，admin=all 不受限）
+// 方案 A：高频读缓存。看板一次聚合 13 条查询，是后端主要 DB 读压力源；
+// 用短 TTL（默认 30s）容忍短暂过期，缓存键含数据作用域签名，避免跨用户/跨组泄漏。
 const dashboard = asyncHandler(async (req, res) => {
-  const [orderTotal, orderInProgress, orderCompleted, customerTotal, supplierTotal,
-    bookingWait, customsPending, receivableBalance, payableBalance, userTotal,
-    quotationTotal, bookingTotal, customsTotal] = await Promise.all([
-    Order.count({ where: await scopedWhere(req, {}) }),
-    Order.count({ where: await scopedWhere(req, { status: { [Op.in]: ['confirmed', 'in_progress'] } }) }),
-    Order.count({ where: await scopedWhere(req, { status: 'completed' }) }),
-    Customer.count({ where: await scopedWhere(req, { status: 'active' }) }),
-    Supplier.count({ where: await scopedWhere(req, { status: 'active' }) }),
-    Booking.count({ where: await scopedWhere(req, { status: { [Op.in]: ['new', 'confirmed'] } }) }),
-    CustomsDeclaration.count({ where: await scopedWhere(req, { status: { [Op.in]: ['prepared', 'submitted', 'inspecting'] } }) }),
-    FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'receivable' }), attributes: ['amount', 'paidAmount'] }),
-    FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'payable' }), attributes: ['amount', 'paidAmount'] }),
-    User.count({ where: { status: 'active' } }),
-    // Onboarding Checklist 进度派生：报价/订舱/报关总数（向后兼容，原有字段不变）
-    Quotation.count({ where: await scopedWhere(req, {}) }),
-    Booking.count({ where: await scopedWhere(req, {}) }),
-    CustomsDeclaration.count({ where: await scopedWhere(req, {}) }),
-  ]);
-  const recv = receivableBalance.reduce((s, r) => s + (Number(r.amount) - Number(r.paidAmount)), 0);
-  const pay = payableBalance.reduce((s, r) => s + (Number(r.amount) - Number(r.paidAmount)), 0);
-  ok(res, {
-    orderTotal, orderInProgress, orderCompleted,
-    customerTotal, supplierTotal, userTotal,
-    bookingWait, customsPending,
-    receivableBalance: recv, payableBalance: pay,
-    // Onboarding Checklist 数据源
-    quotationTotal, bookingTotal, customsTotal,
+  const data = await readThrough(req, 'dashboard', 'overview', config.cache.dashboardTtl, async () => {
+    const [orderTotal, orderInProgress, orderCompleted, customerTotal, supplierTotal,
+      bookingWait, customsPending, receivableBalance, payableBalance, userTotal,
+      quotationTotal, bookingTotal, customsTotal] = await Promise.all([
+      Order.count({ where: await scopedWhere(req, {}) }),
+      Order.count({ where: await scopedWhere(req, { status: { [Op.in]: ['confirmed', 'in_progress'] } }) }),
+      Order.count({ where: await scopedWhere(req, { status: 'completed' }) }),
+      Customer.count({ where: await scopedWhere(req, { status: 'active' }) }),
+      Supplier.count({ where: await scopedWhere(req, { status: 'active' }) }),
+      Booking.count({ where: await scopedWhere(req, { status: { [Op.in]: ['new', 'confirmed'] } }) }),
+      CustomsDeclaration.count({ where: await scopedWhere(req, { status: { [Op.in]: ['prepared', 'submitted', 'inspecting'] } }) }),
+      FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'receivable' }), attributes: ['amount', 'paidAmount'] }),
+      FinanceRecord.findAll({ where: await scopedWhere(req, { direction: 'payable' }), attributes: ['amount', 'paidAmount'] }),
+      User.count({ where: { status: 'active' } }),
+      // Onboarding Checklist 进度派生：报价/订舱/报关总数（向后兼容，原有字段不变）
+      Quotation.count({ where: await scopedWhere(req, {}) }),
+      Booking.count({ where: await scopedWhere(req, {}) }),
+      CustomsDeclaration.count({ where: await scopedWhere(req, {}) }),
+    ]);
+    const recv = receivableBalance.reduce((s, r) => s + (Number(r.amount) - Number(r.paidAmount)), 0);
+    const pay = payableBalance.reduce((s, r) => s + (Number(r.amount) - Number(r.paidAmount)), 0);
+    return {
+      orderTotal, orderInProgress, orderCompleted,
+      customerTotal, supplierTotal, userTotal,
+      bookingWait, customsPending,
+      receivableBalance: recv, payableBalance: pay,
+      // Onboarding Checklist 数据源
+      quotationTotal, bookingTotal, customsTotal,
+    };
   });
+  ok(res, data);
 });
 
 // 订单状态分布（可按 ?type=import|export 过滤）
@@ -75,23 +82,27 @@ const recentOrders = asyncHandler(async (req, res) => {
 });
 
 // B1 经营指标：回款率、毛利率、应收/应付、利润
+// 方案 A：高频读缓存（短 TTL），缓存键含数据作用域签名。
 const metrics = asyncHandler(async (req, res) => {
-  const where = await scopedWhere(req, {});
-  const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'paidAmount'] });
-  let receivable = 0, received = 0, payable = 0, paid = 0;
-  for (const r of rows) {
-    const amt = Number(r.amount), paidAmt = Number(r.paidAmount);
-    if (r.direction === 'receivable') { receivable += amt; received += paidAmt; }
-    else { payable += amt; paid += paidAmt; }
-  }
-  const profit = receivable - payable;
-  ok(res, {
-    receivable, received, receivableBalance: receivable - received,
-    payable, paid, payableBalance: payable - paid,
-    profit,
-    collectionRate: receivable ? Number(((received / receivable) * 100).toFixed(2)) : 0, // 回款率
-    marginRate: receivable ? Number(((profit / receivable) * 100).toFixed(2)) : 0,       // 毛利率
+  const data = await readThrough(req, 'dashboard', 'metrics', config.cache.dashboardTtl, async () => {
+    const where = await scopedWhere(req, {});
+    const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'paidAmount'] });
+    let receivable = 0, received = 0, payable = 0, paid = 0;
+    for (const r of rows) {
+      const amt = Number(r.amount), paidAmt = Number(r.paidAmount);
+      if (r.direction === 'receivable') { receivable += amt; received += paidAmt; }
+      else { payable += amt; paid += paidAmt; }
+    }
+    const profit = receivable - payable;
+    return {
+      receivable, received, receivableBalance: receivable - received,
+      payable, paid, payableBalance: payable - paid,
+      profit,
+      collectionRate: receivable ? Number(((received / receivable) * 100).toFixed(2)) : 0, // 回款率
+      marginRate: receivable ? Number(((profit / receivable) * 100).toFixed(2)) : 0,       // 毛利率
+    };
   });
+  ok(res, data);
 });
 
 // B1 应收账龄分级（按到期日 vs 今日）

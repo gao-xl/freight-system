@@ -20,6 +20,8 @@ const { subscribeEvents: subscribeAlertEvents } = require('./services/alertServi
 const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
 const { subscribe: subscribeNotificationEvents } = require('./services/notificationService');
 const { subscribe: subscribeRealtime, closeAll: closeRealtime } = require('./services/realtimeService'); // F5/F6 实时推送
+// 方案 A：读缓存失效订阅（运价写事件 → 失效 rate 缓存）
+const { subscribe: subscribeCacheInvalidation } = require('./services/cacheInvalidation');
 // F8 可观测性：Prometheus 指标 + 周期采样
 const metricsService = require('./services/metricsService');
 const cacheService = require('./services/cacheService');
@@ -269,6 +271,8 @@ async function start() {
   subscribeNotificationEvents();
   // F5/F6 实时推送：订阅业务事件 → 统一消息落库 + SSE 实时广播
   subscribeRealtime();
+  // 方案 A：订阅运价写事件 → 失效读缓存
+  subscribeCacheInvalidation();
   // F8 可观测性：启动周期采样（DB 连接池 / 事件循环延迟 / 缓存命中）
   metricsService.startSampler(sequelize, cacheService);
   logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化 + 通知推送 + 实时推送）');
