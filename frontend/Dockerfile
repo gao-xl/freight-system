@@ -15,6 +15,10 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
+# 低配服务器（如 2核/1G）构建时封顶 Node V8 堆，避免 Rollup 打包 OOM
+#（默认堆上限约 2G，超出物理+swap 可用内存会直接崩溃）
+ENV NODE_OPTIONS="--max-old-space-size=640"
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
