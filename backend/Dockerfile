@@ -39,7 +39,10 @@ ENV NODE_ENV=production \
     DB_HOST=pg \
     DB_PORT=5432 \
     TZ=Asia/Shanghai \
-    PDF_BROWSER_PATH=/usr/bin/chromium-browser
+    PDF_BROWSER_PATH=/usr/bin/chromium-browser \
+    NODE_OPTIONS="--max-old-space-size=320"
+
+# 说明：NODE_OPTIONS 封顶 Node V8 堆（2核/1G），避免进程膨胀挤爆内存；堆≠总 RSS，chromium 打印峰值另靠 swap 兜底。
 
 # tini    以 PID 1 接管信号，docker stop 能真正优雅停服而不是被 SIGKILL
 # su-exec 入口脚本修好挂载卷属主后降权到 node 用户运行

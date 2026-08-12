@@ -50,17 +50,56 @@ services:
       - "127.0.0.1:${PG_PORT:-5432}:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
+    # 针对 2 核 / 1G 内存的 PostgreSQL 调优：
+    #   shared_buffers=128MB（约 12% 内存）          索引扫描/排序/哈希用小 work_mem=4MB
+    #   effective_cache_size=256MB                  维护操作（备份/索引/vacuum）给 32MB
+    #   max_connections=30                          1G 内存下压低连接数（每个连接约 5~10MB）
+    #   max_wal_size=512MB / min_wal_size=64MB      控制 WAL 峰值，避免小磁盘被撑满
+    #   random_page_cost=1.1                        阿里云 SSD 云盘：顺序/随机读代价接近
+    #   autovacuum 更激进                           防表膨胀导致的索引退化与磁盘增长
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-128MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-256MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-4MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINT_WORK_MEM:-32MB}
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-30}
+      - -c
+      - max_wal_size=${PG_MAX_WAL_SIZE:-512MB}
+      - -c
+      - min_wal_size=${PG_MIN_WAL_SIZE:-64MB}
+      - -c
+      - checkpoint_timeout=900s
+      - -c
+      - random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
+      - -c
+      - autovacuum=on
+      - -c
+      - autovacuum_vacuum_scale_factor=0.05
+      - -c
+      - autovacuum_analyze_scale_factor=0.02
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-freight} -d ${DB_NAME:-freight}"]
       interval: 10s
       timeout: 5s
       retries: 10
-    # 资源上限：防止单容器内存/CPU 失控拖垮宿主机（docker compose 2.x 支持）
+    # 资源上限：防止单容器内存/CPU 失控拖垮宿主机；上限=天花板，实际常驻低于此值。
+    # 2 核 / 1G 默认给 320M；内存更大可在 .env 里用 PG_MEM_LIMIT 调高。
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 512M
+          cpus: "${PG_CPU_LIMIT:-1.0}"
+          memory: "${PG_MEM_LIMIT:-320M}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     build:
@@ -124,12 +163,19 @@ services:
       timeout: 5s
       retries: 3
       start_period: 25s
-    # 资源上限：后端含 PDF 渲染(chromium)，给足内存但设硬顶，防止泄漏拖垮宿主机
+    # 资源上限：后端含 PDF 渲染(chromium)，打印单证是内存峰值操作。
+    # 2 核 / 1G：Node 堆已用 NODE_OPTIONS 封顶，chromium 仅在打印时临时拉起，
+    # 峰值靠宿主机 swap 兜底，故设 512M；内存更大可在 .env 用 BACKEND_MEM_LIMIT 调高。
     deploy:
       resources:
         limits:
-          cpus: "1.0"
-          memory: 768M
+          cpus: "${BACKEND_CPU_LIMIT:-1.0}"
+          memory: "${BACKEND_MEM_LIMIT:-512M}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build:
@@ -147,12 +193,17 @@ services:
       # 等后端健康检查通过再起，避免 nginx 因解析不到 backend 上游而启动失败
       backend:
         condition: service_healthy
-    # 资源上限：nginx 静态代理很轻，给低配即可
+    # 资源上限：nginx 静态代理很轻，给低配即可；2G 内存以上可调大
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 256M
+          cpus: "${FRONTEND_CPU_LIMIT:-0.5}"
+          memory: "${FRONTEND_MEM_LIMIT:-128M}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 # F7 共享缓存：可选伴生服务，默认不启动（profile=cache）。
   # 启用方式：.env 设置 REDIS_URL=redis://redis:6379 后，
@@ -174,8 +225,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 256M
+          cpus: "${REDIS_CPU_LIMIT:-0.5}"
+          memory: "${REDIS_MEM_LIMIT:-128M}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pg-data:

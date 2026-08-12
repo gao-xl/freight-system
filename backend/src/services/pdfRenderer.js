@@ -54,7 +54,20 @@ async function htmlToPdf(html, pageSize = 'A4') {
       executablePath,
       headless: true,
       // --no-sandbox：Docker root 运行必需；--disable-gpu 避免无头 GPU 报错
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+      // --disable-dev-shm-usage：容器 /dev/shm 默认只有 64M，禁止用共享内存改走 /tmp，避免渲染崩溃
+      // --disable-extensions / --no-first-run：省内存、省首启开销（低配 1G 服务器关键）
+      // --renderer-process-limit=1：只允许一个渲染进程，打印单页时显著降低峰值内存
+      // --js-flags=--max-old-space-size=240：进一步限制 V8 堆，防止 1G 服务器 OOM
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-gpu',
+        '--disable-dev-shm-usage',
+        '--disable-extensions',
+        '--no-first-run',
+        '--renderer-process-limit=1',
+        '--js-flags=--max-old-space-size=240',
+      ],
     });
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 });
