@@ -21,7 +21,9 @@ async function getPermissions(userId) {
   for (const role of user.roles || []) {
     for (const p of role.permissions || []) {
       set.add(p.code);
-      set.add(`${p.module}:*`);
+      // 注意：不再为每个权限点自动展开「模块:*」。
+      // 若自动展开，则拥有任一模块动作（如 order:read）的用户会拿到 order:create/delete/approve 等全部动作，
+      // 造成越权（只读角色可写）。模块级通配权限必须显式注册为 module='*' 的权限点。
     }
   }
   const perms = [...set];
@@ -43,7 +45,6 @@ async function getRolePermissions(roleCode) {
   const set = new Set();
   for (const p of (role && role.permissions) || []) {
     set.add(p.code);
-    set.add(`${p.module}:*`);
   }
   const perms = [...set];
   // 角色不存在时缓存空数组：认证失败要一致地失败，不要每次请求都回查数据库

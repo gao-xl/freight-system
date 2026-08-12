@@ -69,6 +69,27 @@ const MESSAGE_EVENTS = {
     content: () => '',
     ref: (p) => ({ refType: 'order', refId: p.orderId || p.bookingId || null }),
   },
+  'backup.completed': {
+    type: 'system',
+    level: () => 'info',
+    title: (p) => `备份完成：${p.filename || ''}`,
+    content: (p) => `${p.label === 'monthly' ? '月度自动备份' : '备份'}成功（${p.sizeText || p.size || ''}）`,
+    ref: () => ({ refType: null, refId: null }),
+  },
+  'backup.failed': {
+    type: 'system',
+    level: () => 'warning',
+    title: () => '备份失败，请立即处理',
+    content: (p) => String(p.message || '').slice(0, 200),
+    ref: () => ({ refType: null, refId: null }),
+  },
+  'backup.overdue': {
+    type: 'system',
+    level: () => 'warning',
+    title: (p) => `备份超期：已 ${Math.floor(p.ageDays || 0)} 天未备份`,
+    content: (p) => p.message || '请尽快执行备份',
+    ref: () => ({ refType: null, refId: null }),
+  },
 };
 
 // 兼容事件上报（SSE 广播但不落库，供前端感知操作类事件）

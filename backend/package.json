@@ -2,6 +2,7 @@
   "name": "freight-forwarding-backend",
   "version": "1.0.0",
   "description": "货运代理管理系统 - 后端服务",
+  "license": "MIT",
   "main": "src/server.js",
   "engines": {
     "node": ">=22"
@@ -15,9 +16,10 @@
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
-    "test": "node --test --test-concurrency=1 tests/smoke.test.js tests/pdf.test.js tests/onboarding.test.js tests/tracking-auto.test.js tests/notification.test.js tests/portal-enhanced.test.js tests/orderDomain.test.js tests/printSecurity.test.js tests/financeService.test.js tests/message-center.test.js tests/message-preference.test.js tests/infrastructure.test.js",
+    "test": "node --test --test-concurrency=1 tests/smoke.test.js tests/pdf.test.js tests/onboarding.test.js tests/tracking-auto.test.js tests/notification.test.js tests/portal-enhanced.test.js tests/orderDomain.test.js tests/printSecurity.test.js tests/financeService.test.js tests/message-center.test.js tests/message-preference.test.js tests/infrastructure.test.js tests/backupScheduler.test.js tests/securityRegression.test.js",
     "test:backup": "node --test --test-concurrency=1 tests/backup.test.js",
     "test:backuprestore": "node --test --test-concurrency=1 tests/backupRestore.test.js",
+    "test:backupscheduler": "node --test --test-concurrency=1 tests/backupScheduler.test.js",
     "lint": "eslint src/ scripts/ migrations/"
   },
   "devDependencies": {

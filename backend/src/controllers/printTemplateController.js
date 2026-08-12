@@ -77,7 +77,7 @@ const print = asyncHandler(async (req, res) => {
   if (req.query.customerId) opts.customerId = req.query.customerId;
   if (req.query.from) opts.from = req.query.from;
   if (req.query.to) opts.to = req.query.to;
-  const { html, pdf, tpl } = await printService.render(templateId, docType, bizId, opts);
+  const { html, pdf, tpl } = await printService.render(templateId, docType, bizId, opts, req);
   if (format === 'html') {
     res.type('html').send(html);
     return;

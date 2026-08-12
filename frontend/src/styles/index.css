@@ -264,9 +264,23 @@ a { color: var(--brand); text-decoration: none; }
 .el-dialog {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
+  /* 高度自适应：弹窗限制在视口内，内容超高时内部滚动，
+     避免底部（保存按钮/末尾字段）被截断成空白（新增订舱等所有新增弹窗）
+     头尾固定、主体滚动，任何屏幕高度下都能操作到保存按钮 */
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+  --el-dialog-margin-top: 4vh;
 }
 .el-dialog__header { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .el-dialog__title { font-weight: 600; }
+.el-dialog .el-dialog__header,
+.el-dialog .el-dialog__footer { flex-shrink: 0; }
+.el-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 /* 下拉/日期选择浮层圆角 */
 .el-popper.is-light { border-radius: var(--radius); }

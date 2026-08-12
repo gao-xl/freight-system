@@ -1,8 +1,44 @@
 const { User, Role, Permission, UserRole, AuditLog, CompanyProfile } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { validatePassword } = require('../utils/passwordPolicy');
-const { invalidate } = require('../services/permissionService');
+const { invalidate, hasPermission } = require('../services/permissionService');
 const { collectHealth } = require('../services/healthCheck');
+
+// M4 修复：管理操作提权约束辅助函数
+// 只有「系统管理员」可授予/撤销 admin 角色或把用户设为 admin；普通持有 system:user 的运维不可提权。
+const isAdmin = (req) => hasPermission(req.user.id, 'system', '*');
+// 解析 admin 角色 id（供 roleIds 场景判断）
+async function adminRoleIds() {
+  const adminRole = await Role.findOne({ where: { code: 'admin' } });
+  return adminRole ? [adminRole.id] : [];
+}
+// 判断用户当前是否身兼 admin 角色（含 User.role='admin' 或 roleIds 指向 admin 角色）
+async function isAdminUser(userId) {
+  const perms = await hasPermission(userId, 'system', '*');
+  if (perms) return true;
+  const ur = await UserRole.findAll({ where: { userId } });
+  const adminIds = await adminRoleIds();
+  return ur.some((r) => adminIds.includes(r.roleId));
+}
+// 保护「最后一名管理员」：要求除了被操作对象外，仍存在至少一名启用的 admin 用户
+async function ensureOtherAdmin(exceptUserId) {
+  const { Op } = require('sequelize');
+  const adminIds = await adminRoleIds();
+  // 收集所有 admin 用户 id
+  const adminUserIds = new Set();
+  const byRoleField = await User.findAll({ where: { role: 'admin' }, attributes: ['id'] });
+  for (const u of byRoleField) adminUserIds.add(Number(u.id));
+  if (adminIds.length) {
+    const ur = await UserRole.findAll({ where: { roleId: { [Op.in]: adminIds } } });
+    for (const r of ur) adminUserIds.add(Number(r.userId));
+  }
+  // 排除被操作对象后，其余 admin 用户是否至少有一个启用
+  const others = [...adminUserIds].filter((id) => id !== Number(exceptUserId));
+  if (!others.length) return { message: '系统至少需要保留一名管理员' };
+  const activeOthers = await User.count({ where: { id: { [Op.in]: others }, status: 'active' } });
+  if (activeOthers === 0) return { message: '系统至少需要保留一名启用的管理员' };
+  return null;
+}
 
 // 权限点列表
 const permissionList = asyncHandler(async (req, res) => {
@@ -29,6 +65,14 @@ const createUser = asyncHandler(async (req, res) => {
   if (!pw.ok) return fail(res, pw.message);
   const exists = await User.findOne({ where: { username } });
   if (exists) return fail(res, '用户名已存在');
+  // M4 修复：非管理员不得创建 admin 用户或授予 admin 角色
+  if (role === 'admin' && !(await isAdmin(req))) return fail(res, '仅管理员可创建管理员账号', 1, 403);
+  if (roleIds && roleIds.length) {
+    const adminIds = await adminRoleIds();
+    if (roleIds.map(Number).some((id) => adminIds.includes(id)) && !(await isAdmin(req))) {
+      return fail(res, '仅管理员可授予管理员角色', 1, 403);
+    }
+  }
   // C5 客户自助门户：customer 角色必须关联客户档案
   if ((role === 'customer') && !customerId) return fail(res, '客户角色必须关联客户档案');
   const user = await User.create({
@@ -53,6 +97,25 @@ const updateUser = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.params.id);
   if (!user) return fail(res, '用户不存在', 1, 404);
   const { name, role, email, phone, status, password, roleIds, customerId } = req.body || {};
+  // M4 修复：提权校验——非管理员不得把用户设为 admin 或授予 admin 角色
+  const wasAdmin = await isAdminUser(user.id);
+  const adminIds = await adminRoleIds();
+  const targetAdminField = role === 'admin';
+  const roleIdsProvided = roleIds !== undefined;
+  const roleIdsGrantAdmin = roleIdsProvided ? roleIds.map(Number).some((id) => adminIds.includes(id)) : null;
+  if ((targetAdminField || roleIdsGrantAdmin) && !(await isAdmin(req))) {
+    return fail(res, '仅管理员可授予管理员权限', 1, 403);
+  }
+  // 本次操作若会使该用户失去 admin 权限，需确保仍有其它启用管理员
+  if (wasAdmin) {
+    let losesAdmin = false;
+    if (role !== undefined && role !== 'admin') losesAdmin = true;
+    if (roleIdsProvided && !roleIdsGrantAdmin) losesAdmin = true;
+    if (losesAdmin) {
+      const err = await ensureOtherAdmin(user.id);
+      if (err) return fail(res, err.message, 1, 400);
+    }
+  }
   const patch = { name, role, email, phone, status, customerId };
   if (password) {
     const pw = validatePassword(password);
@@ -60,13 +123,15 @@ const updateUser = asyncHandler(async (req, res) => {
     patch.password = bcrypt.hashSync(password, 10);
   }
   await user.update(patch);
-  // D8：管理员改密或禁用用户 → 递增 tokenVersion，作废该用户所有旧 token
-  if (password || status === 'disabled') {
-    await user.update({ tokenVersion: (user.tokenVersion || 0) + 1 });
-  }
+  let needsTokenReset = !!(password || status === 'disabled');
   if (roleIds) {
     await UserRole.destroy({ where: { userId: user.id } });
     if (roleIds.length) await UserRole.bulkCreate(roleIds.map((roleId) => ({ userId: user.id, roleId })));
+    // L6 修复：角色变更递增 tokenVersion，使旧 token 立即失效
+    needsTokenReset = true;
+  }
+  if (needsTokenReset) {
+    await user.update({ tokenVersion: (user.tokenVersion || 0) + 1 });
   }
   invalidate(user.id);
   ok(res, user, '更新成功');
@@ -77,6 +142,11 @@ const removeUser = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.params.id);
   if (!user) return fail(res, '用户不存在', 1, 404);
   if (user.username === 'admin') return fail(res, '内置管理员不可删除');
+  // M4 修复：删除管理员前需保证仍有其它启用管理员
+  if (await isAdminUser(user.id)) {
+    const err = await ensureOtherAdmin(user.id);
+    if (err) return fail(res, err.message, 1, 400);
+  }
   await UserRole.destroy({ where: { userId: user.id } });
   await user.destroy();
   invalidate(user.id);
@@ -88,8 +158,22 @@ const assignRoles = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.params.id);
   if (!user) return fail(res, '用户不存在', 1, 404);
   const roleIds = (req.body?.roleIds || []).map(Number).filter(Boolean);
+  const adminIds = await adminRoleIds();
+  // M4 修复：非管理员不得授予 admin 角色
+  if (roleIds.some((id) => adminIds.includes(id)) && !(await isAdmin(req))) {
+    return fail(res, '仅管理员可授予管理员角色', 1, 403);
+  }
+  // 移除 admin 时的最后管理员保护
+  const wasAdmin = await isAdminUser(user.id);
+  const grantsAdmin = roleIds.some((id) => adminIds.includes(id));
+  if (wasAdmin && !grantsAdmin) {
+    const err = await ensureOtherAdmin(user.id);
+    if (err) return fail(res, err.message, 1, 400);
+  }
   await UserRole.destroy({ where: { userId: user.id } });
   if (roleIds.length) await UserRole.bulkCreate(roleIds.map((roleId) => ({ userId: user.id, roleId })));
+  // L6 修复：角色变更递增 tokenVersion，使旧 token 立即失效
+  await user.update({ tokenVersion: (user.tokenVersion || 0) + 1 });
   invalidate(user.id);
   ok(res, null, '角色已分配');
 });

@@ -1,6 +1,16 @@
-const { Role, Permission, UserRole, RolePermission } = require('../services/dataAccess');
+const { Role, Permission, UserRole, RolePermission, User } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
-const { invalidate } = require('../services/permissionService');
+const { invalidate, hasPermission } = require('../services/permissionService');
+
+// M4/L6 修复辅助：角色权限/数据范围变更后，立即作废持有该角色用户的旧 token
+async function bumpRoleUsersTokenVersion(roleId) {
+  const { Op } = require('sequelize');
+  const users = await UserRole.findAll({ where: { roleId }, attributes: ['userId'] });
+  const ids = users.map((u) => u.userId).filter(Boolean);
+  if (!ids.length) return;
+  await User.update({ tokenVersion: sequelize.literal('"tokenVersion" + 1') }, { where: { id: { [Op.in]: ids } } });
+  for (const id of ids) invalidate(id);
+}
 
 // 角色列表（含权限）
 const list = asyncHandler(async (req, res) => {
@@ -25,9 +35,21 @@ const update = asyncHandler(async (req, res) => {
   if (!role) return fail(res, '角色不存在', 1, 404);
   const { name, description, dataScope } = req.body || {};
   const patch = { name, description };
-  if (['all', 'group', 'self'].includes(dataScope)) patch.dataScope = dataScope; // B2
+  // B2：数据范围走白名单
+  if (['all', 'group', 'self'].includes(dataScope)) patch.dataScope = dataScope;
+  // M4 修复：仅管理员可将角色数据范围设为 'all'，防止持有 system:role 的非管理员借此放大数据可达范围
+  if ((patch.dataScope === 'all') && !(await hasPermission(req.user.id, 'system', '*'))) {
+    return fail(res, '仅管理员可授予全库数据范围', 1, 403);
+  }
+  // M4 修复：内置 admin 角色必须保持 dataScope='all'，禁止收窄
+  if (role.code === 'admin' && patch.dataScope !== undefined && patch.dataScope !== 'all') {
+    return fail(res, '内置管理员角色的数据范围不可修改', 1, 400);
+  }
+  const scopeChanged = patch.dataScope !== undefined && patch.dataScope !== role.dataScope;
   await role.update(patch);
-  invalidate();
+  // L6 修复：数据范围变更会改变该角色下所有用户的可见行——立即作废旧 token
+  if (scopeChanged) await bumpRoleUsersTokenVersion(role.id);
+  else invalidate();
   ok(res, role, '更新成功');
 });
 
@@ -53,7 +75,8 @@ const assignPermissions = asyncHandler(async (req, res) => {
       await RolePermission.bulkCreate(ids.map((permissionId) => ({ roleId: role.id, permissionId })), { transaction: t });
     }
   });
-  invalidate();
+  // L6 修复：权限变更立即作废该角色下所有用户的旧 token，防止旧权限延续
+  await bumpRoleUsersTokenVersion(role.id);
   const updated = await Role.findByPk(role.id, { include: [{ model: Permission, as: 'permissions' }] });
   ok(res, updated, '权限已更新');
 });

@@ -202,6 +202,7 @@ const menuGroups = [
   {
     label: '对接与数据',
     items: [
+      { path: '/ai', title: 'AI 助手', icon: 'MagicStick', permission: 'ai:use' },
       { path: '/qingdao', title: '青岛港看板', icon: 'Ship', permission: 'qingdao:read' },
       { path: '/yards', title: '场站查询', icon: 'Van', permission: 'yard:read' },
       { path: '/external', title: '外部数据', icon: 'DataAnalysis', permission: 'track:read' },
@@ -220,6 +221,7 @@ const menuGroups = [
       { path: '/system/company', title: '公司设置', icon: 'OfficeBuilding', permission: 'system:company' },
       { path: '/system/health', title: '系统健康', icon: 'Monitor', permission: 'system:user' },
       { path: '/docs', title: '开发文档', icon: 'Reading' },
+      { path: '/guide', title: '使用教程', icon: 'QuestionFilled' },
     ],
   },
 ];

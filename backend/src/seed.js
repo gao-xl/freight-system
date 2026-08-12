@@ -202,6 +202,7 @@ async function seed() {
     { code: 'ship_schedule', name: '船期查询', apiKey: '', authType: 'api_key', enabled: false, remark: '订舱/报价参考船期' },
     { code: 'exchange_rate', name: '汇率查询', apiKey: '', authType: 'api_key', enabled: false, remark: '多币种换算（open.er-api.com）' },
     { code: 'freight_rate', name: '运价查询', apiKey: '', authType: 'api_key', enabled: false, remark: '报价参考（预留）' },
+    { code: 'ai_chat', name: 'AI 大模型（OpenAI 兼容 / OpenRouter）', baseUrl: 'https://openrouter.ai/api/v1', apiKey: '', authType: 'api_key', enabled: false, config: '{"model":"openai/gpt-4o-mini","temperature":0.3,"maxTokens":2048}', remark: '第三方 AI 统一接入（智能问答/单据识别/翻译生成/推荐预警）' },
   ];
   await IntegrationConfig.bulkCreate(integrations);
 
@@ -238,6 +239,7 @@ async function seed() {
   addPerms('finance', ['create', 'read', 'update', 'delete', 'approve', 'close', 'lock', 'unlock'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', close: '结账/扎帐', lock: '锁帐', unlock: '解锁' })[a]}财务`);
   addPerms('quotation', ['create', 'read', 'update', 'delete', 'approve', 'convert'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', convert: '转订单' })[a]}报价`);
   addPerms('integration', ['read', 'update', 'trigger'], (a) => `${({ read: '查看', update: '配置', trigger: '触发' })[a]}对接`);
+  addPerms('ai', ['use'], () => '使用AI助手');
   addPerms('qingdao', ['read', 'update'], (a) => `${({ read: '查看', update: '更新' })[a]}青岛港节点`);
   addPerms('alert', ['read', 'update'], (a) => `${({ read: '查看', update: '处理' })[a]}预警`);
   addPerms('yard', ['read', 'update'], (a) => `${({ read: '查看', update: '查询/维护' })[a]}场站信息`);
@@ -273,6 +275,7 @@ async function seed() {
       ...actionGroup('yard', ['read', 'update']),
       ...actionGroup('print', ['read', 'write']),
       ...actionGroup('release', ['read', 'create', 'approve']),
+      ...actionGroup('ai', ['use']),
       ...actionGroup('dashboard', ['read']),
     ],
     operator: [
@@ -283,6 +286,7 @@ async function seed() {
       ...actionGroup('alert', ['read', 'update']),
       ...actionGroup('yard', ['read', 'update']),
       ...actionGroup('print', ['read']),
+      ...actionGroup('ai', ['use']),
       ...actionGroup('dashboard', ['read']),
     ],
     finance: [
@@ -294,6 +298,7 @@ async function seed() {
       ...actionGroup('yard', ['read']),
       ...actionGroup('print', ['read']),
       ...actionGroup('release', ['read']),
+      ...actionGroup('ai', ['use']),
       ...actionGroup('dashboard', ['read']),
     ],
     viewer: [
@@ -304,6 +309,7 @@ async function seed() {
       ...actionGroup('alert', ['read']),
       ...actionGroup('yard', ['read']),
       ...actionGroup('print', ['read']),
+      ...actionGroup('ai', ['use']),
       ...actionGroup('dashboard', ['read']),
     ],
   };

@@ -108,6 +108,10 @@ services:
       # 上传文件与备份落在宿主机目录里，容器重建/升级镜像都不会丢
       - ./backend/uploads:/app/uploads
       - ./backend/logs:/app/logs
+      # 备份默认落 ./backend/backups（对接内置备份守护 BACKUP_DIR 默认值）。
+      # NAS / 低成本设备场景：想让备份直接落到独立挂载盘，可取消下行注释并改成你的路径；
+      # 同时到 .env 里设 BACKUP_DIR=<容器内挂载点>，例如 BACKUP_DIR=/mnt/nas/freight-backups。
+      # - /mnt/nas/freight-backups:/mnt/nas/freight-backups
       - ./backend/backups:/app/backups
 
     healthcheck:

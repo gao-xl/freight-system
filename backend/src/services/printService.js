@@ -5,6 +5,7 @@ const { PrintTemplate } = require('../models');
 const { logger } = require('../utils/logger');
 const { defaultContent } = require('../data/printFields');
 const { htmlToPdf } = require('./pdfRenderer');
+const { scopedWhere } = require('../middleware/dataScope');
 
 // 按点路径从数据对象取值，如 order.customer.name
 function getByPath(obj, path) {
@@ -97,9 +98,35 @@ function blockToHtml(block) {
   }
 }
 
+// M1 修复：模板 header/footer 由管理员配置，但会随每次打印传播给低权限用户浏览。
+// 为阻断存储型 XSS，渲染前用黑名单净化：移除脚本/样式/危险标签与事件属性、危险协议。
+// 保留基础排版标签（div/span/br/strong/table 等），在"排版权限"与"渲染安全"间取平衡。
+function sanitizeTemplateHtml(html) {
+  if (!html) return '';
+  return String(html)
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '')
+    .replace(/<script\b[^>]*\/?>/gi, '')
+    .replace(/<\/script\s*>/gi, '')
+    .replace(/<\s*(iframe|object|embed|link|meta|base|form|svg|math)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    .replace(/<\s*\/?\s*(iframe|object|embed|link|meta|base|form|svg|math)\b[^>]*>/gi, '')
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src|action)\s*=\s*(["']?)\s*(?:javascript|data):[^"'>]*/gi, (m, attr, q) => `${attr}=${q || ''}'#'`)
+    .replace(/<([a-z][a-z0-9]*)\b[^>]*(?:\/?)>/gi, (m, tag) => (ALLOWED_TAGS.has(tag) ? m : ''));
+}
+
+// 允许保留下来的基础排版标签（自上而下逐个校验）
+const ALLOWED_TAGS = new Set([
+  'div', 'span', 'br', 'p', 'strong', 'b', 'em', 'i', 'u', 's',
+  'table', 'thead', 'tbody', 'tr', 'th', 'td', 'caption',
+  'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'small',
+]);
+
 // 渲染 HTML
 function renderHTML(tpl, blocks, header, footer) {
   const body = blocks.map(blockToHtml).join('');
+  const safeHeader = sanitizeTemplateHtml(header);
+  const safeFooter = sanitizeTemplateHtml(footer);
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"/>
 <style>
   body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',-apple-system,sans-serif;color:#222;margin:24px;}
@@ -122,25 +149,32 @@ function renderHTML(tpl, blocks, header, footer) {
     .blk-header,.blk-fields,.blk-sign{page-break-after:avoid;}
   }
 </style></head><body>
-${header ? `<div class="page-header">${header}</div>` : ''}
+${safeHeader ? `<div class="page-header">${safeHeader}</div>` : ''}
 ${body}
-${footer ? `<div class="page-footer">${footer}</div>` : ''}
+${safeFooter ? `<div class="page-footer">${safeFooter}</div>` : ''}
 </body></html>`;
 }
 
 // 组装业务数据（按 docType 从库加载；opts 支持 D4 对账单客户+周期聚合：{ customerId, from, to }）
-async function loadBizData(docType, bizId, opts = {}) {
+// H1 修复：req 为当前请求（含 req.dataScope），所有业务取数统一叠加数据范围过滤，
+// 阻断通过枚举 bizId/customerId 越权读取其它小组业务数据的 IDOR 漏洞。
+async function loadBizData(docType, bizId, opts = {}, req = null) {
   const { Order, Booking, Customer, Quotation, QuotationItem, CustomsDeclaration, Supplier, Invoice } = require('../models');
   const { findRecordsByOrderId, findRecordsByOrderIds } = require('../domains/finance/financeService');
   const biz = {};
+  // 在既有 where 上叠加数据范围约束（req 为空时退化为不限制，供无请求场景的模板预览使用）
+  const scoped = async (where) => (req ? scopedWhere(req, where) : where);
+  // 按主键取单条并强制归属校验
+  const scopedPk = async (model, pk, include) => {
+    const where = await scoped({ id: pk });
+    return model.findOne({ where, include });
+  };
   // D3：debit_note 加入订单取数（DN 基于订单 + 费用明细）
   if (['bl', 'order', 'packing_list', 'customs', 'statement', 'settlement', 'debit_note'].includes(docType)) {
-    const order = await Order.findByPk(bizId, {
-      include: [
-        { model: Customer, as: 'customer' },
-        { model: Booking, include: [{ model: Supplier, as: 'supplier' }] },
-      ],
-    });
+    const order = await scopedPk(Order, bizId, [
+      { model: Customer, as: 'customer' },
+      { model: Booking, include: [{ model: Supplier, as: 'supplier' }] },
+    ]);
     if (order) {
       const o = order.toJSON();
       biz.order = o;
@@ -150,35 +184,32 @@ async function loadBizData(docType, bizId, opts = {}) {
   }
   // D3 修正：invoice 按 Invoice 模型取数（此前误走 quotation 分支，打不出发票号/税额）
   if (docType === 'invoice') {
-    const inv = await Invoice.findByPk(bizId, {
-      include: [
-        { model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] },
-        { model: Supplier, as: 'supplier', attributes: ['id', 'code', 'name'] },
-        { model: Order, as: 'order' },
-      ],
-    });
+    const inv = await scopedPk(Invoice, bizId, [
+      { model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] },
+      { model: Supplier, as: 'supplier', attributes: ['id', 'code', 'name'] },
+      { model: Order, as: 'order' },
+    ]);
     if (inv) biz.invoice = inv.toJSON();
   }
   if (docType === 'quotation') {
-    const q = await Quotation.findByPk(bizId, {
-      include: [
-        { model: Customer, as: 'customer' },
-        { model: QuotationItem, as: 'items' },
-      ],
-    });
+    const q = await scopedPk(Quotation, bizId, [
+      { model: Customer, as: 'customer' },
+      { model: QuotationItem, as: 'items' },
+    ]);
     if (q) {
       const j = q.toJSON();
       biz.quotation = { ...j, items: (j.items || []).map((i) => ({ ...i, amount: String(i.amount) })) };
     }
   }
   if (docType === 'customs') {
-    const c = await CustomsDeclaration.findByPk(bizId);
+    const c = await scopedPk(CustomsDeclaration, bizId, null);
     if (c) biz.customs = c.toJSON();
   }
   if (docType === 'statement' || docType === 'settlement' || docType === 'debit_note') {
     if (docType === 'statement' && opts.customerId && opts.from) {
       // D4 对账单：按客户 + 期间聚合多票（期初/本期/已收已付/未结余额 + 账单号）
-      const orders = await Order.findAll({ where: { customerId: opts.customerId }, attributes: ['id'] });
+      // H1 修复：customerId 由请求参数控制，必须叠加数据范围约束，防止指定任意客户聚合其账单
+      const orders = await Order.findAll({ where: await scoped({ customerId: opts.customerId }), attributes: ['id'] });
       const orderIds = orders.map((o) => o.id);
       const from = new Date(opts.from);
       const to = opts.to ? new Date(`${opts.to}T23:59:59.999`) : new Date();
@@ -253,8 +284,8 @@ async function toPdf(html, pageSize) {
   return done;
 }
 
-// 主渲染入口（opts：D4 对账单聚合参数 { customerId, from, to }）
-async function render(templateId, docType, bizId, opts = {}) {
+// 主渲染入口（opts：D4 对账单聚合参数 { customerId, from, to }；req：当前请求，用于数据范围过滤）
+async function render(templateId, docType, bizId, opts = {}, req = null) {
   let tpl = null;
   if (templateId) {
     tpl = await PrintTemplate.findByPk(templateId);
@@ -266,7 +297,7 @@ async function render(templateId, docType, bizId, opts = {}) {
     // 无模板时用默认内容
     tpl = { docType, content: JSON.stringify(defaultContent(docType)), pageSize: 'A4', header: '', footer: '' };
   }
-  const bizData = await loadBizData(tpl.docType || docType, bizId, opts);
+  const bizData = await loadBizData(tpl.docType || docType, bizId, opts, req);
   const content = typeof tpl.content === 'string' ? JSON.parse(tpl.content) : tpl.content;
   const blocks = resolveFields(content.blocks || [], bizData);
   // 表格数据注入

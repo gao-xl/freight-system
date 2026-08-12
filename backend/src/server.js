@@ -8,12 +8,14 @@ const config = require('./config');
 const routes = require('./routes');
 const { sequelize } = require('./models');
 const { audit } = require('./middleware/audit');
+const { authRequired, requirePermission } = require('./middleware/auth');
 const { observability } = require('./middleware/observability');
 const { logger } = require('./utils/logger');
 const { swaggerSpec } = require('./config/swagger');
 const { ModuleRegistry } = require('./core/moduleRegistry');
 const { startAlertScheduler, stopAlertScheduler } = require('./services/alertScheduler');
 const { startDataRetention, stopDataRetention } = require('./services/dataRetention');
+const { startBackupScheduler, stopBackupScheduler } = require('./services/backupScheduler');
 const { subscribeEvents: subscribeAlertEvents } = require('./services/alertService');
 const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
 const { subscribe: subscribeNotificationEvents } = require('./services/notificationService');
@@ -81,8 +83,23 @@ app.get('/api/health', async (req, res) => {
   res.status(dbOk ? 200 : 503).json(body);
 });
 
+// M2/M3 修复：生产环境对监控与文档端点做鉴权，收敛公网暴露面。
+// adminOnlyInProd：开发环境放行便于本地调试；生产要求 admin（system:*）登录会话。
+function adminOnlyInProd(req, res, next) {
+  if (!config.isProd) return next();
+  return authRequired(req, res, () => requirePermission('system', '*')(req, res, next));
+}
+// protectMetrics：生产环境优先接受静态抓取令牌（METRICS_TOKEN，供 Prometheus/Grafana），
+// 其次接受 admin 登录会话；令牌未配置时仅 admin 会话可访问。
+function protectMetrics(req, res, next) {
+  if (!config.isProd) return next();
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.headers['x-metrics-token'] || '';
+  if (config.metricsToken && token === config.metricsToken) return next();
+  return authRequired(req, res, () => requirePermission('system', '*')(req, res, next));
+}
+
 // F8 Prometheus 指标端点：供 Grafana/Prometheus 抓取（文本格式）
-app.get('/api/metrics', async (req, res) => {
+app.get('/api/metrics', protectMetrics, async (req, res) => {
   try {
     res.set('Content-Type', metricsService.contentType);
     res.end(await metricsService.registry());
@@ -94,14 +111,16 @@ app.get('/api/metrics', async (req, res) => {
 
 // 接口文档（Swagger UI + 原始 OpenAPI JSON）
 // 挂在 /api-docs 而非 /api/*，不占用业务命名空间，也不受 /api 全局限流影响
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+// M3 修复：生产环境仅 admin 可访问，避免接口契约与鉴权方式公网泄露
+app.use('/api-docs', adminOnlyInProd, swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customSiteTitle: '货运代理管理系统 接口文档',
   swaggerOptions: { persistAuthorization: true },
 }));
-app.get('/openapi.json', (req, res) => res.json(swaggerSpec));
+app.get('/openapi.json', adminOnlyInProd, (req, res) => res.json(swaggerSpec));
 
 // 开发文档（VitePress 构建产物）
-// 与 /api-docs 一样挂在业务命名空间之外、公开提供，不占独立端口。
+// 与 /api-docs 一样挂在业务命名空间之外，不占独立端口。
+// M3 修复：生产环境仅 admin 可访问。
 // 产物由 docs-site 构建直接输出到 backend/public/docs（见 docs-site 配置 outDir）。
 function mountDocs() {
   const fs = require('fs');
@@ -111,9 +130,9 @@ function mountDocs() {
     return;
   }
   // 静态资源（assets/*.js|css、favicon 等）直接命中
-  app.use('/docs', express.static(docsRoot, { index: false }));
+  app.use('/docs', adminOnlyInProd, express.static(docsRoot, { index: false }));
   // 漂亮 URL 回退：/docs/dev/index → /docs/dev/index.html，/docs/ → index.html
-  app.get('/docs/*', (req, res) => {
+  app.get('/docs/*', adminOnlyInProd, (req, res) => {
     const clean = req.path.replace(/\/+$/, '').replace(/^\/docs\/?/, '');
     // 防御性校验：拒绝包含路径穿越的请求
     if (clean.includes('..')) return res.status(400).send('非法路径');
@@ -172,6 +191,8 @@ function shutdown(signal) {
   // 停止定时任务，避免停机窗口内重复触发；并等待在途扫描/自动化完成，防止连接池关闭后被调用
   const schedulerDrain = stopAlertScheduler();
   stopDataRetention();
+  // 停止备份守护并等待在途备份完成，避免备份写到一半连接池被关闭
+  const backupDrain = stopBackupScheduler();
   // F5 SSE 长连接先断开，避免阻塞 server.close 等待空闲连接回收
   closeRealtime();
   // F8 可观测性：停止指标周期采样
@@ -191,6 +212,7 @@ function shutdown(signal) {
     if (forceTimer) clearTimeout(forceTimer);
     // 等待在途扫描/自动化完成后再关闭连接池，避免「连接池已关闭仍被调用」竞态
     await schedulerDrain;
+    await backupDrain;
     await closeDb();
     logger.info('[SHUTDOWN] 已安全退出');
     process.exit(0);
@@ -239,6 +261,8 @@ async function start() {
   startAlertScheduler();
   // 数据保留：每日清理过期审计日志（默认关闭，AUDIT_RETENTION_DAYS>0 启用）
   startDataRetention();
+  // 备份守护：强制月度自动备份 + 超期提醒/补备（默认强制开启，BACKUP_AUTO=off 关闭）
+  startBackupScheduler();
   subscribeAlertEvents();
   subscribeAutomationEvents();
   // E2 通知推送：订阅预警/业务事件，出站邮件/企微/通用 Webhook（渠道缺配置自动跳过）

@@ -45,6 +45,7 @@ const report = require('../controllers/reportController');
 const searchCtrl = require('../controllers/searchController');
 const numberSegment = require('../controllers/numberSegmentController'); // P1 发票号段
 const customerAttachment = require('../controllers/customerAttachmentController'); // P1 客户附件
+const ai = require('../controllers/aiController'); // 第三方 AI 能力
 
 const router = express.Router();
 
@@ -125,7 +126,8 @@ router.post('/onboarding/wizard/done', authRequired, onboarding.wizardDone);
 // 系统健康（admin）与默认设置（登录）；health 与公开 /api/health 并存，/api/health 保持原样
 router.get('/system/health', authRequired, requirePermission('system', '*'), system.health);
 router.get('/system/defaults', authRequired, system.getDefaults);
-router.put('/system/defaults', authRequired, system.putDefaults);
+// L3 修复：系统默认设置写接口仅鉴权 → 增加 system:* 权限守卫，限制为管理员
+router.put('/system/defaults', authRequired, requirePermission('system', '*'), system.putDefaults);
 
 // 备份/恢复（AC-22，admin；复用 scripts/backup.js + scripts/restore.js 逻辑）
 const backupCtrl = require('../controllers/backupController');
@@ -226,20 +228,21 @@ router.put('/custom-fields/:id', authRequired, requirePermission('system', 'cust
 router.delete('/custom-fields/:id', authRequired, requirePermission('system', 'custom'), customField.remove);
 
 // B4 自定义字段值读写（按业务实体）
+// L2 修复：读写接口补上对应模块的权限守卫，防止任意登录用户（含只读角色）改写业务记录自定义字段
 const cf = customField.customFieldValues;
 const { Customer, Order, Booking, FinanceRecord } = require('../models');
 const cfOrder = cf('order', Order);
 const cfCustomer = cf('customer', Customer);
 const cfBooking = cf('booking', Booking);
 const cfFinance = cf('finance', FinanceRecord);
-router.get('/orders/:id/custom-fields', authRequired, cfOrder.getValues);
-router.put('/orders/:id/custom-fields', authRequired, cfOrder.updateValues);
-router.get('/customers/:id/custom-fields', authRequired, cfCustomer.getValues);
-router.put('/customers/:id/custom-fields', authRequired, cfCustomer.updateValues);
-router.get('/bookings/:id/custom-fields', authRequired, cfBooking.getValues);
-router.put('/bookings/:id/custom-fields', authRequired, cfBooking.updateValues);
-router.get('/finance/:id/custom-fields', authRequired, cfFinance.getValues);
-router.put('/finance/:id/custom-fields', authRequired, cfFinance.updateValues);
+router.get('/orders/:id/custom-fields', guard('order', 'read'), cfOrder.getValues);
+router.put('/orders/:id/custom-fields', guard('order', 'update'), cfOrder.updateValues);
+router.get('/customers/:id/custom-fields', guard('customer', 'read'), cfCustomer.getValues);
+router.put('/customers/:id/custom-fields', guard('customer', 'update'), cfCustomer.updateValues);
+router.get('/bookings/:id/custom-fields', guard('booking', 'read'), cfBooking.getValues);
+router.put('/bookings/:id/custom-fields', guard('booking', 'update'), cfBooking.updateValues);
+router.get('/finance/:id/custom-fields', guard('finance', 'read'), cfFinance.getValues);
+router.put('/finance/:id/custom-fields', guard('finance', 'update'), cfFinance.updateValues);
 
 // 看板
 router.get('/dashboard', guard('dashboard', 'read'), dashboard.dashboard);
@@ -480,6 +483,13 @@ router.get('/external/vessel/:mmsi', guard('track', 'read'), external.vessel);
 router.get('/external/schedule', guard('track', 'read'), external.schedule);
 router.get('/external/rate', guard('finance', 'read'), external.rate);
 router.get('/external/freight-rate', guard('order', 'read'), external.freightRate); // C4 运价
+
+// 第三方 AI 能力（OpenAI 兼容 / OpenRouter）
+router.get('/ai/status', guard('ai', 'use'), ai.status);
+router.post('/ai/chat', guard('ai', 'use'), ai.chat);
+router.post('/ai/extract', guard('ai', 'use'), ai.extract);
+router.post('/ai/generate', guard('ai', 'use'), ai.generate);
+router.post('/ai/recommend', guard('ai', 'use'), ai.recommend);
 
 // C1 港口官方平台
 router.get('/ports', guard('track', 'read'), port.ports);

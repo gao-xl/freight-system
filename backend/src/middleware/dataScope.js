@@ -99,9 +99,20 @@ async function scopedFindOne(req, model, where, include) {
 }
 
 // 通用创建归属：为 body 自动补 groupId/ownerId（未指定时）
+// L4 修复：归属的小组以服务端解析的用户所属组为准，不信任客户端传入的 groupId——
+// 避免把新建记录归属到非本组/越权小组，造成数据隔离被绕过或数据归属混乱。
 async function attachOwnership(req, body) {
   const me = await User.findByPk(req.user.id);
-  if (!body.groupId) body.groupId = me?.groupId || null;
+  const { scope, groupIds } = await getScope(req);
+  let groupId = me?.groupId ?? null;
+  if (body.groupId != null) {
+    const requested = Number(body.groupId);
+    // all 范围可指定任意小组；否则必须落在用户可见小组集合内，越界则回退到默认组
+    if (scope === 'all' || (groupIds && groupIds.includes(requested))) {
+      groupId = requested;
+    }
+  }
+  body.groupId = groupId;
   if (!body.ownerId) body.ownerId = req.user.id;
   return body;
 }

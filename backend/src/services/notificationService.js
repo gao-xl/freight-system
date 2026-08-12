@@ -128,6 +128,12 @@ function formatMessage(eventType, payload = {}) {
       return `订单状态变更：#${p.orderId || p.id || ''}${p.from && p.to ? ` ${p.from} → ${p.to}` : ''}`;
     case 'finance.created':
       return `新财务记录：#${p.financeId || p.id || ''}${p.amount ? ` 金额 ${p.amount}` : ''}`;
+    case 'backup.completed':
+      return `【备份完成】${p.label === 'monthly' ? '月度自动备份' : '备份'}成功：${p.filename || ''}（${p.sizeText || p.size || ''}）`;
+    case 'backup.failed':
+      return `【备份失败】${p.label === 'monthly' ? '月度自动备份' : '系统备份'}执行失败，请立即检查：${String(p.message || '').slice(0, 200)}`;
+    case 'backup.overdue':
+      return `【备份超期】${p.message || `已 ${Math.floor(p.ageDays || 0)} 天未备份，请尽快备份`}`;
     default:
       return `事件 ${eventType}：${JSON.stringify(p).slice(0, 120)}`;
   }

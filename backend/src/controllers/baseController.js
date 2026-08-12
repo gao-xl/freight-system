@@ -152,7 +152,9 @@ function crudController(opts) {
   // 恢复软删除记录：POST /:resource/:id/restore（U5 修复：软删除有 UI 恢复入口）
   const restore = asyncHandler(async (req, res) => {
     if (!model.rawAttributes.deletedAt) return fail(res, '该模块不支持恢复', 1, 400);
-    const item = await model.findOne({ where: { id: req.params.id }, paranoid: false });
+    // L1 修复：恢复前叠加数据范围约束，防止跨组恢复软删除记录（列表/详情均有范围限制，恢复此前缺失）
+    const where = scoped ? await scopedWhere(req, { id: req.params.id }) : { id: req.params.id };
+    const item = await model.findOne({ where, paranoid: false });
     if (!item) return fail(res, '记录不存在', 1, 404);
     if (!item.deletedAt) return fail(res, '记录未删除，无需恢复', 1, 400);
     await model.restore({ where: { id: item.id } });

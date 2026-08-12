@@ -29,6 +29,9 @@ module.exports = {
   // 无人值守部署备选：设置后 Bootstrap 直接创建 admin（mustChangePassword=true 强制首登改密）
   adminInitPassword: process.env.ADMIN_INIT_PASSWORD || '',
   jwtSecret,
+  // M2 修复：监控抓取令牌（Prometheus/Grafana 用）。生产环境 /api/metrics 必须携带该令牌
+  // 或持有 admin 权限的登录会话方可访问；未配置时生产环境仅允许 admin 会话访问。
+  metricsToken: process.env.METRICS_TOKEN || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '12h',
   // M3 refresh token 有效期（默认 30 天），登录/刷新时签发 opaque token 存 Sessions 表
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
@@ -91,5 +94,20 @@ module.exports = {
   // F7 缓存：REDIS_URL 已设置时启用 Redis 共享缓存，否则退回进程内内存缓存（单实例）
   cache: {
     redisUrl: process.env.REDIS_URL || '',
+  },
+  // 备份调度（强制月度备份 + 超期提醒/补备）
+  // 默认强制开启（fail-closed）：BACKUP_AUTO=off 才整体关闭（仅特殊场景，如外部 cron 已接管）
+  backup: {
+    auto: process.env.BACKUP_AUTO !== 'off',
+    // 月度自动备份 cron：默认每月 1 号 03:30
+    schedule: process.env.BACKUP_CRON || '30 3 1 * *',
+    // 每日超期检查 cron：默认每日 09:00
+    freshnessCron: process.env.BACKUP_FRESHNESS_CRON || '0 9 * * *',
+    // 超期阈值（天）：距上次备份超过该值则提醒并（强制时）补备
+    maxAgeDays: parseInt(process.env.BACKUP_MAX_AGE_DAYS) || 35,
+    // 保留份数
+    keep: parseInt(process.env.BACKUP_KEEP) || 7,
+    // 备份输出目录（默认 backend/backups）
+    dir: process.env.BACKUP_DIR || '',
   },
 };

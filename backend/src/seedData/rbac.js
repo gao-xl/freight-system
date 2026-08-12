@@ -23,12 +23,14 @@ function buildPermissions() {
   PERMS.push(...addPerms('finance', ['create', 'read', 'update', 'delete', 'approve', 'close', 'lock', 'unlock'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', close: '结账/扎帐', lock: '锁帐', unlock: '解锁' })[a]}财务`));
   PERMS.push(...addPerms('quotation', ['create', 'read', 'update', 'delete', 'approve', 'convert'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', convert: '转订单' })[a]}报价`));
   PERMS.push(...addPerms('integration', ['read', 'update', 'trigger'], (a) => `${({ read: '查看', update: '配置', trigger: '触发' })[a]}对接`));
+  PERMS.push(...addPerms('ai', ['use'], (a) => '使用AI助手'));
   PERMS.push(...addPerms('qingdao', ['read', 'update'], (a) => `${({ read: '查看', update: '更新' })[a]}青岛港节点`));
   PERMS.push(...addPerms('alert', ['read', 'update'], (a) => `${({ read: '查看', update: '处理' })[a]}预警`));
   PERMS.push(...addPerms('yard', ['read', 'update'], (a) => `${({ read: '查看', update: '查询/维护' })[a]}场站信息`));
   PERMS.push(...addPerms('print', ['read', 'write'], (a) => `${({ read: '查看/打印', write: '设计模板' })[a]}`));
   PERMS.push(...addPerms('release', ['read', 'create', 'approve'], (a) => `${({ read: '查看', create: '申请', approve: '审批' })[a]}放单`));
-  PERMS.push(...addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company', 'finance'], (a) => `${({ user: '用户', role: '角色', permission: '权限', audit: '审计', group: '小组', custom: '自定义字段', company: '公司设置', finance: '发票号段' })[a]}管理`));
+  // L5 修复：补齐 system:apikey 权限点（接口密钥管理路由引用它，此前未定义导致配置不一致）
+  PERMS.push(...addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company', 'finance', 'apikey'], (a) => `${({ user: '用户', role: '角色', permission: '权限', audit: '审计', group: '小组', custom: '自定义字段', company: '公司设置', finance: '发票号段', apikey: '接口密钥' })[a]}管理`));
   // 系统运维通配：备份/恢复、健康检查、自动化运行等 admin 专属接口统一走 system:*
   PERMS.push({ module: 'system', action: '*', name: '系统运维（备份/恢复/健康检查/自动化）', code: 'system:*' });
   return PERMS;
@@ -51,6 +53,7 @@ function buildRolePermissionMap(PERMS) {
   const allBusiness = ['customer', 'supplier', 'order', 'booking', 'customs', 'document', 'track'];
   const rw = ['create', 'read', 'update'];
   const crud = ['create', 'read', 'update', 'delete'];
+  const aiUse = () => actionGroup('ai', ['use']);
   return {
     admin: PERMS.map((p) => p.code),
     manager: [
@@ -64,6 +67,7 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('yard', ['read', 'update']),
       ...actionGroup('print', ['read', 'write']),
       ...actionGroup('release', ['read', 'create', 'approve']),
+      ...aiUse(),
       ...actionGroup('dashboard', ['read']),
     ],
     operator: [
@@ -74,6 +78,8 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('alert', ['read', 'update']),
       ...actionGroup('yard', ['read', 'update']),
       ...actionGroup('print', ['read']),
+      ...actionGroup('release', ['read', 'create']), // 操作员可查看并申请放单；审批权保留给 manager
+      ...aiUse(),
       ...actionGroup('dashboard', ['read']),
     ],
     finance: [
@@ -85,6 +91,7 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('yard', ['read']),
       ...actionGroup('print', ['read']),
       ...actionGroup('release', ['read']),
+      ...aiUse(),
       ...actionGroup('dashboard', ['read']),
     ],
     viewer: [
@@ -95,6 +102,7 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('alert', ['read']),
       ...actionGroup('yard', ['read']),
       ...actionGroup('print', ['read']),
+      ...aiUse(),
       ...actionGroup('dashboard', ['read']),
     ],
   };

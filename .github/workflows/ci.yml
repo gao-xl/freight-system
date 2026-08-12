@@ -5,6 +5,7 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:        # 支持手动触发全量 CI（含安全回归）
 
 jobs:
   backend:
@@ -45,6 +46,49 @@ jobs:
 
       - name: 冒烟测试（启动 → 登录 → 业务接口 → 自动化幂等）
         run: npm test
+        env:
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: 5432
+          TEST_DB_NAME: freight_test
+          TEST_DB_USER: freight
+          TEST_DB_PASSWORD: freight
+
+  security-regression:
+    # 安全整改回归防线：每次 push/PR 独立触发，快速、明确地校验越权/提权修复不回归。
+    # 独立于上面的大而全 backend 作业，让安全失败信号清晰可见、便于快速定位。
+    name: 安全回归测试（越权/提权防线）
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: freight_test
+          POSTGRES_USER: freight
+          POSTGRES_PASSWORD: freight
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U freight -d freight_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 安全回归测试（H-01 越权 / L-02/L-03 低权限写 / M-04 管理员保护 / L-06 会话失效）
+        run: node --test --test-concurrency=1 tests/securityRegression.test.js
         env:
           TEST_DB_HOST: 127.0.0.1
           TEST_DB_PORT: 5432

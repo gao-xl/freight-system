@@ -29,6 +29,7 @@ const routes = [
       { path: 'qingdao', name: 'qingdao', component: () => import('@/views/qingdao/QingdaoPortal.vue'), meta: { title: '青岛港看板', icon: 'Ship', permission: 'qingdao:read' } },
       { path: 'yards', name: 'yards', component: () => import('@/views/yards/YardQuery.vue'), meta: { title: '场站查询', icon: 'Van', permission: 'yard:read' } },
       { path: 'external', name: 'external', component: () => import('@/views/external/ExternalQuery.vue'), meta: { title: '外部数据', icon: 'DataAnalysis', permission: 'track:read' } },
+      { path: 'ai', name: 'ai', component: () => import('@/views/ai/AiWorkbench.vue'), meta: { title: 'AI 助手', icon: 'MagicStick', permission: 'ai:use' } },
       { path: 'finance', name: 'finance', component: () => import('@/views/finance/FinanceList.vue'), meta: { title: '财务管理', icon: 'Money', permission: 'finance:read' } },
       { path: 'finance/invoices', name: 'invoices', component: () => import('@/views/finance/InvoiceList.vue'), meta: { title: '发票管理', icon: 'Ticket', permission: 'finance:read' } }, // N2
       { path: 'finance/statement', name: 'statement', component: () => import('@/views/finance/StatementList.vue'), meta: { title: '对账单', icon: 'Tickets', permission: 'finance:read' } },
@@ -50,6 +51,7 @@ const routes = [
       { path: 'system/print-templates', redirect: '/print-templates' },
       { path: 'print-templates', name: 'printTemplates', component: () => import('@/views/system/PrintTemplateDesigner.vue'), meta: { title: '单证模板', icon: 'Tickets', permission: 'print:read' } },
       { path: 'docs', name: 'docs', component: () => import('@/views/DocsView.vue'), meta: { title: '开发文档', icon: 'Reading' } },
+      { path: 'guide', name: 'guide', component: () => import('@/views/GuideView.vue'), meta: { title: '使用教程', icon: 'Reading' } },
     ],
   },
   { path: '/portal', name: 'portal', component: () => import('@/views/portal/Portal.vue'), meta: { title: '客户自助门户' } },

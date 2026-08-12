@@ -20,7 +20,8 @@ FROM node:22-alpine AS deps
 
 WORKDIR /app
 
-RUN apk add --no-cache python3 make g++
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories \
+    && apk add --no-cache python3 make g++
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
@@ -47,7 +48,8 @@ ENV NODE_ENV=production \
 # chromium + font-noto-cjk：D1 PDF 渲染（puppeteer-core 无头浏览器），
 #   Alpine 默认无中文字体，不装 CJK 字体 PDF 中文会缺字形；
 #   chromium 在容器内需 --no-sandbox（pdfRenderer args 已带）
-RUN apk add --no-cache tini su-exec tzdata postgresql-client chromium font-noto-cjk \
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories \
+    && apk add --no-cache tini su-exec tzdata postgresql-client chromium font-noto-cjk \
     && ln -sf /usr/bin/chromium-browser /usr/local/bin/chromium
 
 COPY --from=deps /app/node_modules ./node_modules
