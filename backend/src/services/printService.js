@@ -36,8 +36,9 @@ function findCjkFont() {
       const coll = fk.openSync(p);
       const fonts = coll.fonts || [];
       if (!fonts.length) continue;
-      // 优先简体中文风格（名称含 sc/simp/yahei/wqy/hei），否则取第一个
-      const target = fonts.find((f) => /sc|simp|yahei|wqy|hei|zh/i.test(`${f.postscriptName || ''} ${f.fullName || ''}`));
+      // 优先简体中文风格（CJKsc / Sans CJK SC 等明确标识；yahei/wqy/hei 为文泉驿/雅黑等简体字体）。
+      // 注意：不能用裸 /sc/ 匹配——"Sans CJK" 里的 s+C 会误命中，必须用含前后缀的精确写法。
+      const target = fonts.find((f) => /CJKsc|Sans CJK SC|sc-Regular|simp|yahei|wqy|hei|zh/i.test(`${f.postscriptName || ''} ${f.fullName || ''}`));
       const font = target || fonts[0];
       return { path: p, postscriptName: font.postscriptName };
     } catch (e) {
