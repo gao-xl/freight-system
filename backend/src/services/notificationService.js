@@ -150,7 +150,8 @@ function formatMessage(eventType, payload = {}) {
   }
 }
 
-function buildEmail(eventType, payload) {
+// P2-N4 修复：补 payload 默认值，避免 undefined 时 p.title 抛 TypeError
+function buildEmail(eventType, payload = {}) {
   const p = payload && payload.payload ? payload.payload : payload;
   const subject = `【货代系统】${eventType === 'alert.created' ? `预警：${p.title || ''}` : `事件通知：${eventType}`}`;
   const lines = [
