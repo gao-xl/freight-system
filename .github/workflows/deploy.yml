@@ -30,16 +30,30 @@ jobs:
   deploy:
     name: 部署与探活
     runs-on: ubuntu-latest
-    if: ${{ secrets.DEPLOY_HOST != '' }}   # 未配置服务器则跳过
+    # 未配置 DEPLOY_HOST 时，job 正常完成（fail-open），避免被跳过后 run 被判为 failure 而误发失败邮件。
+    # 注意：不能用 job 级 if 跳过（GitHub 会把全跳过 run 标记为 failure），故在首个 step 显式 exit 0。
     steps:
+      - name: 检查部署配置（未配置则跳过并正常结束）
+        id: check
+        run: |
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ]; then
+            echo "DEPLOY_HOST 未配置，跳过部署（fail-open）"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.check.outputs.skip != 'true'
 
       - name: 配置 SSH
+        if: steps.check.outputs.skip != 'true'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
       - name: 拉取镜像并重启服务
+        if: steps.check.outputs.skip != 'true'
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=15 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
@@ -49,6 +63,7 @@ jobs:
              docker image prune -f || true"
 
       - name: 等待后端健康
+        if: steps.check.outputs.skip != 'true'
         run: |
           for i in $(seq 1 30); do
             if ssh -o StrictHostKeyChecking=no "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
@@ -61,9 +76,11 @@ jobs:
           echo "健康检查超时" && exit 1
 
       - name: 校验指标端点可抓取
+        if: steps.check.outputs.skip != 'true'
         run: |
           ssh -o StrictHostKeyChecking=no "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "curl -sf http://127.0.0.1:${{ secrets.DEPLOY_HEALTH_PORT || 3000 }}/api/metrics | head -n 5"
 
       - name: 记录部署完成
+        if: steps.check.outputs.skip != 'true'
         run: echo "部署完成：${{ github.sha }} → ${{ secrets.DEPLOY_HOST }}（${{ github.event.inputs.env || 'production' }}）"
