@@ -49,7 +49,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
             libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-            libgbm1 libasound2 libpango-1.0-0 libcairo2 libx11-xcb1
+            libgbm1 libasound2t64 libpango-1.0-0 libcairo2 libx11-xcb1
 
       - name: 静态检查（ESLint 架构铁律）
         run: npm run lint
