@@ -239,8 +239,7 @@ jobs:
     # 说明：仅构建 amd64。此前尝试 amd64+arm64 多架构，QEMU 交叉编译 arm64 时后端
     #       npm ci 编译原生模块崩溃（exit 132 / SIGILL），且生产机为 amd64 无需 arm64，
     #       故收敛为单架构，构建更快更稳。
-    # 仅在 GitHub Actions 上运行，防止 Gitea Actions 误推旧镜像覆盖 GHCR 标签
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && runner.name != 'gitea-actions'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     name: 镜像构建与推送 (amd64)
     runs-on: ubuntu-latest
     permissions:
