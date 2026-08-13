@@ -43,12 +43,20 @@ async function doRefresh() {
 }
 
 // 登出并跳转登录页
+// 防重入：并发 401 刷新失败时只登出一次，避免重复弹错；成功登录/刷新后复位。
+let forceLoggedOut = false;
 function forceLogout(message) {
   clearTokens();
+  if (forceLoggedOut) return;
+  forceLoggedOut = true;
   if (router.currentRoute.value.path !== '/login') {
     ElMessage.error(message || '登录已过期，请重新登录');
-    router.push('/login');
   }
+  router.push('/login');
+  // 同步 pinia store 内存态（动态引入避免与 auth store 循环依赖）
+  import('@/stores/auth').then(({ useAuthStore }) => {
+    try { useAuthStore().clear(); } catch (e) { /* pinia 未就绪时忽略 */ }
+  });
 }
 
 request.interceptors.response.use(
@@ -57,7 +65,10 @@ request.interceptors.response.use(
     if (response.config.responseType === 'blob') return response;
     const res = response.data;
     if (res.code !== 0) {
-      ElMessage.error(res.message || '请求失败');
+      // silent 请求（如门户 fail-open 下载/查询）由调用方按业务兜底提示，不在此统一弹错
+      if (!response.config?.silent) {
+        ElMessage.error(res.message || '请求失败');
+      }
       return Promise.reject(new Error(res.message));
     }
     return res.data;
@@ -80,6 +91,7 @@ request.interceptors.response.use(
         config.headers.Authorization = `Bearer ${getToken()}`;
         return request(config);
       } catch (e) {
+        // 刷新失败：仅登出一次（forceLogout 内部防重入）
         forceLogout();
         return Promise.reject(e);
       }

@@ -60,9 +60,10 @@ function buildWhere(bizType, filters) {
 /**
  * 执行报表
  * @param {Object} def 报表定义（含 bizType/groupBy/measures/filters）
+ * @param {Object} [scopeWhere] 数据隔离约束（scopedWhere 输出），限制只统计当前用户可见范围
  * @returns {Promise<{columns: string[], rows: Array, groupBy: string|null}>}
  */
-async function runReport(def) {
+async function runReport(def, scopeWhere = {}) {
   const bizType = def.bizType;
   const Model = getModel(bizType);
   const measures = Array.isArray(def.measures) ? def.measures : (def.measures ? JSON.parse(def.measures) : []);
@@ -91,7 +92,14 @@ async function runReport(def) {
   }
 
   // 4. 过滤 + 排序
-  const where = buildWhere(bizType, def.filters || []);
+  const filterWhere = buildWhere(bizType, def.filters || []);
+  // 合并数据隔离约束（B2 修复）：报表聚合只统计当前用户可见范围，防止跨组泄露
+  const where = {};
+  if (Object.keys(filterWhere).length) where[Op.and] = [filterWhere];
+  if (scopeWhere && Object.keys(scopeWhere).length) {
+    if (!where[Op.and]) where[Op.and] = [];
+    where[Op.and].push(scopeWhere);
+  }
   const order = def.groupBy ? [[Model.sequelize.col('groupKey'), 'ASC']] : [];
 
   // 5. 执行

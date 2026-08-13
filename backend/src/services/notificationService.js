@@ -19,6 +19,17 @@ const { NotificationRecord, IntegrationConfig } = require('../models');
 const { logger } = require('../utils/logger');
 
 const CHANNELS = ['email', 'wechat_webhook', 'webhook'];
+// P2-1 修复：出站 fetch 统一加 10s 超时，防止 Webhook URL 挂起导致 promise 长期悬挂/内存累积
+const FETCH_TIMEOUT_MS = 10000;
+async function fetchWithTimeout(url, options = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // 渠道配置解析：未配置/不可用返回 null（调用方静默跳过）
 async function resolveChannel(channel) {
@@ -72,7 +83,7 @@ async function sendEmail(cfg, { subject, text }) {
 }
 
 async function sendWechat(cfg, content) {
-  const res = await fetch(cfg.url, {
+  const res = await fetchWithTimeout(cfg.url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ msgtype: 'text', text: { content } }),
@@ -84,7 +95,7 @@ async function sendWechat(cfg, content) {
 }
 
 async function sendGenericWebhook(cfg, { eventType, payload }) {
-  const res = await fetch(cfg.url, {
+  const res = await fetchWithTimeout(cfg.url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

@@ -7,6 +7,14 @@ set -e
 if [ "$(id -u)" = "0" ]; then
   mkdir -p /app/data /app/uploads /app/logs /app/backups
   chown -R node:node /app/data /app/uploads /app/logs /app/backups 2>/dev/null || true
+  # 引导：启动前先做幂等初始化（确保数据库存在 → 迁移 → RBAC/基准汇率预置）。
+  # 与 server.js 的自动迁移互补：本步骤负责「建库 + 预置」，保证外部 PG（如 1Panel）
+  # 未建库时也能直接拉起；幂等设计，可反复执行、绝不 force 清库。
+  # 用环境变量 BOOTSTRAP_ON_START=0 可关闭（例如已有外部 cron/编排接管初始化）。
+  if [ "${BOOTSTRAP_ON_START:-1}" != "0" ]; then
+    echo "[ENTRYPOINT] 运行 bootstrap init-db（幂等建库/迁移/预置）..."
+    su-exec node node scripts/bootstrap.js init-db
+  fi
   exec su-exec node "$@"
 fi
 

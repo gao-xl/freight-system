@@ -219,6 +219,7 @@ const menuGroups = [
       { path: '/print-templates', title: '单证模板', icon: 'Printer', permission: 'print:read' },
       { path: '/system', title: '系统管理', icon: 'Setting', permission: 'system:user' },
       { path: '/system/company', title: '公司设置', icon: 'OfficeBuilding', permission: 'system:company' },
+      { path: '/system/notification-settings', title: '通知配置', icon: 'Bell', permission: 'integration:update' },
       { path: '/system/health', title: '系统健康', icon: 'Monitor', permission: 'system:user' },
       { path: '/docs', title: '开发文档', icon: 'Reading' },
       { path: '/guide', title: '使用教程', icon: 'QuestionFilled' },
@@ -332,12 +333,10 @@ async function loadMsgUnread() {
 }
 
 // F5 实时推送：SSE 事件 → 刷新未读/预警角标 + 轻提示（断线自动重连）
+// 修复：token 不再传入，createSSE 每次重连自动读取最新 token，避免刷新后旧 token 401。
 function startRealtime() {
-  const token = localStorage.getItem('token');
-  if (!token) return;
   sseStop = createSSE({
     url: '/api/events/stream',
-    token,
     onEvent(data) {
       if (!data || data.type !== 'event') return;
       loadMsgUnread();

@@ -73,7 +73,9 @@ async function htmlToPdf(html, pageSize = 'A4') {
       ],
     });
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 15000 });
+    // waitUntil:'load'：单证 HTML 为纯静态（无外部资源），'load' 比 'networkidle0' 更早触发且更可靠；
+    // timeout 放宽到 60s：低配 1G 服务器上 Chromium 冷启动可达 20s+，15s 会误判为超时回退 pdfkit。
+    await page.setContent(html, { waitUntil: 'load', timeout: 60000 });
     // preferCSSPageSize：尊重 renderHTML 中 @page { size } 定义
     const buf = await page.pdf({
       format: pageSize || 'A4',

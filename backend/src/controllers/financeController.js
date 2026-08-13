@@ -347,7 +347,9 @@ const createPayment = asyncHandler(async (req, res) => {
   if (direction === 'received' && !customerId) return fail(res, '收款需指定客户', 1, 400);
   if (direction === 'paid' && !supplierId) return fail(res, '付款需指定供应商', 1, 400);
   const idList = financeIds.map(Number).filter((n) => n > 0);
-  const fees = await FinanceRecord.findAll({ where: { id: { [Op.in]: idList } } });
+  // B2 数据隔离修复：核销费用必须限定在当前用户可见范围内，防止跨组核销他人费用
+  const feeWhere = await scopedWhere(req, { id: { [Op.in]: idList } });
+  const fees = await FinanceRecord.findAll({ where: feeWhere });
   await assertRecordsEditable(fees);
   if (!fees.length) return fail(res, '未找到费用记录', 1, 404);
   const wantDir = direction === 'received' ? 'receivable' : 'payable';
@@ -514,7 +516,9 @@ const unlockPeriod = asyncHandler(async (req, res) => {
 const periodStatement = asyncHandler(async (req, res) => {
   const { code } = req.params;
   const period = await getOrCreatePeriod(code);
-  const items = await recordsOfPeriod(code);
+  // B2 数据隔离修复：结账单只统计当前用户可见范围内的费用，防止跨组泄露他人财务数据
+  const scopeWhere = await scopedWhere(req, {});
+  const items = await recordsOfPeriod(code, scopeWhere);
   const summary = summarize(items);
   ok(res, { period, summary, items: items.map((r) => r.toJSON()) });
 });

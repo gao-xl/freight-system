@@ -22,13 +22,17 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { EditPen, MagicStick, Upload } from '@element-plus/icons-vue';
 
-defineProps({
-  model: { type: String, default: 'manual' },
+const props = defineProps({
+  modelValue: { type: String, default: 'manual' },
   loading: { type: Boolean, default: false },
 });
 const emit = defineEmits(['choose']);
+
+// 通过 computed 代理读取 modelValue，避免直接修改 prop（vue/no-mutating-props）
+const model = computed(() => props.modelValue);
 
 const prepares = [
   { value: 'manual', label: '稍后自己录入', desc: '进入系统后按引导一步步添加', icon: EditPen },
@@ -37,7 +41,7 @@ const prepares = [
 ];
 
 function choose(mode) {
-  if (mode === 'demo' && !loading.value) emit('choose', 'demo');
+  if (mode === 'demo' && !props.loading) emit('choose', 'demo');
   else if (mode !== 'demo') emit('choose', mode);
 }
 </script>

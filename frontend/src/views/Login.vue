@@ -74,6 +74,10 @@ async function submit() {
     await auth.login(form.username, form.password);
     ElMessage.success('登录成功');
     router.push(resolveHome());
+  } catch (e) {
+    // 登录失败（401 等）时明确提示，避免"点了没反应"
+    const msg = e?.response?.data?.message || e?.message;
+    ElMessage.error(msg && msg !== 'Network Error' ? msg : '用户名或密码错误');
   } finally {
     loading.value = false;
   }

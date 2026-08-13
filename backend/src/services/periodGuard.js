@@ -2,7 +2,7 @@
 // 负责账期归属解析、结账汇总计算、以及锁账写操作拦截
 const { Op } = require('sequelize');
 const { AccountingPeriod } = require('../models');
-const { findRecordsByOrderId, findRecordsInPeriod } = require('../domains/finance/financeService');
+const { findRecordsByOrderId } = require('../domains/finance/financeService');
 
 // 由日期得到账期号，如 2026-08
 function periodCodeFromDate(date) {
@@ -42,9 +42,26 @@ async function getOrCreatePeriod(periodCode) {
 }
 
 // 该账期下的所有费用记录（settleMonth 命中优先，为空则按 createdAt）
-async function recordsOfPeriod(periodCode) {
+// extraWhere：可选的数据隔离约束（scopedWhere 输出），用于结账单只统计当前用户可见范围
+async function recordsOfPeriod(periodCode, extraWhere = {}) {
   const { start, end } = periodRange(periodCode);
-  return findRecordsInPeriod(start, end);
+  const andClauses = [
+    {
+      [Op.or]: [
+        { settleMonth: { [Op.gte]: start, [Op.lt]: end } },
+        { settleMonth: null, createdAt: { [Op.gte]: start, [Op.lt]: end } },
+      ],
+    },
+  ];
+  if (extraWhere && Object.keys(extraWhere).length) {
+    if (extraWhere[Op.and]) {
+      const arr = Array.isArray(extraWhere[Op.and]) ? extraWhere[Op.and] : [extraWhere[Op.and]];
+      andClauses.push(...arr);
+    } else {
+      andClauses.push(extraWhere); // ownerId 等标量条件
+    }
+  }
+  return FinanceRecord.findAll({ where: { [Op.and]: andClauses } });
 }
 
 // 汇总应收/应付/已收/已付/余额/毛利

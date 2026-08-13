@@ -16,51 +16,67 @@ const { invalidate } = require('./permissionService');
 const { logger } = require('../utils/logger');
 const config = require('../config');
 
-// 预置 RBAC（权限点/角色/映射，三者都空才整体预置，避免半初始化状态）
+// 预置 RBAC：按"缺什么补什么"独立幂等播种，避免全新重建（migration 链）后
+// 因补充权限迁移残留部分权限点导致角色/映射被整体跳过。
+//   - 权限点：空则全量播种；非空则补齐基线中缺失的权限点（按 code 去重）
+//   - 角色：空则播种内置角色
+//   - 角色权限映射：空则按角色/权限现状重建
+// 全程幂等，绝不删除/覆盖已有数据。
 async function seedRbac() {
   const [permCount, roleCount, rpCount] = await Promise.all([
     Permission.count(),
     Role.count(),
     RolePermission.count(),
   ]);
-  if (permCount > 0 || roleCount > 0 || rpCount > 0) {
-    // 已有数据但缺角色权限映射时仍补齐（老库升级场景：角色权限映射缺失会导致所有非 admin 无权限）
-    if (roleCount > 0 && rpCount === 0) {
-      const perms = await Permission.findAll({ raw: true });
-      const roles = await Role.findAll({ raw: true });
-      const map = buildRolePermissionMap(perms);
-      const permByCode = Object.fromEntries(perms.map((p) => [p.code, p.id]));
-      const roleByCode = Object.fromEntries(roles.map((r) => [r.code, r.id]));
-      const rows = [];
-      for (const [roleCode, codes] of Object.entries(map)) {
-        for (const code of codes) {
-          if (permByCode[code] && roleByCode[roleCode]) {
-            rows.push({ roleId: roleByCode[roleCode], permissionId: permByCode[code] });
-          }
+
+  const PERMS = buildPermissions();
+
+  // 1) 权限点
+  let perms = await Permission.findAll({ raw: true });
+  if (permCount === 0) {
+    await Permission.bulkCreate(PERMS);
+    perms = await Permission.findAll({ raw: true });
+    logger.info(`[BOOTSTRAP] 预置权限点 ${perms.length} 个`);
+  } else {
+    const existingCodes = new Set(perms.map((p) => p.code));
+    const missing = PERMS.filter((p) => !existingCodes.has(p.code));
+    if (missing.length) {
+      await Permission.bulkCreate(missing);
+      perms = await Permission.findAll({ raw: true });
+      logger.info(`[BOOTSTRAP] 补齐缺失权限点 ${missing.length} 个`);
+    }
+  }
+
+  // 2) 角色
+  let roles = await Role.findAll({ raw: true });
+  if (roles.length === 0) {
+    await Role.bulkCreate(buildRoles());
+    roles = await Role.findAll({ raw: true });
+    logger.info(`[BOOTSTRAP] 预置角色 ${roles.length} 个`);
+  }
+
+  // 3) 角色权限映射（含老库升级：角色已存在但映射缺失时补齐）
+  const rpAfter = await RolePermission.count();
+  if (rpAfter === 0) {
+    const permByCode = Object.fromEntries(perms.map((p) => [p.code, p.id]));
+    const roleByCode = Object.fromEntries(roles.map((r) => [r.code, r.id]));
+    const map = buildRolePermissionMap(PERMS);
+    const rows = [];
+    for (const [roleCode, codes] of Object.entries(map)) {
+      for (const code of codes) {
+        if (permByCode[code] && roleByCode[roleCode]) {
+          rows.push({ roleId: roleByCode[roleCode], permissionId: permByCode[code] });
         }
       }
-      if (rows.length) await RolePermission.bulkCreate(rows);
-      invalidate();
-      logger.info(`[BOOTSTRAP] 补齐角色权限映射 ${rows.length} 条（老库升级）`);
     }
-    return { seeded: false };
+    if (rows.length) await RolePermission.bulkCreate(rows);
+    invalidate();
+    logger.info(`[BOOTSTRAP] 预置角色权限映射 ${rows.length} 条`);
+    return { seeded: true };
   }
-  const PERMS = buildPermissions();
-  const permissionRecords = await Permission.bulkCreate(PERMS);
-  const roleRecords = await Role.bulkCreate(buildRoles());
-  const map = buildRolePermissionMap(PERMS);
-  const permByCode = Object.fromEntries(permissionRecords.map((p) => [p.code, p.id]));
-  const roleByCode = Object.fromEntries(roleRecords.map((r) => [r.code, r.id]));
-  const rows = [];
-  for (const [roleCode, codes] of Object.entries(map)) {
-    for (const code of codes) {
-      rows.push({ roleId: roleByCode[roleCode], permissionId: permByCode[code] });
-    }
-  }
-  await RolePermission.bulkCreate(rows);
+
   invalidate();
-  logger.info(`[BOOTSTRAP] 预置权限点 ${PERMS.length} 个 / 角色 ${roleRecords.length} 个 / 映射 ${rows.length} 条`);
-  return { seeded: true };
+  return { seeded: false };
 }
 
 // 预置默认币种基准汇率（无 USD→CNY 时）

@@ -47,10 +47,13 @@ ENV NODE_ENV=production \
 # su-exec 入口脚本修好挂载卷属主后降权到 node 用户运行
 # tzdata  预警时间、审计日志要按本地时区记录，Alpine 默认只有 UTC
 # postgresql-client：提供 pg_dump/pg_restore，供备份/恢复脚本转储业务库
-# font-noto-cjk：pdfkit 中文字体（D1 PDF 渲染），Alpine 默认无 CJK 字体，不装 PDF 中文会缺字形。
-#   已移除 chromium 无头浏览器（镜像瘦身 2.33GB→1.21GB），渲染走 PDF_RENDERER=pdfkit。
+# font-noto-cjk：中文字体（HTML 渲染与 pdfkit 兜底都需要），Alpine 默认无 CJK 字体，不装 PDF 中文会缺字形
+# chromium + nss/freetype/harfbuzz/fontconfig：无头浏览器渲染 HTML→PDF，完整保留单证版式。
+#   打印单证是内存峰值操作，靠 pdfRenderer 的 --renderer-process-limit=1 / 堆上限 + 信号量并发=1
+#   控制峰值，宿主机 swap 兜底（见 server-optimize.sh）。低配场景可退回 PDF_RENDERER=pdfkit。
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories \
-    && apk add --no-cache tini su-exec tzdata postgresql-client font-noto-cjk
+    && apk add --no-cache tini su-exec tzdata postgresql-client font-noto-cjk \
+       chromium nss freetype harfbuzz fontconfig ca-certificates
 
 COPY --from=deps /app/node_modules ./node_modules
 

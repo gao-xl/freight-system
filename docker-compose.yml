@@ -138,6 +138,10 @@ services:
       # 缺省留空 = 后端使用进程内内存缓存（零外部依赖，单实例开箱即用）。
       # 启用方式：.env 设置 REDIS_URL=redis://redis:6379 且 docker compose --profile cache up -d
       REDIS_URL: ${REDIS_URL:-}
+      # PDF 渲染：无头浏览器(Chromium)渲染 HTML→PDF，完整保留单证版式（提单/对账单/发票）。
+      # 镜像已内置 chromium；低配场景可在 .env 设 PDF_RENDERER=pdfkit 退回轻量纯文本渲染。
+      PDF_RENDERER: ${PDF_RENDERER:-chromium}
+      PDF_BROWSER_PATH: /usr/bin/chromium
 
     ports:
       # 后端直连端口。只用浏览器访问的话可以整行注释掉，让后端只在内网可达
@@ -165,12 +169,13 @@ services:
       start_period: 25s
     # 资源上限：后端含 PDF 渲染(chromium)，打印单证是内存峰值操作。
     # 2 核 / 1G：Node 堆已用 NODE_OPTIONS 封顶，chromium 仅在打印时临时拉起，
-    # 峰值靠宿主机 swap 兜底，故设 512M；内存更大可在 .env 用 BACKEND_MEM_LIMIT 调高。
+    # 峰值靠宿主机 swap 兜底，故设 768M（比纯 pdfkit 时的 512M 略高，容纳无头浏览器）；
+    # 内存更大可在 .env 用 BACKEND_MEM_LIMIT 调高。
     deploy:
       resources:
         limits:
           cpus: "${BACKEND_CPU_LIMIT:-1.0}"
-          memory: "${BACKEND_MEM_LIMIT:-512M}"
+          memory: "${BACKEND_MEM_LIMIT:-768M}"
     logging:
       driver: json-file
       options:

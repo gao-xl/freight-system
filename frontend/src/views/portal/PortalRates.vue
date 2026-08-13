@@ -82,6 +82,7 @@
 <script setup>
 import { reactive, ref, computed } from 'vue';
 import { Search } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
 import { portalAPI } from '@/api';
 
 const loading = ref(false);
@@ -106,13 +107,14 @@ const validText = (row) => {
   if (!row.validFrom && !row.validTo) return '长期有效';
   return `${fmt(row.validFrom) || '即日'} ~ ${fmt(row.validTo) || '长期'}`;
 };
-const compareSummary = () => {
+// P1-N1 修复：compareSummary 改为 computed，模板 :title 自动解包并响应 rows 变化
+const compareSummary = computed(() => {
   if (!rows.value.length) return '暂无该航线运价，可尝试放宽筛选条件';
   const best = rows.value.filter((r) => r.best);
   if (!best.length) return '当前航线下有多家承运商可对比';
   const b = best[0];
   return `当前最优：${b.carrier}  ${b.containerType} ${b.rate} ${b.currency}`;
-};
+});
 
 async function load(page) {
   if (page) form.page = page;
@@ -137,9 +139,11 @@ async function load(page) {
       rec.value = null;
       unavailable.value = true;
     } else {
+      // P2-N3 修复：非 404 错误（500/网络等）给出提示，避免空白表格无反馈
       rows.value = [];
       total.value = 0;
       rec.value = null;
+      ElMessage.warning('运价查询失败，请稍后重试');
     }
   } finally {
     loading.value = false;

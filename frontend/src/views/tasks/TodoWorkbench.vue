@@ -228,5 +228,18 @@ onUnmounted(() => stopPolling());
   .sum-num { font-size: 26px; }
   .sum-role { font-size: 20px; }
   .toolbar { flex-wrap: wrap; gap: 8px; }
+  /* P1-4 修复：375px 窄屏下 minmax(300px) 会溢出，强制单列 */
+  .card-grid { grid-template-columns: 1fr; }
+}
+
+/* P2-5 修复：375px 专项断点，进一步收紧间距/字号，保证可操作性 */
+@media (max-width: 375px) {
+  .summary-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .sum-card { padding: 14px 16px; }
+  .sum-num { font-size: 24px; }
+  .sum-label { font-size: 12px; }
+  .todo-card { padding: 14px; }
+  .card-title { font-size: 14px; }
+  .card-msg { font-size: 12px; }
 }
 </style>

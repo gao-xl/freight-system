@@ -398,6 +398,19 @@ async function render(templateId, docType, bizId, opts = {}, req = null) {
   }
   // 未命中：进入信号量排队，限制并发渲染，防止 Chromium 内存叠加 OOM
   return pdfSemaphore.run(async () => {
+    // 内置版式优先：未指定自定义模板时，对支持的单据类型使用内置专用版式
+    // （提单/对账单/发票/费用通知单），替代通用"字段表单"默认模板。
+    if (!templateId) {
+      const builtin = require('./printBuiltin');
+      if (builtin.supports(docType)) {
+        const bizData = await loadBizData(docType, bizId, opts, req);
+        const html = builtin.renderBuiltinHTML(docType, bizData);
+        const pdf = await toPdf(html, 'A4');
+        const result = { html, pdf, tpl: { docType, pageSize: 'A4' } };
+        cacheSet(cKey, result, ttlMs);
+        return result;
+      }
+    }
     let tpl = null;
     if (templateId) {
       tpl = await PrintTemplate.findByPk(templateId);

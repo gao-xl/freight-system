@@ -125,6 +125,10 @@ const base = crudController({
   codeField: 'orderNo',
   includes: [{ model: Customer, as: 'customer', attributes: ['id', 'code', 'name'] }],
   order: [['id', 'DESC']],
+  // B2 数据隔离修复：此前未开启 scoped，导致 base 提供的 remove/batchRemove/batchUpdate/restore
+  // 四个写操作不叠加数据范围约束，跨组用户可删除/批量删除/批量更新/恢复他人订单，绕过隔离。
+  // 开启后这些操作自动经 scopedFindOne/scopedWhere 校验可见性（get/list 已自行覆盖不受影响）。
+  scoped: true,
 });
 
 // B2 数据权限：按用户可见范围取单个订单；无权限返回 null（admin=all 不受限）

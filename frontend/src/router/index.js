@@ -44,6 +44,7 @@ const routes = [
       { path: 'system/health', name: 'health', component: () => import('@/views/system/HealthCheck.vue'), meta: { title: '系统健康', icon: 'Monitor', permission: 'system:user' } },
       { path: 'system/groups', name: 'groups', component: () => import('@/views/system/GroupManage.vue'), meta: { title: '小组管理', hidden: true, permission: 'system:group' } },
       { path: 'system/company', name: 'company', component: () => import('@/views/system/CompanySetting.vue'), meta: { title: '公司设置', hidden: true, permission: 'system:company' } },
+      { path: 'system/notification-settings', name: 'notificationSettings', component: () => import('@/views/system/NotificationSettings.vue'), meta: { title: '通知配置', hidden: true, permission: 'integration:update' } },
       { path: 'system/custom-fields', name: 'customFields', component: () => import('@/views/system/CustomFieldManage.vue'), meta: { title: '自定义字段', hidden: true, permission: 'system:custom' } },
       { path: 'system/business-rules', name: 'businessRules', component: () => import('@/views/system/BusinessRuleManage.vue'), meta: { title: '业务规则', hidden: true, permission: 'alert:read' } },
       { path: 'system/workflow', name: 'workflow', component: () => import('@/views/system/WorkflowConfig.vue'), meta: { title: '流程配置', hidden: true, permission: 'alert:read' } },

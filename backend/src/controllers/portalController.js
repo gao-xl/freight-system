@@ -20,11 +20,12 @@ const overview = asyncHandler(async (req, res) => {
   const inProgress = orders.filter((o) => o.status === 'in_progress' || o.status === 'confirmed').length;
   const completed = orders.filter((o) => o.status === 'completed').length;
   const cancelled = orders.filter((o) => o.status === 'cancelled').length;
-  // 应收未收
-  const finance = await FinanceRecord.findAll({
-    where: { direction: 'receivable' },
-    include: [{ model: Order, as: 'order', attributes: ['id', 'customerId'], where: { customerId } }],
-  });
+  // 应收未收（P1-5 修复：先取本客户订单 id 集合，再按 orderId IN 查询，
+  // 避免先全量扫 receivable 再 JOIN 过滤的全表扫描，数据量增长后性能更好）
+  const orderIds = orders.map((o) => o.id);
+  const finance = orderIds.length
+    ? await FinanceRecord.findAll({ where: { direction: 'receivable', orderId: { [Op.in]: orderIds } } })
+    : [];
   let receivableBalance = 0;
   for (const f of finance) receivableBalance += Number(f.amount) - Number(f.paidAmount);
   ok(res, { customer, stats: { total, inProgress, completed, cancelled, receivableBalance }, recentOrders: orders.slice(0, 5) });
@@ -191,22 +192,21 @@ const submitSi = asyncHandler(async (req, res) => {
 // recommend 模式涉及历史成交报价，实时性要求高，不缓存。
 const rates = asyncHandler(async (req, res) => {
   const { from, to, keyword } = req.query;
-  const containerTypeRaw = String(req.query.containerType || '').toUpperCase();
+  const containerType = String(req.query.containerType || '').toUpperCase();
   const mode = String(req.query.mode || '').toLowerCase();
+  // P2-6 修复：containerType 校验提前到函数入口统一处理（list/compare/recommend 共用），
+  // 不再在 readThrough 回调内返回 __error 标记（避免错误对象被缓存、模式不清晰）。
+  if (containerType && !['20GP', '40GP', '40HQ'].includes(containerType)) {
+    return fail(res, 'containerType 仅支持 20GP/40GP/40HQ', 1, 400);
+  }
   // 仅 list/compare 走读缓存；recommend 直接回源
   if (mode !== 'recommend') {
-    const seed = ['portal-rate', from || '', to || '', keyword || '', containerTypeRaw, mode].join('|');
+    const seed = ['portal-rate', from || '', to || '', keyword || '', containerType, mode].join('|');
     const data = await readThrough(req, 'rate', seed, config.cache.rateTtl, async () => {
       const where = {};
       if (from) where.originPort = from;
       if (to) where.destPort = to;
-      const containerType = containerTypeRaw;
-      if (containerType) {
-        if (!['20GP', '40GP', '40HQ'].includes(containerType)) {
-          return { __error: 'containerType 仅支持 20GP/40GP/40HQ', __status: 400 };
-        }
-        where.containerType = containerType;
-      }
+      if (containerType) where.containerType = containerType;
       // 有效期过滤：空有效期视为长期有效
       const today = new Date();
       const conds = [
@@ -245,20 +245,13 @@ const rates = asyncHandler(async (req, res) => {
       }
       return { list: rows, total: rows.length, mode: 'list' };
     });
-    if (data.__error) return fail(res, data.__error, 1, data.__status);
     return ok(res, data);
   }
   // recommend 分支（不缓存，原逻辑）
   const where = {};
   if (from) where.originPort = from;
   if (to) where.destPort = to;
-  const containerType = containerTypeRaw;
-  if (containerType) {
-    if (!['20GP', '40GP', '40HQ'].includes(containerType)) {
-      return fail(res, 'containerType 仅支持 20GP/40GP/40HQ', 1, 400);
-    }
-    where.containerType = containerType;
-  }
+  if (containerType) where.containerType = containerType;
   // 有效期过滤：空有效期视为长期有效
   const today = new Date();
   const conds = [

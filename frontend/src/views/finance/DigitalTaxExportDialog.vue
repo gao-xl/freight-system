@@ -158,9 +158,9 @@
                 </el-table-column>
               </el-table>
               <div class="dtax-totals">
-                金额合计：<b>￥{{ money(inv.amount) }}</b>　
-                税率：<b>{{ inv.taxRate }}%</b>　
-                税额：<b>￥{{ money(inv.taxAmount) }}</b>　
+                金额合计：<b>￥{{ money(inv.amount) }}</b>
+                税率：<b>{{ inv.taxRate }}%</b>
+                税额：<b>￥{{ money(inv.taxAmount) }}</b>
                 价税合计：<b>￥{{ money(inv.totalAmount) }}</b>
               </div>
 

@@ -119,10 +119,11 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted, onUnmounted } from 'vue';
+import { reactive, ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { Download, Document, EditPen } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { useAuthStore } from '@/stores/auth';
 import { portalAPI } from '@/api';
 import { downloadBlob } from '@/utils/download';
 import PortalRates from './PortalRates.vue';
@@ -130,6 +131,7 @@ import PortalSiDialog from './PortalSiDialog.vue';
 import { ORDER_STATUS, ORDER_TYPE, MODE, TRACK_STAGE, FIN_CATEGORY, FIN_STATUS, dictText, statusOf, money } from '@/utils/dicts';
 
 const router = useRouter();
+const auth = useAuthStore();
 const tab = ref('orders');
 const loading = ref(false);
 const overview = ref({});
@@ -144,8 +146,10 @@ const siOrder = ref(null);
 const query = reactive({ page: 1, pageSize: 8, keyword: '', status: '' });
 const billQuery = reactive({ page: 1, pageSize: 8 });
 
-const detailCols = computed(() => (window.innerWidth < 768 ? 1 : 3));
-function onResize() { /* 响应式依赖于 computed 惰性求值，无需主动刷新 */ }
+// P1-1 修复：window.innerWidth 非响应式，computed 惰性求值不会随 resize 更新。
+// 改用 ref + resize 监听主动刷新列数。
+const detailCols = ref(window.innerWidth < 768 ? 1 : 3);
+function onResize() { detailCols.value = window.innerWidth < 768 ? 1 : 3; }
 function initResize() {
   window.addEventListener('resize', onResize);
 }
@@ -175,9 +179,10 @@ async function openDetail(id) {
   orderDetail.value = await portalAPI.orderDetail(id);
   detailVisible.value = true;
 }
-function logout() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('refreshToken');
+// P0-1 修复：门户登出必须复用 auth store 的 logout()，它会调用 logoutAPI 吊销服务端会话，
+// 使 httpOnly refresh token cookie 过期，避免公共电脑上残留会话被复用造成越权。
+async function logout() {
+  await auth.logout();
   router.push('/login');
 }
 
@@ -195,8 +200,9 @@ async function downloadOrderInvoice(orderId) {
   try {
     let d = orderDetail.value;
     if (!d || d.order?.id !== orderId) d = await portalAPI.orderDetail(orderId);
-    const fin = (d.finance || []).find((f) => f.direction === 'receivable') || d.finance?.[0];
-    if (!fin) return ElMessage.info('该订单暂无账单');
+    // P2-N1 修复：仅取应收账单，去掉 payable 回退，避免客户下载到应付费用通知单
+    const fin = (d.finance || []).find((f) => f.direction === 'receivable');
+    if (!fin) return ElMessage.info('该订单暂无应收账单');
     const resp = await portalAPI.invoiceDownload(orderId, fin.id);
     downloadBlob(resp, `账单-${d.order.orderNo || orderId}.pdf`);
   } catch (e) { downloadError(e, '', '账单下载暂未开放'); }

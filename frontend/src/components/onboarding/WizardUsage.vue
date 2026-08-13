@@ -24,9 +24,16 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { User, UserFilled, InfoFilled } from '@element-plus/icons-vue';
-// 使用方式（个人 / 团队）
-defineProps({ model: { type: String, required: true } });
+// 使用方式（个人 / 团队），通过 v-model 双向绑定（modelValue）
+const props = defineProps({ modelValue: { type: String, default: 'personal' } });
+const emit = defineEmits(['update:modelValue']);
+// 通过 computed 读写代理，避免直接修改 prop（vue/no-mutating-props）
+const model = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+});
 const usages = [
   { value: 'personal', label: '个人使用', desc: '一个人操作，所有数据自己可见', icon: User },
   { value: 'team', label: '团队协作', desc: '与同事一起协作，按小组隔离数据', icon: UserFilled },

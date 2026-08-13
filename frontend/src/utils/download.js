@@ -20,7 +20,8 @@ export function saveBlob(blob, filename) {
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // P2-N2 修复：click 触发下载是异步的，延迟 revoke 避免旧版浏览器下载空文件
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // 统一下载：resp 为 axios 完整响应（responseType: 'blob'），返回实际保存的文件名

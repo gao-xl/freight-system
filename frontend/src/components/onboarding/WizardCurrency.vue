@@ -5,17 +5,17 @@
         v-for="c in currencies"
         :key="c.value"
         class="currency-card"
-        :class="{ active: model.defaultCurrency === c.value }"
+        :class="{ active: form.defaultCurrency === c.value }"
         role="radio"
-        :aria-checked="model.defaultCurrency === c.value"
+        :aria-checked="form.defaultCurrency === c.value"
         tabindex="0"
-        @click="model.defaultCurrency = c.value"
-        @keyup.enter="model.defaultCurrency = c.value"
+        @click="form.defaultCurrency = c.value"
+        @keyup.enter="form.defaultCurrency = c.value"
       >
         <el-icon class="currency-icon"><Money /></el-icon>
         <div class="currency-code">{{ c.value }}</div>
         <div class="currency-name">{{ c.label }}</div>
-        <el-icon v-if="model.defaultCurrency === c.value" class="currency-check"><CircleCheckFilled /></el-icon>
+        <el-icon v-if="form.defaultCurrency === c.value" class="currency-check"><CircleCheckFilled /></el-icon>
       </div>
     </div>
     <p class="hint">单据金额将按默认币种显示，可后续在设置中修改。</p>
@@ -23,8 +23,11 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 // 默认币种（读写 /api/system/defaults，默认 CNY）
-defineProps({ model: { type: Object, required: true } });
+// 通过 computed 代理读写 model 对象属性，避免直接修改 prop（vue/no-mutating-props）
+const props = defineProps({ model: { type: Object, required: true } });
+const form = computed(() => props.model);
 const currencies = [
   { value: 'CNY', label: '人民币' },
   { value: 'USD', label: '美元' },

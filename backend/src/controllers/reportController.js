@@ -1,6 +1,7 @@
 const { ReportDefinition } = require('../services/dataAccess');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { runReport, FIELD_WHITELIST, AGGS } = require('../services/reportService');
+const { scopedWhere } = require('../middleware/dataScope');
 const { Op } = require('sequelize');
 
 // GET /reports/meta  前端下拉：数据源、字段白名单、聚合函数、图表类型
@@ -70,7 +71,9 @@ const run = asyncHandler(async (req, res) => {
   if (!def) return fail(res, '报表不存在', 1, 404);
   if (!def.enabled) return fail(res, '报表已停用', 1, 400);
   try {
-    const data = await runReport(def);
+    // B2 数据隔离修复：报表聚合只统计当前用户可见范围，防止跨组泄露
+    const scopeWhere = await scopedWhere(req, {});
+    const data = await runReport(def, scopeWhere);
     ok(res, data);
   } catch (e) {
     fail(res, `报表执行失败: ${e.message}`, 1, 400);

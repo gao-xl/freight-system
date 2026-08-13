@@ -71,6 +71,12 @@
         </div>
         <el-alert type="info" :closable="false" show-icon title="维护公司基本信息、组织部门、银行账号与开票抬头，供单证套打与开票选用。" />
       </el-tab-pane>
+      <el-tab-pane label="通知配置" name="notification">
+        <div class="toolbar">
+          <el-button v-permission="'integration:update'" type="primary" @click="goNotification"><el-icon><Bell /></el-icon>进入通知渠道配置</el-button>
+        </div>
+        <el-alert type="info" :closable="false" show-icon title="配置出站通知渠道（企微 Webhook / 通用 Webhook / 邮件）并测试连通性。预警、订单动态等事件将按此推送。" />
+      </el-tab-pane>
       <el-tab-pane label="自定义字段" name="custom">
         <div class="toolbar">
           <el-button v-permission="'system:custom'" type="primary" @click="goCustomFields"><el-icon><EditPen /></el-icon>进入自定义字段管理</el-button>
@@ -248,6 +254,7 @@ const goPrintDesigner = () => router.push('/system/print-templates');
 const goGroups = () => router.push('/system/groups');
 const goCustomFields = () => router.push('/system/custom-fields');
 const goCompany = () => router.push('/system/company');
+const goNotification = () => router.push('/system/notification-settings');
 const users = ref([]);
 const roles = ref([]);
 const permissions = ref([]);

@@ -43,8 +43,14 @@ async function getConfig() {
 // 保存通知配置（幂等 upsert）
 async function saveConfig({ webhookUrl, enabled = true, remark = '' }) {
   const { IntegrationConfig } = require('../../models');
-  const [row] = await IntegrationConfig.findOrCreate({ where: { code: CONFIG_CODE }, defaults: { name: '企微 Webhook 通知', type: 'webhook', authType: 'api_key', apiKey: webhookUrl || '', enabled, remark } });
-  await row.update({ apiKey: webhookUrl || row.apiKey, enabled, remark: remark || row.remark });
+  // P2-4 修复：findOrCreate 返回 [row, created]，新建时 defaults 已写入，无需再 update；仅已存在时更新
+  const [row, created] = await IntegrationConfig.findOrCreate({
+    where: { code: CONFIG_CODE },
+    defaults: { name: '企微 Webhook 通知', type: 'webhook', authType: 'api_key', apiKey: webhookUrl || '', enabled, remark },
+  });
+  if (!created) {
+    await row.update({ apiKey: webhookUrl || row.apiKey, enabled, remark: remark || row.remark });
+  }
   return getConfig();
 }
 

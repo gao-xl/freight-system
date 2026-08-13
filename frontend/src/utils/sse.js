@@ -1,17 +1,23 @@
 // F5 实时推送：基于 fetch + ReadableStream 的 SSE 客户端
 // 原生 EventSource 无法携带 Authorization header，故用 fetch 流式读取，
 // 解析 'data: ...' 帧，自动断线重连。
-export function createSSE({ url, token, onEvent, onError, retryDelay = 3000 }) {
+// 修复：token 不再作为固定参数传入，每次重连都从 localStorage 读取最新 token，
+//       避免 access token 刷新后 SSE 仍用旧 token 导致 401 死循环。
+export function createSSE({ url, onEvent, onError, retryDelay = 3000 }) {
   let running = true;
   let controller = null;
   let timer = null;
+
+  function currentToken() {
+    return localStorage.getItem('token') || '';
+  }
 
   async function connect() {
     if (!running) return;
     controller = new AbortController();
     try {
       const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${currentToken()}` },
         signal: controller.signal,
       });
       if (!resp.ok || !resp.body) throw new Error(`SSE HTTP ${resp.status}`);

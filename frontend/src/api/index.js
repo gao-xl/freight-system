@@ -20,5 +20,6 @@ export * from './integration';
 export * from './workflow';
 export * from './alert';
 export * from './message';
+export * from './notification';
 export * from './portal';
 export * from './misc';
