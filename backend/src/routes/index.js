@@ -492,6 +492,10 @@ router.post('/ai/chat', guard('ai', 'use'), ai.chat);
 router.post('/ai/extract', guard('ai', 'use'), ai.extract);
 router.post('/ai/generate', guard('ai', 'use'), ai.generate);
 router.post('/ai/recommend', guard('ai', 'use'), ai.recommend);
+// AI 服务商设置（写入 IntegrationConfig，复用对接管理权限）
+router.get('/ai/settings', guard('ai', 'use'), ai.getSettings);
+router.put('/ai/settings', guard('integration', 'update'), ai.saveSettings);
+router.post('/ai/test', guard('integration', 'update'), ai.test);
 
 // C1 港口官方平台
 router.get('/ports', guard('track', 'read'), port.ports);

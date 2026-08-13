@@ -77,6 +77,12 @@
         </div>
         <el-alert type="info" :closable="false" show-icon title="配置出站通知渠道（企微 Webhook / 通用 Webhook / 邮件）并测试连通性。预警、订单动态等事件将按此推送。" />
       </el-tab-pane>
+      <el-tab-pane label="AI 设置" name="ai">
+        <div class="toolbar">
+          <el-button v-permission="'integration:update'" type="primary" @click="goAiSettings"><el-icon><MagicStick /></el-icon>进入 AI 设置</el-button>
+        </div>
+        <el-alert type="info" :closable="false" show-icon title="选择 AI 服务商（OpenRouter / OpenAI / 小米MiMo / DeepSeek / 通义 / 智谱 / Kimi / MiniMax / 本地 Ollama / 自定义），填写 API Key 与模型即可启用 AI 助手。可测试连通性。" />
+      </el-tab-pane>
       <el-tab-pane label="自定义字段" name="custom">
         <div class="toolbar">
           <el-button v-permission="'system:custom'" type="primary" @click="goCustomFields"><el-icon><EditPen /></el-icon>进入自定义字段管理</el-button>
@@ -255,6 +261,7 @@ const goGroups = () => router.push('/system/groups');
 const goCustomFields = () => router.push('/system/custom-fields');
 const goCompany = () => router.push('/system/company');
 const goNotification = () => router.push('/system/notification-settings');
+const goAiSettings = () => router.push('/system/ai-settings');
 const users = ref([]);
 const roles = ref([]);
 const permissions = ref([]);

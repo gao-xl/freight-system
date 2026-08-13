@@ -4,6 +4,7 @@
 // 数据隔离：问答/推荐所需的业务摘要按调用方 dataScope 过滤，绝不越权取数。
 const { Op } = require('sequelize');
 const { IntegrationClient } = require('../integrations');
+const aiChatAdapter = require('../integrations/adapters/aiChat');
 const { logger } = require('../utils/logger');
 const { Order, FinanceRecord, AlertRecord, Quotation, Customer } = require('./dataAccess');
 
@@ -19,6 +20,27 @@ async function callAI({ system, user, temperature, maxTokens, json, model }) {
   const result = await client.query({ system, user, temperature, maxTokens, json, model });
   logger.info('[AI] 调用完成', { model: result.model, chars: (result.content || '').length });
   return result;
+}
+
+// 连通性测试：用给定参数（不落库、不要求已启用）直连目标服务
+async function testSettings({ baseUrl, apiKey, model, temperature, maxTokens }) {
+  if (!apiKey) {
+    const e = new Error('缺少 API Key，无法测试');
+    e.code = 'AI_NOT_CONFIGURED';
+    throw e;
+  }
+  const cfg = {
+    baseUrl: baseUrl || process.env.AI_BASE_URL || 'https://openrouter.ai/api/v1',
+    apiKey,
+    config: JSON.stringify({ model: model || process.env.AI_MODEL || 'openai/gpt-4o-mini', temperature: temperature ?? 0.3, maxTokens: maxTokens ?? 2048 }),
+  };
+  const result = await aiChatAdapter.query(cfg, {
+    system: '你是货运系统 AI 连通性测试助手。',
+    user: '请只回复两个字：连接成功',
+    temperature: temperature ?? 0.3,
+    maxTokens: maxTokens ?? 64,
+  });
+  return { content: result.content, model: result.model, usage: result.usage };
 }
 
 // 按 dataScope 生成查询约束（scope: all / group / self）
@@ -128,4 +150,4 @@ async function recommend({ kind, data, scope, temperature }) {
   return { content: result.content, model: result.model };
 }
 
-module.exports = { callAI, chat, extract, generate, recommend, buildBusinessBrief };
+module.exports = { callAI, chat, extract, generate, recommend, buildBusinessBrief, testSettings };

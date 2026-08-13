@@ -7,4 +7,8 @@ export const aiAPI = {
   extract: (data) => request.post('/ai/extract', data),
   generate: (data) => request.post('/ai/generate', data),
   recommend: (data) => request.post('/ai/recommend', data),
+  // AI 服务商设置
+  getSettings: () => request.get('/ai/settings'),
+  saveSettings: (data) => request.put('/ai/settings', data),
+  test: (data) => request.post('/ai/test', data),
 };
