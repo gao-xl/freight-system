@@ -41,6 +41,16 @@ jobs:
       - name: 安装依赖
         run: npm install
 
+      - name: 安装 Chromium 运行依赖（PDF 渲染测试需要）
+        # ubuntu-latest 预装 google-chrome-stable，但 headless 启动缺少若干共享库，
+        # 不装会导致 pdf.test.js D1-2 超时回退 pdfkit 返回 null 而失败。
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+            libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+            libgbm1 libasound2 libpango-1.0-0 libcairo2 libx11-xcb1
+
       - name: 静态检查（ESLint 架构铁律）
         run: npm run lint
 
