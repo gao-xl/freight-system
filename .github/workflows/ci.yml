@@ -233,13 +233,15 @@ jobs:
         run: node scripts/bootstrap.js all
 
   docker-build:
-    # 推送到 main 时构建并推送多架构镜像（amd64 + arm64）到 GHCR，
-    # 任意 x86/ARM 主机 docker compose 都能自动拉取匹配架构。
+    # 推送到 main 时构建并推送 amd64 镜像到 GHCR。
     # 仅推送 main，PR 不触发，避免未合并代码干扰镜像标签。
-    # 在 GitHub 托管 runner（ubuntu-latest）上云端构建，QEMU 交叉编译 arm64，
-    # 避免低配生产机（2核1G）本地构建拖垮内存。
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    name: 多架构镜像构建与推送 (amd64+arm64)
+    # 在 GitHub 托管 runner（ubuntu-latest）上云端构建，避免低配生产机（2核1G）本地构建拖垮内存。
+    # 说明：仅构建 amd64。此前尝试 amd64+arm64 多架构，QEMU 交叉编译 arm64 时后端
+    #       npm ci 编译原生模块崩溃（exit 132 / SIGILL），且生产机为 amd64 无需 arm64，
+    #       故收敛为单架构，构建更快更稳。
+    # 仅在 GitHub Actions 上运行，防止 Gitea Actions 误推旧镜像覆盖 GHCR 标签
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && runner.name != 'gitea-actions'
+    name: 镜像构建与推送 (amd64)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -253,21 +255,17 @@ jobs:
           npm ci
           npm run build
 
-      # QEMU 让 x86 的 CI 机器也能为 arm64 交叉构建
-      - name: 设置 QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: 设置 Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: 登录 GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: 构建并推送多架构镜像
+      - name: 构建并推送镜像
         env:
           IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/
           IMAGE_TAG: ${{ github.ref_name }}
-          PLATFORMS: linux/amd64,linux/arm64
+          PLATFORMS: linux/amd64
           # 用 -f docker-bake.hcl 显式只加载 HCL 定义，避免 bake 默认再合并根目录
           # docker-compose.yml（其 backend 服务引用 env_file: .env，CI runner 无该文件会报错）。
           # 占位 DB_PASSWORD 仅为防御性保留，HCL 构建本身不读取 compose。
