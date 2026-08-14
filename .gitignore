@@ -36,6 +36,9 @@ backups/
 logs/
 *.log
 
+# 运维脚本运行时状态（宕机探测去重用，禁止提交）
+backend/ops-healthcheck.state.json
+
 # 编辑器/系统
 .DS_Store
 Thumbs.db
