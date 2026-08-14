@@ -16,6 +16,8 @@ const User = sequelize.define('User', {
   customerId: { type: DataTypes.INTEGER }, // C5 客户自助门户：关联客户档案（仅 customer 角色）
   tokenVersion: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }, // D8 JWT 吊销版本号：改密/禁用时 +1，旧 token 即刻失效
   mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding：默认账号首登强制改密（改密成功即清除）
+  loginFails: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }, // S3 登录锁定：连续失败计数
+  lockedUntil: { type: DataTypes.DATE, allowNull: true }, // S3 登录锁定：锁定截止时间（未锁定为 null）
 }, { timestamps: true });
 
 module.exports = User;

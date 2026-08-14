@@ -18,7 +18,7 @@ async function authRequired(req, res, next) {
     try {
       const decoded = jwt.verify(token, config.jwtSecret);
       // D8：每次请求校验用户存在/启用 + tokenVersion 匹配（改密/禁用后旧 token 即刻失效）
-      const userQuery = User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion', 'customerId'] });
+      const userQuery = User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion', 'customerId', 'mustChangePassword'] });
       // M3：access token 携带 sid，校验对应会话未被端线下线撤销/过期（无 sid 的存量 token 跳过此检查，平滑过渡）
       const sessionQuery = decoded.sid
         ? Session.findByPk(decoded.sid, { attributes: ['revokedAt', 'expiresAt'] })
@@ -30,7 +30,7 @@ async function authRequired(req, res, next) {
         return res.status(401).json({ code: 401, message: '凭证无效，请重新登录' });
       }
       // U1 深挖修复：JWT 不含 customerId，需以 DB 为准合并进 req.user，否则门户接口永远拿不到客户档案
-      req.user = { ...decoded, customerId: user.customerId ?? decoded.customerId ?? null };
+      req.user = { ...decoded, customerId: user.customerId ?? decoded.customerId ?? null, mustChangePassword: !!user.mustChangePassword };
       req.sessionId = decoded.sid || null;
       req.authType = 'jwt';
       return next();
@@ -82,6 +82,22 @@ function requireRole(...roles) {
   };
 }
 
+// P0-1 纵深防御：用户 mustChangePassword=true（默认账号首登强制改密）时，
+// 除白名单端点（改密/登出/本人信息/会话/刷新）外一律 403，防止绕过前端直接调用接口。
+// 默认不全局挂载（避免破坏无头测试/脚本式调用），由路由在敏感端点按需启用：
+//   router.use(authRequired); router.use(forcePasswordChange); ...
+function forcePasswordChange(req, res, next) {
+  if (req.user && req.user.mustChangePassword) {
+    const whitelist = ['change-password', 'logout', 'logout-all', 'me', 'sessions', 'refresh'];
+    const requestPath = req.path.split('?')[0];
+    const allowed = whitelist.some((w) => requestPath.endsWith(w));
+    if (!allowed) {
+      return res.status(403).json({ code: 403, message: '请先修改初始密码后再继续操作' });
+    }
+  }
+  next();
+}
+
 // 解析当前请求的有效权限集合
 // JWT 会话取用户权限；密钥调用再与密钥声明的角色求交集，保证密钥只能收窄不能提权
 function resolvePermissions(req) {
@@ -112,4 +128,4 @@ function requirePermission(module, action) {
 // 便捷封装：登录 + 权限一步到位
 const guard = (module, action) => [authRequired, requirePermission(module, action)];
 
-module.exports = { authRequired, denyApiKeyAuth, requireRole, requirePermission, resolvePermissions, guard };
+module.exports = { authRequired, denyApiKeyAuth, requireRole, requirePermission, forcePasswordChange, resolvePermissions, guard };

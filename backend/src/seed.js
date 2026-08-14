@@ -12,12 +12,14 @@ async function seed() {
   console.log('数据库已重建');
 
   // 用户
+  // 安全加固：预置账号统一 mustChangePassword=true，首次登录即强制改密，
+  // 消除 admin/123456 等弱口令裸奔（与 bootstrap 生产路径口径一致）。
   const pwd = await bcrypt.hash('123456', 10);
   const users = [
-    { username: 'admin', name: '系统管理员', role: 'admin', password: pwd },
-    { username: 'manager', name: '张经理', role: 'manager', password: pwd },
-    { username: 'operator', name: '李操作', role: 'operator', password: pwd },
-    { username: 'finance', name: '王财务', role: 'finance', password: pwd },
+    { username: 'admin', name: '系统管理员', role: 'admin', password: pwd, mustChangePassword: true },
+    { username: 'manager', name: '张经理', role: 'manager', password: pwd, mustChangePassword: true },
+    { username: 'operator', name: '李操作', role: 'operator', password: pwd, mustChangePassword: true },
+    { username: 'finance', name: '王财务', role: 'finance', password: pwd, mustChangePassword: true },
   ];
   await User.bulkCreate(users);
 
@@ -204,7 +206,7 @@ async function seed() {
     { code: 'freight_rate', name: '运价查询', apiKey: '', authType: 'api_key', enabled: false, remark: '报价参考（预留）' },
     { code: 'ai_chat', name: 'AI 大模型（OpenAI 兼容 / OpenRouter）', baseUrl: 'https://openrouter.ai/api/v1', apiKey: '', authType: 'api_key', enabled: false, config: '{"model":"openai/gpt-4o-mini","temperature":0.3,"maxTokens":2048}', remark: '第三方 AI 统一接入（智能问答/单据识别/翻译生成/推荐预警）' },
   ];
-  await IntegrationConfig.bulkCreate(integrations);
+  await IntegrationConfig.bulkCreate(integrations, { hooks: true });
 
   // 场站名录（青岛港主流场站）
   const yardMetas = [
@@ -334,7 +336,7 @@ async function seed() {
   await UserRole.bulkCreate(userRoles);
 
   console.log('演示数据初始化完成');
-  console.log('登录账号: admin / 123456（另含 manager / operator / finance）');
+  console.log('预置账号: admin / manager / operator / finance，初始密码 123456，首次登录须改密');
   process.exit(0);
 }
 

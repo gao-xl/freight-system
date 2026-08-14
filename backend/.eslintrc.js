@@ -20,6 +20,9 @@ module.exports = {
     },
   },
   rules: {
+    // S4 质量护栏：过长文件与高复杂度告警（warn 不阻断构建，仅提示拆分时机）
+    'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
+    'complexity': ['warn', { max: 20 }],
     'no-restricted-imports': ['error', {
       patterns: [
         // 铁律 1：禁止依赖控制器层（依赖只能向下）。services/domain/core 不得 import controllers

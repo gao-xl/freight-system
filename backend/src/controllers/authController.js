@@ -75,13 +75,32 @@ const login = asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return fail(res, '用户名和密码不能为空');
   const user = await User.findOne({ where: { username } });
+  const { maxFails, lockoutMinutes } = config.loginLock;
+  const now = Date.now();
+
+  // S3 登录锁定：账号锁定中直接拒绝并返回剩余分钟数（423，避免走前端 401 刷新流程）
+  if (user && user.lockedUntil && new Date(user.lockedUntil).getTime() > now) {
+    const remainMin = Math.ceil((new Date(user.lockedUntil).getTime() - now) / 60000);
+    return fail(res, `登录失败次数过多，账号已锁定，请 ${remainMin} 分钟后再试`, 1, 423);
+  }
+
   const validUser = !!user && user.status === 'active';
   // 恒定时间比较：无论用户是否存在/禁用都执行 bcrypt，避免通过响应时间枚举用户名
   const passwordValid = validUser ? await bcrypt.compare(password, user.password) : await bcrypt.compare(password, DUMMY_HASH);
   if (!validUser || !passwordValid) {
+    // S3 锁定：仅对真实存在的活动账号累计失败（不存在的账号不产生可枚举副作用，保持恒定时间比较）
+    if (validUser) {
+      const fails = (user.loginFails || 0) + 1;
+      if (fails >= maxFails) {
+        await user.update({ loginFails: 0, lockedUntil: new Date(now + lockoutMinutes * 60000) });
+      } else {
+        await user.update({ loginFails: fails });
+      }
+    }
     return fail(res, '用户名或密码错误', 1, 401);
   }
-  await user.update({ lastLoginAt: new Date() });
+  // S3 登录成功：清除失败计数与锁定
+  await user.update({ lastLoginAt: new Date(), loginFails: 0, lockedUntil: null });
   // D8：签发带 ver（tokenVersion）与 jti 的 token；M3：同步签发 refresh token 并登记会话
   const session = await sessionService.createSession(user, deviceInfo(req));
   const token = signAccessToken(user, session.sessionId);

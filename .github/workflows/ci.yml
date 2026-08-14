@@ -72,6 +72,22 @@ jobs:
           TEST_DB_USER: freight
           TEST_DB_PASSWORD: freight
 
+      - name: 覆盖率（node 内置 test-coverage，V8 引擎）
+        run: |
+          npm run seed
+          npm run test:coverage
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_NAME: freight_test
+          DB_USER: freight
+          DB_PASSWORD: freight
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: 5432
+          TEST_DB_NAME: freight_test
+          TEST_DB_USER: freight
+          TEST_DB_PASSWORD: freight
+
   security-regression:
     # 安全整改回归防线：每次 push/PR 独立触发，快速、明确地校验越权/提权修复不回归。
     # 独立于上面的大而全 backend 作业，让安全失败信号清晰可见、便于快速定位。
@@ -132,6 +148,9 @@ jobs:
 
       - name: 安装依赖
         run: npm install
+
+      - name: 单元测试（vitest 纯函数/工具骨架）
+        run: npm test
 
       - name: 构建
         run: npm run build

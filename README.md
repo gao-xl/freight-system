@@ -102,6 +102,7 @@ frontend/
 - Docker：`docker compose up -d`，内置 PostgreSQL 服务，容器已配置资源限制与健康检查
 - 部署前检查：`cd backend && node scripts/check-env.js`
 - 备份 / 恢复：`cd backend && npm run backup`（归档到 `backend/backups/`，保留最近 7 份），恢复用 `npm run restore`
+- 正式上线安全加固：`cd backend && npm run security:harden -- --apply --force-admin-password`（清理预置测试账号、强制 admin 首登改密、强制现存会话重新登录；默认 dry-run 预览，确认后加 `--apply`）
 - 监控：`/api/metrics`（Prometheus）、`/api/health`（数据库连通性）
 
 ## 安全
@@ -110,6 +111,7 @@ frontend/
 - Helmet 安全头、CORS 白名单、全局与登录限流
 - 上传文件扩展名白名单、路径穿越校验、字段保护
 - bcrypt 密码加密、操作审计日志、RBAC 权限点、数据范围隔离
+- 预置账号（演示/初始化）统一 `mustChangePassword=true`，首次登录强制改密
 
 完整安全设计见 [`docs/安全设计.md`](docs/安全设计.md)。
 

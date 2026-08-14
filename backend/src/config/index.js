@@ -62,6 +62,11 @@ module.exports = {
     max: parseInt(process.env.RATE_LIMIT_MAX) || 300, // 全局限流
     loginMax: parseInt(process.env.RATE_LIMIT_LOGIN_MAX) || 20, // 登录次数
   },
+  // S3 登录锁定：连续失败 maxFails 次锁定 lockoutMinutes 分钟（防撞库爆破）
+  loginLock: {
+    maxFails: parseInt(process.env.LOGIN_LOCK_MAX_FAILS) || 5,
+    lockoutMinutes: parseInt(process.env.LOGIN_LOCK_MINUTES) || 15,
+  },
   // 外部系统对接配置（端口/海关/财务等），可在运行期通过 IntegrationConfig 表动态维护
   integrations: {
     port: process.env.PORT_SVC_URL || 'http://localhost:4001',
