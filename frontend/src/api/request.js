@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { ElMessage } from 'element-plus';
 import router from '@/router';
+import { unwrapResponse } from './unwrap';
 
 const request = axios.create({
   baseURL: '/api',
@@ -63,15 +64,15 @@ request.interceptors.response.use(
   (response) => {
     // blob 响应（下载/预览）直接放行
     if (response.config.responseType === 'blob') return response;
-    const res = response.data;
-    if (res.code !== 0) {
+    const { ok, data, message } = unwrapResponse(response.data);
+    if (!ok) {
       // silent 请求（如门户 fail-open 下载/查询）由调用方按业务兜底提示，不在此统一弹错
       if (!response.config?.silent) {
-        ElMessage.error(res.message || '请求失败');
+        ElMessage.error(message);
       }
-      return Promise.reject(new Error(res.message));
+      return Promise.reject(new Error(message));
     }
-    return res.data;
+    return data;
   },
   async (error) => {
     const status = error.response?.status;

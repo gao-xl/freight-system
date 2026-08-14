@@ -9,6 +9,9 @@ module.exports = {
   ],
   parserOptions: { ecmaVersion: 2022, sourceType: 'module' },
   rules: {
+    // S4 质量护栏：过长文件与高复杂度告警（warn 不阻断构建，仅提示拆分时机）
+    'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
+    'complexity': ['warn', { max: 20 }],
     // 模板内未使用变量等 Vue 常见噪音，按团队习惯放宽
     'vue/multi-word-component-names': 'off',
     'vue/no-v-html': 'off',

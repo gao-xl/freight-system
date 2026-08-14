@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { loginAPI, meAPI, logoutAPI, refreshAPI } from '@/api';
+import { hasPermission as _hasPermission } from '@/utils/hasPermission';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -52,13 +53,9 @@ export const useAuthStore = defineStore('auth', {
         // 忽略：能力获取失败时保持默认（chromium 开启态）
       }
     },
-    // 权限判断：支持 'module:action' 或模块通配
+    // 权限判断：支持 'module:action' 或模块通配（逻辑见 utils/hasPermission.js 纯函数）
     hasPermission(need) {
-      if (!need) return true;
-      const perms = this.permissions;
-      if (perms.includes('*')) return true;
-      const [module, action] = need.split(':');
-      return perms.includes(need) || (action && perms.includes(`${module}:*`));
+      return _hasPermission(this.permissions, need);
     },
     // 角色判断（兼容旧逻辑）
     hasRole(...roles) {

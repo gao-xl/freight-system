@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -8,6 +8,11 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
+  },
+  test: {
+    // 最小骨架：纯函数/工具逻辑用 node 环境；组件测试后续再引入 jsdom
+    environment: 'node',
+    include: ['tests/**/*.test.js'],
   },
   server: {
     port: 5173,
