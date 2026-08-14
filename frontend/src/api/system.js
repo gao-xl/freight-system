@@ -65,3 +65,9 @@ export const companyProfileAPI = {
   get: () => request.get('/company/profile'),
   save: (data) => request.put('/company/profile', data),
 };
+// S4 安全设置（2FA 开关 + SMTP 配置）
+export const securityAPI = {
+  get: () => request.get('/system/security-settings'),
+  save: (data) => request.put('/system/security-settings', data),
+  smtpTest: (data) => request.post('/system/smtp-test', data),
+};

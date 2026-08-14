@@ -223,6 +223,7 @@
           <el-divider direction="vertical" />
         </template>
         <el-button @click="exportExcel"><el-icon><Download /></el-icon>导出Excel</el-button>
+        <el-button @click="openFx"><el-icon><Coin /></el-icon>汇率管理</el-button>
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增费用</el-button>
       </div>
     </div>
@@ -287,7 +288,11 @@
         <el-form-item label="说明"><el-input v-model="form.description" /></el-form-item>
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="金额"><el-input-number v-model="form.amount" :min="0" :precision="2" style="width:100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="币种"><el-input v-model="form.currency" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="币种">
+            <el-select v-model="form.currency" filterable allow-create style="width:100%">
+              <el-option v-for="c in CURRENCIES" :key="c.value" :label="c.label" :value="c.value" />
+            </el-select>
+          </el-form-item></el-col>
           <el-col :span="12"><el-form-item label="状态"><el-select v-model="form.status" style="width:100%"><el-option v-for="(v,k) in FIN_STATUS" :key="k" :label="v.text" :value="k" /></el-select></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="发票号"><el-input v-model="form.invoiceNo" /></el-form-item></el-col>
         </el-row>
@@ -325,7 +330,11 @@
             </el-form-item>
           </el-col>
           <el-col :span="12"><el-form-item label="到账金额"><el-input-number v-model="payForm.amount" :min="0.01" :precision="2" style="width:100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="币种"><el-input v-model="payForm.currency" placeholder="CNY" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="币种">
+            <el-select v-model="payForm.currency" filterable allow-create placeholder="CNY" style="width:100%">
+              <el-option v-for="c in CURRENCIES" :key="c.value" :label="c.label" :value="c.value" />
+            </el-select>
+          </el-form-item></el-col>
           <el-col :span="12"><el-form-item label="到账日期"><el-date-picker v-model="payForm.paidAt" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="备注"><el-input v-model="payForm.remark" placeholder="如：银行回款单号" /></el-form-item></el-col>
         </el-row>
@@ -397,8 +406,9 @@
         <el-table-column label="说明" min-width="160">
           <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="费用说明" /></template>
         </el-table-column>
-        <el-table-column label="币种" width="90">
-          <template #default="{ row }"><el-input v-model="row.currency" size="small" /></template>
+        <el-table-column label="币种" width="110">
+          <template #default="{ row }"><el-select v-model="row.currency" size="small" filterable allow-create>
+            <el-option v-for="c in CURRENCIES" :key="c.value" :label="c.label" :value="c.value" /></el-select></template>
         </el-table-column>
         <el-table-column label="金额" width="130">
           <template #default="{ row }"><el-input-number v-model="row.amount" :min="0" :precision="2" size="small" style="width:100%" /></template>
@@ -407,10 +417,47 @@
           <template #default="{ $index }"><el-button link type="danger" @click="tplEdit.items.splice($index, 1)"><el-icon><Delete /></el-icon></el-button></template>
         </el-table-column>
       </el-table>
-      <div style="margin-top:8px;text-align:right"><el-button size="small" @click="tplEdit.items.push({ direction:'receivable', category:'ocean_freight', description:'', currency:'USD', amount:0 })">添加一行</el-button></div>
+      <div style="margin-top:8px;text-align:right"><el-button size="small" @click="tplEdit.items.push({ direction:'receivable', category:'ocean_freight', description:'', currency:defaultCurrency, amount:0 })">添加一行</el-button></div>
       <template #footer>
         <el-button @click="tplEditVisible = false">取消</el-button>
         <el-button type="primary" :loading="tplSaving" @click="saveTpl">保存模板</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 汇率管理（多币种） -->
+    <el-dialog v-model="fxDialog" title="汇率管理" width="680px">
+      <div class="batch-tip">
+        基准币种 <b>{{ fxBase }}</b> → 目标币种。当日汇率优先，缺失时回退最近记录或内置兜底；可手动修改或触发自动刷新。
+      </div>
+      <div style="margin:10px 0">
+        <el-button size="small" :loading="fxSaving" @click="refreshExchangeRatesFx"><el-icon><Refresh /></el-icon>自动刷新</el-button>
+        <span style="margin-left:12px;font-size:12px;color:var(--text-muted)">汇率日期：{{ fxRateDate || '-' }}</span>
+      </div>
+      <el-table :data="fxList" v-loading="fxLoading" size="small" border>
+        <el-table-column prop="targetCurrency" label="币种" width="90">
+          <template #default="{ row }">{{ row.targetCurrency }}</template>
+        </el-table-column>
+        <el-table-column label="汇率" width="160">
+          <template #default="{ row }">
+            <el-input-number v-model="row.rate" :min="0.000001" :precision="6" :step="0.01" size="small" style="width:130px" />
+          </template>
+        </el-table-column>
+        <el-table-column label="来源" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.source === 'db' ? 'success' : row.source === 'latest' ? 'warning' : 'info'">{{ FX_SOURCE_TEXT[row.source] || row.source }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="汇率日期" width="110">
+          <template #default="{ row }">{{ row.rateDate || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" :loading="fxSaving" @click="saveExchangeRate(row)">保存</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="fxDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -423,8 +470,8 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import * as echarts from 'echarts';
 import { financeAPI, financeSummaryAPI, financeTrendAPI, orderAPI, financeExportAPI, financeBatchWriteoffAPI,
   financePeriodsAPI, financeEnsurePeriodsAPI, financeClosePeriodAPI, financeLockPeriodAPI, financeUnlockPeriodAPI, financePeriodStatementAPI, feeTemplateAPI, financeAgingAPI, financePaymentAPI, customerAPI,
-  financeReverseAPI } from '@/api';
-import { FIN_DIRECTION, FIN_CATEGORY, FIN_STATUS, dictText, statusOf, money } from '@/utils/dicts';
+  financeReverseAPI, exchangeRateAPI, systemDefaultsAPI } from '@/api';
+import { FIN_DIRECTION, FIN_CATEGORY, FIN_STATUS, CURRENCIES, dictText, statusOf, money } from '@/utils/dicts';
 
 const PERIOD_STATUS = {
   open: { text: '未结账', type: 'success' },
@@ -548,7 +595,7 @@ async function loadTpls() {
 }
 function openTplEdit(row) {
   if (row) tplEdit.value = { id: row.id, name: row.name, items: (row.items || []).map((i) => ({ ...i })) };
-  else tplEdit.value = { id: null, name: '', items: [{ direction: 'receivable', category: 'ocean_freight', description: '', currency: 'USD', amount: 0 }] };
+  else tplEdit.value = { id: null, name: '', items: [{ direction: 'receivable', category: 'ocean_freight', description: '', currency: defaultCurrency.value, amount: 0 }] };
   tplEditVisible.value = true;
 }
 async function saveTpl() {
@@ -769,9 +816,61 @@ async function loadReconcile() {
 }
 
 function openDialog(row) {
-  form.value = row ? { ...row } : { direction: 'receivable', category: 'ocean_freight', status: 'unpaid', currency: 'USD', amount: 0, paidAmount: 0 };
+  form.value = row ? { ...row } : { direction: 'receivable', category: 'ocean_freight', status: 'unpaid', currency: defaultCurrency.value, amount: 0, paidAmount: 0 };
   dialogVisible.value = true;
 }
+
+// 系统默认币种（多币种：新增费用默认跟随系统配置）
+const defaultCurrency = ref('CNY');
+async function loadDefaultCurrency() {
+  try {
+    const d = await systemDefaultsAPI.get();
+    defaultCurrency.value = d.defaultCurrency || 'CNY';
+  } catch { defaultCurrency.value = 'CNY'; }
+}
+
+// ===== 汇率管理（多币种：查看/手动维护/刷新）=====
+const fxDialog = ref(false);
+const fxLoading = ref(false);
+const fxSaving = ref(false);
+const fxBase = ref('USD');
+const fxList = ref([]);
+const fxRateDate = ref('');
+async function loadExchangeRates() {
+  fxLoading.value = true;
+  try {
+    const d = await exchangeRateAPI.list({ base: fxBase.value });
+    fxList.value = d.list || [];
+    fxRateDate.value = d.rateDate || '';
+  } finally { fxLoading.value = false; }
+}
+function openFx() { fxDialog.value = true; loadExchangeRates(); }
+async function saveExchangeRate(row) {
+  const rate = Number(row.rate);
+  if (!Number.isFinite(rate) || rate <= 0) return ElMessage.warning('汇率必须为正数');
+  fxSaving.value = true;
+  try {
+    if (row.id) {
+      await exchangeRateAPI.update(row.id, { rate });
+      ElMessage.success(`${row.baseCurrency}/${row.targetCurrency} 汇率已更新`);
+    } else {
+      await exchangeRateAPI.upsert({ baseCurrency: row.baseCurrency, targetCurrency: row.targetCurrency, rate, rateDate: fxRateDate.value || undefined });
+      ElMessage.success('汇率已保存');
+    }
+    loadExchangeRates();
+  } catch (e) { /* 拦截器 */ }
+  finally { fxSaving.value = false; }
+}
+async function refreshExchangeRatesFx() {
+  fxSaving.value = true;
+  try {
+    const d = await exchangeRateAPI.refresh();
+    ElMessage.success(d.msg || '汇率已刷新');
+    loadExchangeRates();
+  } catch (e) { /* 拦截器 */ }
+  finally { fxSaving.value = false; }
+}
+const FX_SOURCE_TEXT = { db: '当日', latest: '最近', fallback: '内置兜底' };
 
 async function save() {
   saving.value = true;
@@ -801,7 +900,7 @@ function goOrder(row) { if (row.order?.id) router.push(`/orders/${row.order.id}`
 
 function resize() { trendChart?.resize(); }
 
-onMounted(() => { load(1); loadOptions(); loadSummary(); loadCurrency(); loadReconcile(); loadPeriods(); loadAging(); window.addEventListener('resize', resize); });
+onMounted(() => { load(1); loadOptions(); loadSummary(); loadCurrency(); loadReconcile(); loadPeriods(); loadAging(); loadDefaultCurrency(); window.addEventListener('resize', resize); });
 onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart?.dispose(); });
 </script>
 

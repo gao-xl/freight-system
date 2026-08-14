@@ -31,6 +31,10 @@ const { ensureBootstrap } = require('./services/bootstrapService');
 
 const app = express();
 
+// 信任一级反向代理（生产环境经 OpenResty/Nginx 转发），使限流/登录锁定能识别真实客户端 IP
+// 而非统一看到 127.0.0.1。仅信任最近一跳，避免伪造 X-Forwarded-For 绕过限流。
+app.set('trust proxy', 1);
+
 // 安全头
 app.use(helmet());
 // CORS 白名单
@@ -154,6 +158,9 @@ function mountDocs() {
 mountDocs();
 
 // 业务路由
+// 对外契约入口为版本化前缀 /api/v1（稳定性承诺：破坏性变更走新版本前缀，不破坏已接入方）；
+// 保留 /api 作为兼容别名，使内部存量前端与既有脚本无需改动即可继续使用。
+app.use('/api/v1', routes);
 app.use('/api', routes);
 
 // 404

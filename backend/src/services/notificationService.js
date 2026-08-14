@@ -32,18 +32,36 @@ async function fetchWithTimeout(url, options = {}) {
 }
 
 // 渠道配置解析：未配置/不可用返回 null（调用方静默跳过）
+const { decryptSecret } = require('../utils/crypto');
 async function resolveChannel(channel) {
   const n = config.notification || {};
   if (channel === 'email') {
-    const host = n.smtpHost;
+    // S4：优先读数据库 SMTP（设置页可配，覆盖环境变量）；为空回退 env
+    let host = n.smtpHost;
+    let port = n.smtpPort || 465;
+    let user = n.smtpUser || '';
+    let pass = n.smtpPass || '';
+    let from = n.smtpFrom || '';
+    try {
+      const profile = await require('../models').CompanyProfile.findOne();
+      if (profile && profile.smtpHost) {
+        host = profile.smtpHost;
+        port = profile.smtpPort || port;
+        user = profile.smtpUser || user;
+        pass = decryptSecret(profile.smtpPassEnc) || pass;
+        from = profile.smtpFrom || from;
+      }
+    } catch (e) {
+      // 读库失败不阻断，回退 env
+    }
     if (!host) return null;
     return {
       enabled: n.smtpEnabled !== false,
       host,
-      port: n.smtpPort || 465,
-      user: n.smtpUser || '',
-      pass: n.smtpPass || '',
-      from: n.smtpFrom || (n.smtpUser ? `货代系统 <${n.smtpUser}>` : ''),
+      port: port || 465,
+      user: user || '',
+      pass: pass || '',
+      from: from || (user ? `货代系统 <${user}>` : ''),
       to: n.emailTo || '',
     };
   }
@@ -260,6 +278,19 @@ async function sendTest({ channel, content }) {
   }
 }
 
+// S4：向指定收件人发送邮件（2FA 验证码等场景）。SMTP 配置经 DB→env 解析；未配置返回 { skipped: true }
+async function sendEmailTo(to, { subject, text }) {
+  const cfg = await resolveChannel('email');
+  if (!cfg || cfg.enabled === false) return { skipped: true };
+  try {
+    await sendEmail({ ...cfg, to }, { subject, text });
+    return { sent: true };
+  } catch (e) {
+    logger.warn('[NOTIFY] 邮件直发失败', { message: String(e.message || e) });
+    return { sent: false, error: String(e.message || e) };
+  }
+}
+
 // 记录查询（管理端）
 async function listRecords({ eventType, channel, status, targetId, page = 1, pageSize = 50 } = {}) {
   const { Op } = require('sequelize');
@@ -277,4 +308,4 @@ async function listRecords({ eventType, channel, status, targetId, page = 1, pag
   return { list: rows, total: count };
 }
 
-module.exports = { CHANNELS, resolveChannel, push, subscribe, sendTest, listRecords, formatMessage };
+module.exports = { CHANNELS, resolveChannel, push, subscribe, sendTest, sendEmailTo, listRecords, formatMessage };

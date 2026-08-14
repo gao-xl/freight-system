@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { authRequired, requirePermission, requireRole, guard } = require('../middleware/auth');
+const { authRequired, requirePermission, requireRole, guard, requireReauthIfEnabled } = require('../middleware/auth');
 const { dataScope } = require('../middleware/dataScope');
 const { validate } = require('../middleware/validate');
 const S = require('../validation/schemas');
@@ -42,6 +42,7 @@ const freightRate = require('../controllers/freightRateController');
 const businessRule = require('../controllers/businessRuleController');
 const workflow = require('../controllers/workflowController');
 const report = require('../controllers/reportController');
+const exchangeRate = require('../controllers/exchangeRateController'); // 汇率管理
 const searchCtrl = require('../controllers/searchController');
 const numberSegment = require('../controllers/numberSegmentController'); // P1 发票号段
 const customerAttachment = require('../controllers/customerAttachmentController'); // P1 客户附件
@@ -107,7 +108,15 @@ router.post('/auth/logout', authRequired, auth.logout);
 router.post('/auth/logout-all', authRequired, auth.logoutAll);
 router.get('/auth/sessions', authRequired, auth.sessions);
 router.get('/auth/me', authRequired, auth.me);
-router.post('/auth/change-password', authRequired, validate(S.changePassword), auth.changePassword);
+router.post('/auth/change-password', authRequired, requireReauthIfEnabled, validate(S.changePassword), auth.changePassword);
+
+// S4 二次认证：登录暂态（pendingToken 在体内校验）与登录态 TOTP 绑定/解绑、敏感操作复核
+router.post('/auth/2fa/send', validate(S.twoFactorSend), auth.post2faSend);
+router.post('/auth/2fa/verify', validate(S.twoFactorVerify), auth.post2faVerify);
+router.post('/auth/2fa/setup', authRequired, auth.setupTotp);
+router.post('/auth/2fa/disable', authRequired, auth.disable2fa);
+router.post('/auth/2fa/reauth/send', authRequired, auth.reauthSend);
+router.post('/auth/2fa/reauth/verify', authRequired, validate(S.twoFactorVerify), auth.reauthVerify);
 
 // Onboarding 引导系统：初始化状态/创建首账号为公开端点（无管理员时前端引导创建）
 const onboarding = require('../controllers/onboardingController');
@@ -125,11 +134,17 @@ router.post('/onboarding/wizard/done', authRequired, onboarding.wizardDone);
 
 // 系统健康（admin）与默认设置（登录）；health 与公开 /api/health 并存，/api/health 保持原样
 router.get('/system/health', authRequired, requirePermission('system', '*'), system.health);
+router.post('/system/security-check', authRequired, requirePermission('system', '*'), system.securityCheck);
 router.get('/system/defaults', authRequired, system.getDefaults);
 // 能力开关（登录即可）：前端据此隐藏/禁用 PDF 打印按钮等
 router.get('/system/capabilities', authRequired, system.capabilities);
 // L3 修复：系统默认设置写接口仅鉴权 → 增加 system:* 权限守卫，限制为管理员
 router.put('/system/defaults', authRequired, requirePermission('system', '*'), system.putDefaults);
+
+// S4 安全设置（2FA 开关 + SMTP 配置）：读需 system:company 权限，写/测试发信需 system:* 管理员
+router.get('/system/security-settings', authRequired, requirePermission('system', 'company'), system.getSecuritySettings);
+router.put('/system/security-settings', authRequired, requirePermission('system', '*'), system.putSecuritySettings);
+router.post('/system/smtp-test', authRequired, requirePermission('system', '*'), system.smtpTest);
 
 // 备份/恢复（AC-22，admin；复用 scripts/backup.js + scripts/restore.js 逻辑）
 const backupCtrl = require('../controllers/backupController');
@@ -177,7 +192,7 @@ router.get('/permissions', authRequired, requirePermission('system', 'role'), sy
 router.get('/users', authRequired, requirePermission('system', 'user'), system.userList);
 router.post('/users', authRequired, requirePermission('system', 'user'), validate(S.userCreate), system.createUser);
 router.put('/users/:id', authRequired, requirePermission('system', 'user'), validate(S.userUpdate), system.updateUser);
-router.delete('/users/:id', authRequired, requirePermission('system', 'user'), system.removeUser);
+router.delete('/users/:id', authRequired, requirePermission('system', 'user'), requireReauthIfEnabled, system.removeUser);
 router.put('/users/:id/roles', authRequired, requirePermission('system', 'user'), validate(S.assignRoles), system.assignRoles);
 router.get('/system/audit-logs', authRequired, requirePermission('system', 'audit'), system.auditLogs);
 
@@ -319,7 +334,7 @@ router.get('/orders/:id/profit', guard('finance', 'read'), order.profit);
 router.get('/orders/:id', guard('order', 'read'), order.get);
 router.post('/orders', guard('order', 'create'), validate(S.orderCreate), order.create);
 router.put('/orders/:id', guard('order', 'update'), validate(S.orderUpdate), order.update);
-router.delete('/orders/:id', guard('order', 'delete'), order.remove);
+router.delete('/orders/:id', guard('order', 'delete'), requireReauthIfEnabled, order.remove);
 
 // C6 一单多箱
 router.get('/orders/:orderId/containers', guard('order', 'read'), container.listByOrder);
@@ -379,6 +394,12 @@ router.get('/finance/export', guard('finance', 'read'), finance.exportExcel);
 router.get('/finance/summary', guard('finance', 'read'), finance.summary);
 router.get('/finance/currency-summary', guard('finance', 'read'), finance.currencySummary); // B6 多币种汇总
 router.get('/finance/currency-reconcile', guard('finance', 'read'), finance.currencyReconcile); // P3 币种级对账
+// 汇率管理（多币种：查看/手动维护/刷新/换算）
+router.get('/exchange-rates', guard('finance', 'read'), exchangeRate.list);
+router.post('/exchange-rates/convert', guard('finance', 'read'), exchangeRate.convert);
+router.put('/exchange-rates/:id', guard('finance', 'update'), exchangeRate.update);
+router.post('/exchange-rates', guard('finance', 'update'), exchangeRate.upsert);
+router.post('/exchange-rates/refresh', guard('finance', 'update'), exchangeRate.refresh);
 router.get('/finance/customers/:customerId/credit', guard('finance', 'read'), finance.creditCheck); // B6 信用额度
 router.get('/finance/monthly-trend', guard('finance', 'read'), finance.monthlyTrend);
 router.get('/finance/reconcile', guard('finance', 'read'), finance.reconcile);
@@ -387,7 +408,7 @@ router.get('/finance/statement', guard('finance', 'read'), financeStatement.stat
 router.get('/finance/periods', guard('finance', 'read'), finance.periods);
 router.post('/finance/periods/ensure', guard('finance', 'read'), finance.ensurePeriods);
 router.get('/finance/periods/:code/statement', guard('finance', 'read'), finance.periodStatement);
-router.post('/finance/periods/:code/close', guard('finance', 'close'), finance.closePeriod);
+router.post('/finance/periods/:code/close', guard('finance', 'close'), requireReauthIfEnabled, finance.closePeriod);
 router.post('/finance/periods/:code/lock', guard('finance', 'lock'), finance.lockPeriod);
 router.post('/finance/periods/:code/unlock', guard('finance', 'unlock'), finance.unlockPeriod);
 router.get('/finance/invoices', guard('finance', 'read'), finance.invoiceList);
@@ -399,20 +420,20 @@ router.post('/finance/invoices/digital-tax-preview', guard('finance', 'read'), f
 router.post('/finance/invoices/digital-tax-export', guard('finance', 'read'), finance.exportDigitalTax); // 数电票导出
 router.post('/finance/invoices/:id/issue', guard('finance', 'update'), finance.issueInvoice);
 router.post('/finance/invoices/:id/cancel', guard('finance', 'update'), finance.cancelInvoice);
-router.post('/finance/batch-delete', guard('finance', 'delete'), finance.batchRemove);
+router.post('/finance/batch-delete', guard('finance', 'delete'), requireReauthIfEnabled, finance.batchRemove);
 router.post('/finance/batch-update', guard('finance', 'update'), finance.batchUpdate);
 router.post('/finance/batch-writeoff', guard('finance', 'update'), finance.batchWriteoff);
 router.post('/finance/batch', guard('finance', 'create'), finance.batchCreate); // N1 批量建费（多行快录）
 router.get('/finance/payments', guard('finance', 'read'), finance.paymentList); // N3 收款/付款单
 router.post('/finance/payments', guard('finance', 'create'), finance.createPayment); // N3 收款核销
 router.post('/finance/:id/writeoff', guard('finance', 'update'), finance.writeoff);
-router.post('/finance/:id/reverse', guard('finance', 'update'), finance.reverse); // P0.1 红字冲销
+router.post('/finance/:id/reverse', guard('finance', 'update'), requireReauthIfEnabled, finance.reverse); // P0.1 红字冲销
 router.get('/finance/:id/reversals', guard('finance', 'read'), finance.getReversals); // P0.1 查询冲销记录
 router.post('/finance/:id/restore', guard('finance', 'update'), finance.restore); // U5 回收站恢复
 router.get('/finance/:id', guard('finance', 'read'), finance.get);
 router.post('/finance', guard('finance', 'create'), validate(S.financeCreate), finance.create);
 router.put('/finance/:id', guard('finance', 'update'), validate(S.financeUpdate), finance.update);
-router.delete('/finance/:id', guard('finance', 'delete'), finance.remove);
+router.delete('/finance/:id', guard('finance', 'delete'), requireReauthIfEnabled, finance.remove);
 
 // 外部系统对接
 router.get('/integrations', guard('integration', 'read'), integration.list);

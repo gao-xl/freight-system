@@ -123,7 +123,9 @@
           <el-col :span="8"><el-form-item label="件数"><el-input-number v-model="form.packageCount" :min="0" style="width:100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="预计发运"><el-date-picker v-model="form.etd" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="预计到港"><el-date-picker v-model="form.eta" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="币种"><el-input v-model="form.currency" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="币种"><el-select v-model="form.currency" filterable allow-create style="width:100%">
+            <el-option v-for="c in CURRENCIES" :key="c.value" :label="c.label" :value="c.value" />
+          </el-select></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="总金额"><el-input-number v-model="form.totalAmount" :min="0" :precision="2" style="width:100%" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item></el-col>
           <template v-if="customFields.length">
@@ -205,8 +207,8 @@
 import { reactive, ref, computed, watch, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { orderAPI, customerAPI, orderExportAPI, customFieldAPI, orderBatchAdvanceAPI, orderBatchStatusAPI } from '@/api';
-import { ORDER_STATUS, MODE, SERVICE_TYPE, dictText, statusOf, money } from '@/utils/dicts';
+import { orderAPI, customerAPI, orderExportAPI, customFieldAPI, orderBatchAdvanceAPI, orderBatchStatusAPI, systemDefaultsAPI } from '@/api';
+import { ORDER_STATUS, MODE, SERVICE_TYPE, CURRENCIES, dictText, statusOf, money } from '@/utils/dicts';
 import EmptyGuide from '@/components/EmptyGuide.vue';
 import { useOnboardingHint } from '@/composables/useOnboardingHint';
 import { getOnboardingStatus } from '@/api/onboarding';
@@ -223,6 +225,13 @@ const customers = ref([]);
 const customerLoading = ref(false);
 const query = reactive({ page: 1, pageSize: 10, keyword: '', status: '', mode: '', type: '', deleted: '' });
 const dialogVisible = ref(false);
+const defaultCurrency = ref('CNY');
+async function loadDefaultCurrency() {
+  try {
+    const d = await systemDefaultsAPI.get();
+    defaultCurrency.value = d.defaultCurrency || 'CNY';
+  } catch { defaultCurrency.value = 'CNY'; }
+}
 
 // 筛选无结果 vs 资源为空（AC-09）
 const isFiltered = computed(() => !!(query.keyword || query.status || query.mode || query.type));
@@ -381,7 +390,7 @@ async function load(page) {
 function openDialog() {
   const cf = {};
   customFields.value.forEach((f) => { cf[f.fieldKey] = f.fieldType === 'bool' ? false : (f.fieldType === 'number' ? undefined : ''); });
-  form.value = { type: 'export', mode: 'sea', serviceType: 'fcl', status: 'draft', currency: 'USD', totalAmount: 0, customFields: cf };
+  form.value = { type: 'export', mode: 'sea', serviceType: 'fcl', status: 'draft', currency: defaultCurrency.value, totalAmount: 0, customFields: cf };
   dialogVisible.value = true;
   // U7：打开弹窗时预加载客户候选
   searchCustomer('');
@@ -442,6 +451,7 @@ function goDetailById(id) {
 onMounted(async () => {
   if (route.query.type) query.type = route.query.type; // 进出口入口
   load(1);
+  loadDefaultCurrency(); // 多币种：系统默认币种
   loadCustomFields();
   loadUpstreamHint();
 });

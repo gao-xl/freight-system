@@ -49,3 +49,15 @@ export const financeUnlockPeriodAPI = (code, data) => request.post(`/finance/per
 export const financePeriodStatementAPI = (code) => request.get(`/finance/periods/${code}/statement`);
 // P2.4 对账单
 export const financeStatementAPI = (params) => request.get('/finance/statement', { params });
+// 多币种：汇率管理（查看/手动维护/刷新/换算）
+export const exchangeRateAPI = {
+  list: (params) => request.get('/exchange-rates', { params }),
+  update: (id, data) => request.put(`/exchange-rates/${id}`, data),
+  upsert: (data) => request.post('/exchange-rates', data),
+  refresh: () => request.post('/exchange-rates/refresh'),
+  convert: (data) => request.post('/exchange-rates/convert', data),
+};
+// 系统默认币种（CompanyProfile.defaultCurrency）
+export const systemDefaultsAPI = {
+  get: () => request.get('/system/defaults'),
+};

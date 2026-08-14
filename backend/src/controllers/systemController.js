@@ -3,6 +3,7 @@ const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { validatePassword } = require('../utils/passwordPolicy');
 const { invalidate, hasPermission } = require('../services/permissionService');
 const { collectHealth } = require('../services/healthCheck');
+const { collectSecurity } = require('../services/securityCheck');
 
 // M4 修复：管理操作提权约束辅助函数
 // 只有「系统管理员」可授予/撤销 admin 角色或把用户设为 admin；普通持有 system:user 的运维不可提权。
@@ -96,7 +97,7 @@ const updateUser = asyncHandler(async (req, res) => {
   const bcrypt = require('bcryptjs');
   const user = await User.findByPk(req.params.id);
   if (!user) return fail(res, '用户不存在', 1, 404);
-  const { name, role, email, phone, status, password, roleIds, customerId } = req.body || {};
+  const { name, role, email, phone, status, password, roleIds, customerId, twoFactorEnabled } = req.body || {};
   // M4 修复：提权校验——非管理员不得把用户设为 admin 或授予 admin 角色
   const wasAdmin = await isAdminUser(user.id);
   const adminIds = await adminRoleIds();
@@ -117,6 +118,7 @@ const updateUser = asyncHandler(async (req, res) => {
     }
   }
   const patch = { name, role, email, phone, status, customerId };
+  if (twoFactorEnabled !== undefined) patch.twoFactorEnabled = !!twoFactorEnabled;
   if (password) {
     const pw = validatePassword(password);
     if (!pw.ok) return fail(res, pw.message);
@@ -244,6 +246,53 @@ const health = asyncHandler(async (req, res) => {
 
 /**
  * @openapi
+ * /api/system/security-check:
+ *   post:
+ *     tags: [系统]
+ *     summary: 系统安全检测（三态）
+ *     description: |
+ *       聚合多项安全配置检查：监听地址暴露 / 反向代理覆盖 / 数据库端口暴露 / 防火墙 /
+ *       JWT 密钥强度 / 登录锁定 / 强制改密 / HTTPS / 数据库认证 / admin 默认密码。
+ *       每项返回 status: ok|warn|fail + detail + fix。
+ *       detail 与 fix 不泄露密钥明文与敏感路径。summary 取最差状态。
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       '200':
+ *         description: 安全检测结果
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/ApiResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         checks:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               item: { type: string }
+ *                               status: { type: string, enum: [ok, warn, fail] }
+ *                               detail: { type: string }
+ *                               fix: { type: string, nullable: true }
+ *                         summary: { type: string, enum: [ok, warn, fail] }
+ *                         failCount: { type: integer }
+ *                         warnCount: { type: integer }
+ *       '401':
+ *         description: 未登录或凭证无效
+ *       '403':
+ *         description: 无 admin 权限
+ */
+const securityCheck = asyncHandler(async (req, res) => {
+  const data = await collectSecurity();
+  ok(res, data);
+});
+
+/**
+ * @openapi
  * /api/system/defaults:
  *   get:
  *     tags: [系统]
@@ -322,7 +371,85 @@ const capabilities = (req, res) => {
   ok(res, { pdf: { renderer, enabled: renderer !== 'off' } });
 };
 
+// S4 ── 安全设置（2FA 开关 + SMTP 配置）──
+// 读取安全设置：2FA 开关 + SMTP（密码仅返回是否已配置，不回显原文）
+const getSecuritySettings = asyncHandler(async (req, res) => {
+  const profile = await CompanyProfile.findOne();
+  ok(res, {
+    security: {
+      enabled: !!(profile && profile.security2faEnabled),
+      emailEnabled: !!(profile && profile.securityEmailEnabled),
+      totpEnabled: !!(profile && profile.securityTotpEnabled),
+    },
+    smtp: {
+      host: (profile && profile.smtpHost) || '',
+      port: (profile && profile.smtpPort) || 465,
+      user: (profile && profile.smtpUser) || '',
+      from: (profile && profile.smtpFrom) || '',
+      passConfigured: !!(profile && profile.smtpPassEnc),
+    },
+  });
+});
+
+// 写入安全设置：2FA 开关 + SMTP（密码经 AES 加密存储）
+const putSecuritySettings = asyncHandler(async (req, res) => {
+  const { encryptSecret } = require('../utils/crypto');
+  const { security, smtp } = req.body || {};
+  let profile = await CompanyProfile.findOne();
+  if (!profile) profile = await CompanyProfile.create({ companyName: '' });
+  if (security) {
+    if (security.enabled !== undefined) profile.security2faEnabled = !!security.enabled;
+    if (security.emailEnabled !== undefined) profile.securityEmailEnabled = !!security.emailEnabled;
+    if (security.totpEnabled !== undefined) profile.securityTotpEnabled = !!security.totpEnabled;
+  }
+  if (smtp) {
+    if (smtp.host !== undefined) profile.smtpHost = String(smtp.host || '').trim();
+    if (smtp.port !== undefined) {
+      const p = Number(smtp.port);
+      profile.smtpPort = Number.isInteger(p) && p > 0 ? p : null;
+    }
+    if (smtp.user !== undefined) profile.smtpUser = String(smtp.user || '').trim();
+    if (smtp.pass !== undefined && smtp.pass !== '') profile.smtpPassEnc = encryptSecret(String(smtp.pass));
+    if (smtp.from !== undefined) profile.smtpFrom = String(smtp.from || '').trim();
+  }
+  await profile.save();
+  ok(res, null, '安全设置已保存');
+});
+
+// 测试发信：用表单提交的 SMTP 值（未落库）试发，成功才提示保存
+const smtpTest = asyncHandler(async (req, res) => {
+  const nodemailer = require('nodemailer');
+  const { smtp, to } = req.body || {};
+  const host = String((smtp && smtp.host) || '').trim();
+  if (!host) return fail(res, '请填写 SMTP 服务器地址');
+  const port = Number((smtp && smtp.port) || 465);
+  const user = String((smtp && smtp.user) || '').trim();
+  const pass = String((smtp && smtp.pass) || '').trim();
+  const from = String((smtp && smtp.from) || '').trim() || (user ? `货代系统 <${user}>` : '');
+  let transporter;
+  try {
+    transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: user ? { user, pass } : undefined,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+    });
+    await transporter.sendMail({
+      from,
+      to: to || (req.user && req.user.email) || '',
+      subject: '【货代系统】SMTP 配置测试',
+      text: `测试邮件发送成功：SMTP 配置可用（${new Date().toISOString()}）。`,
+    });
+    ok(res, null, '测试邮件发送成功');
+  } catch (e) {
+    fail(res, `测试发信失败：${String(e.message || e).slice(0, 200)}`, 1, 400);
+  }
+});
+
 module.exports = {
   permissionList, userList, createUser, updateUser, removeUser, assignRoles, auditLogs,
-  health, getDefaults, putDefaults, capabilities,
+  health, securityCheck, getDefaults, putDefaults, capabilities,
+  getSecuritySettings, putSecuritySettings, smtpTest,
 };

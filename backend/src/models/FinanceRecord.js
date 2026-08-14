@@ -9,7 +9,7 @@ const FinanceRecord = sequelize.define('FinanceRecord', {
   category: { type: DataTypes.ENUM('ocean_freight', 'air_freight', 'local_charge', 'customs_fee', 'document_fee', 'warehouse_fee', 'transport_fee', 'other'), defaultValue: 'other' },
   description: { type: DataTypes.STRING(255) },
   amount: { type: DataTypes.DECIMAL(15, 2), allowNull: false, defaultValue: 0 },
-  currency: { type: DataTypes.STRING(10), defaultValue: 'USD' },
+  currency: { type: DataTypes.STRING(10), defaultValue: null }, // 默认币种在 beforeCreate 钩子中按系统配置解析
   rate: { type: DataTypes.DECIMAL(10, 4), defaultValue: 1 }, // [DEPRECATED] 历史遗留汇率字段；统一使用 exchangeRate，本字段仅作兼容别名
   exchangeRate: { type: DataTypes.FLOAT, allowNull: true },   // 本币折算汇率（P2.4，唯一汇率入口）
   localAmount: { type: DataTypes.DECIMAL(15, 2), allowNull: true }, // 本币折算金额（P2.4）
@@ -71,6 +71,21 @@ async function resolveLocalAmount(instance) {
   }
 }
 
+// 默认币种：如果未明确设置，则从系统配置读取（CompanyProfile.defaultCurrency）
+async function resolveDefaultCurrency(instance) {
+  if (!instance.currency) {
+    try {
+      const { CompanyProfile } = require('../services/dataAccess');
+      const profile = await CompanyProfile.findByPk(1, { attributes: ['defaultCurrency'] });
+      if (profile && profile.defaultCurrency) {
+        instance.currency = profile.defaultCurrency;
+      }
+    } catch {
+      // 静默失败，保持模型默认值
+    }
+  }
+}
+
 // P0.2 账期自动计算：根据客户账期天数自动推导到期日
 async function resolveDueDate(instance) {
   // 仅当设置了 counterpartyId 且未传入 dueDate 时自动计算
@@ -92,6 +107,7 @@ async function resolveDueDate(instance) {
 }
 
 FinanceRecord.beforeCreate(async (instance) => {
+  await resolveDefaultCurrency(instance);
   await resolveLocalAmount(instance);
   await resolveDueDate(instance);
 });

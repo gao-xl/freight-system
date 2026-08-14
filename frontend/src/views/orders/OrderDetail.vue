@@ -209,7 +209,7 @@
         <div class="page-card">
           <div class="table-topbar">
             <div class="left">
-              <el-button type="primary" size="small" @click="finDialog=true; finForm={orderId:detail.order.id,direction:'receivable',currency:'USD'}"><el-icon><Plus /></el-icon>新增费用</el-button>
+              <el-button type="primary" size="small" @click="finDialog=true; finForm={orderId:detail.order.id,direction:'receivable',currency:defaultCurrency}"><el-icon><Plus /></el-icon>新增费用</el-button>
               <el-select v-model="selectedTemplate" placeholder="费用模板一键套用" filterable clearable size="small" style="width:200px;margin-left:8px" @change="applyFeeTemplate">
                 <el-option v-for="t in feeTemplates" :key="t.id" :label="t.name" :value="t.id" />
               </el-select>
@@ -285,8 +285,10 @@
             <el-table-column label="说明" min-width="180">
               <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="费用说明" /></template>
             </el-table-column>
-            <el-table-column label="币种" width="90">
-              <template #default="{ row }"><el-input v-model="row.currency" size="small" placeholder="USD" /></template>
+            <el-table-column label="币种" width="110">
+              <template #default="{ row }"><el-select v-model="row.currency" size="small" filterable allow-create style="width:100%">
+                <el-option v-for="c in CURRENCIES" :key="c.value" :label="c.label" :value="c.value" />
+              </el-select></template>
             </el-table-column>
             <el-table-column label="金额" width="140">
               <template #default="{ row }"><el-input-number v-model="row.amount" :min="0" :precision="2" size="small" style="width:100%" /></template>
@@ -445,7 +447,9 @@
         <el-form-item label="说明"><el-input v-model="finForm.description" /></el-form-item>
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="金额"><el-input-number v-model="finForm.amount" :min="0" :precision="2" style="width:100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="币种"><el-input v-model="finForm.currency" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="币种"><el-select v-model="finForm.currency" filterable allow-create style="width:100%">
+            <el-option v-for="c in CURRENCIES" :key="c.value" :label="c.label" :value="c.value" />
+          </el-select></el-form-item></el-col>
         </el-row>
       </el-form>
       <template #footer><el-button @click="finDialog=false">取消</el-button><el-button type="primary" @click="saveFinance">保存</el-button></template>
@@ -475,10 +479,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { orderDetailAPI, orderTimelineAPI, orderFlowAPI, orderAdvanceAPI, orderNodesAPI, updateOrderNodeAPI, bookingAPI, customsAPI, documentAPI, trackAPI, financeAPI, financeBatchAPI, feeTemplateAPI, supplierAPI, orderAPI, orderContainersAPI, saveOrderContainersAPI, releaseAPI } from '@/api';
+import { orderDetailAPI, orderTimelineAPI, orderFlowAPI, orderAdvanceAPI, orderNodesAPI, updateOrderNodeAPI, bookingAPI, customsAPI, documentAPI, trackAPI, financeAPI, financeBatchAPI, feeTemplateAPI, supplierAPI, orderAPI, orderContainersAPI, saveOrderContainersAPI, releaseAPI, systemDefaultsAPI } from '@/api';
 import {
   ORDER_STATUS, ORDER_TYPE, MODE, SERVICE_TYPE, BOOKING_STATUS, CUSTOMS_STATUS,
-  DOC_TYPE, DOC_STATUS, TRACK_STAGE, FIN_DIRECTION, FIN_CATEGORY, FIN_STATUS,
+  DOC_TYPE, DOC_STATUS, TRACK_STAGE, FIN_DIRECTION, FIN_CATEGORY, FIN_STATUS, CURRENCIES,
   dictText, statusOf, money,
 } from '@/utils/dicts';
 
@@ -520,7 +524,14 @@ const feeTemplates = ref([]);
 const selectedTemplate = ref(null);
 const feeSaving = ref(false);
 const feeRows = ref([]);
-const newFeeRow = () => ({ direction: 'receivable', category: 'ocean_freight', description: '', currency: 'USD', amount: 0 });
+const defaultCurrency = ref('CNY');
+async function loadDefaultCurrency() {
+  try {
+    const d = await systemDefaultsAPI.get();
+    defaultCurrency.value = d.defaultCurrency || 'CNY';
+  } catch { defaultCurrency.value = 'CNY'; }
+}
+const newFeeRow = () => ({ direction: 'receivable', category: 'ocean_freight', description: '', currency: defaultCurrency.value, amount: 0 });
 async function loadFeeTemplates() {
   try { feeTemplates.value = await feeTemplateAPI.list({ pageSize: 100 }); } catch { feeTemplates.value = []; }
 }
@@ -717,6 +728,7 @@ async function doBatchApprove(approve) {
 
 onMounted(async () => {
   load();
+  loadDefaultCurrency(); // 多币种：系统默认币种
   loadFeeTemplates(); // N1 费用模板
   const s = await supplierAPI.list({ page: 1, pageSize: 200 });
   suppliers.value = s.list;

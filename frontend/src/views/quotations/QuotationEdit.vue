@@ -15,7 +15,9 @@
           <el-col :span="8"><el-form-item label="贸易类型"><el-select v-model="form.type" style="width:100%"><el-option v-for="(v,k) in ORDER_TYPE" :key="k" :label="v" :value="k" /></el-select></el-form-item></el-col>
           <el-col :span="8"><el-form-item label="运输方式"><el-select v-model="form.mode" style="width:100%"><el-option v-for="(v,k) in MODE" :key="k" :label="v" :value="k" /></el-select></el-form-item></el-col>
           <el-col :span="8"><el-form-item label="服务类型"><el-select v-model="form.serviceType" style="width:100%"><el-option v-for="(v,k) in SERVICE_TYPE" :key="k" :label="v" :value="k" /></el-select></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="币种"><el-select v-model="form.currency" style="width:100%"><el-option v-for="c in ['USD','CNY','EUR']" :key="c" :label="c" :value="c" /></el-select></el-form-item></el-col>
+          <el-col :span="8"><el-form-item label="币种"><el-select v-model="form.currency" filterable allow-create style="width:100%">
+            <el-option v-for="c in CURRENCIES" :key="c.value" :label="c.label" :value="c.value" />
+          </el-select></el-form-item></el-col>
           <el-col :span="8"><el-form-item label="有效期"><el-date-picker v-model="form.validUntil" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
           <el-col :span="8"><el-form-item label="起运港"><el-input v-model="form.originPort" placeholder="如 上海港" /></el-form-item></el-col>
           <el-col :span="8"><el-form-item label="目的港"><el-input v-model="form.destPort" placeholder="如 鹿特丹" /></el-form-item></el-col>
@@ -76,8 +78,8 @@ import { reactive, ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useQuotationStore } from '@/stores/quotation';
-import { customerAPI } from '@/api';
-import { MODE, SERVICE_TYPE, ORDER_TYPE, QUO_ITEM_CATEGORY, QUO_ITEM_DIRECTION, money } from '@/utils/dicts';
+import { customerAPI, systemDefaultsAPI } from '@/api';
+import { MODE, SERVICE_TYPE, ORDER_TYPE, QUO_ITEM_CATEGORY, QUO_ITEM_DIRECTION, CURRENCIES, money } from '@/utils/dicts';
 import { useOnboardingHint } from '@/composables/useOnboardingHint';
 
 const { showHint } = useOnboardingHint();
@@ -88,7 +90,7 @@ const store = useQuotationStore();
 const saving = ref(false);
 const customers = ref([]);
 const form = reactive({
-  customerId: null, type: 'export', mode: 'sea', serviceType: 'fcl', currency: 'USD',
+  customerId: null, type: 'export', mode: 'sea', serviceType: 'fcl', currency: 'CNY',
   originPort: '', destPort: '', originPlace: '', destPlace: '', cargoDesc: '',
   cargoWeight: 0, cargoVolume: 0, packageCount: 0, validUntil: '', remark: '', items: [],
 });
@@ -146,6 +148,11 @@ onMounted(async () => {
     const id = Number(route.params.id);
     form.id = id;
     await loadDetail(id);
+  } else {
+    try {
+      const d = await systemDefaultsAPI.get();
+      form.currency = d.defaultCurrency || 'CNY';
+    } catch { /* 保持默认 CNY */ }
   }
 });
 </script>

@@ -67,6 +67,14 @@ module.exports = {
     maxFails: parseInt(process.env.LOGIN_LOCK_MAX_FAILS) || 5,
     lockoutMinutes: parseInt(process.env.LOGIN_LOCK_MINUTES) || 15,
   },
+  // S4 二次认证(2FA)：pending/reauth 短效 token 与邮箱验证码的时效/限频参数
+  twoFactor: {
+    pendingTtl: process.env.TWO_FACTOR_PENDING_TTL || '5m', // 登录 2FA 暂态 token 有效期
+    reauthTtl: process.env.TWO_FACTOR_REAUTH_TTL || '3m', // 敏感操作复核 token 有效期
+    codeTtlMs: parseInt(process.env.TWO_FACTOR_CODE_TTL_MS) || 300000, // 邮箱验证码有效期(5 分钟)
+    resendWindowMs: parseInt(process.env.TWO_FACTOR_RESEND_WINDOW_MS) || 60000, // 重发最小间隔(60s)
+    maxAttempts: parseInt(process.env.TWO_FACTOR_MAX_ATTEMPTS) || 5, // 单次暂态期最多校验次数
+  },
   // 外部系统对接配置（端口/海关/财务等），可在运行期通过 IntegrationConfig 表动态维护
   integrations: {
     port: process.env.PORT_SVC_URL || 'http://localhost:4001',

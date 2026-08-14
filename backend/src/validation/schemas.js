@@ -28,6 +28,16 @@ const refresh = Joi.object({
   refreshToken: Joi.string().max(512).required(),
 }).unknown(true);
 
+// S4 二次认证：暂态凭证 + 验证码
+const twoFactorSend = Joi.object({
+  pendingToken: Joi.string().max(2048).required(),
+}).unknown(true);
+
+const twoFactorVerify = Joi.object({
+  pendingToken: Joi.string().max(2048).allow('').optional(), // 登录态复核不需要 pendingToken
+  code: Joi.string().max(16).required(),
+}).unknown(true);
+
 // 客户
 const customerBase = Joi.object({
   code: str(30),
@@ -268,7 +278,7 @@ const portalSi = Joi.object({
 }).or('shipper', 'consignee', 'shipperName', 'shipperAddress', 'consigneeName', 'consigneeAddress', 'notifyParty', 'marksNumbers', 'placeOfReceipt', 'placeOfDelivery', 'cargoDesc', 'containerNo');
 
 module.exports = {
-  login, changePassword, refresh,
+  login, changePassword, refresh, twoFactorSend, twoFactorVerify,
   customerCreate, customerUpdate,
   supplierCreate, supplierUpdate,
   orderCreate, orderUpdate,

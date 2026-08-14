@@ -29,6 +29,12 @@ export const useAuthStore = defineStore('auth', {
       this._persist();
       return data;
     },
+    // S4：2FA 验证通过后写入正式会话（登录暂态完成后复用）
+    setSession(data) {
+      this.token = data.token;
+      this.user = data.user;
+      this._persist();
+    },
     // M3 刷新：refresh token 由浏览器 httpOnly cookie 自动携带，此处仅取新 access token
     async refresh() {
       const data = await refreshAPI();

@@ -16,6 +16,15 @@ async function withCache(key, ttlMs, fn) {
   return data;
 }
 
+// 内置兜底汇率（外部汇率对接未启用时使用，近似值仅作展示/换算兜底）
+const FALLBACK_RATES = {
+  USD: { CNY: 7.2, EUR: 0.92, HKD: 7.8, JPY: 150 },
+  CNY: { USD: 0.139, EUR: 0.128, HKD: 1.083, JPY: 20.83 },
+  EUR: { USD: 1.087, CNY: 7.83, HKD: 8.48, JPY: 163 },
+  HKD: { USD: 0.128, CNY: 0.923, EUR: 0.118, JPY: 19.2 },
+  JPY: { USD: 0.00667, CNY: 0.048, EUR: 0.00613, HKD: 0.052 },
+};
+
 // 汇率：优先读库（当日），否则调适配器并落库
 async function getRate(base = 'USD', target = 'CNY') {
   const today = new Date().toISOString().slice(0, 10);
@@ -26,8 +35,8 @@ async function getRate(base = 'USD', target = 'CNY') {
 
   const client = await IntegrationClient.get('exchange_rate');
   if (!client.cfg || !client.cfg.enabled) {
-    // 未启用时返回常见固定汇率兜底（USD/CNY）
-    return base === 'USD' && target === 'CNY' ? 7.2 : null;
+    // 未启用时返回内置固定汇率兜底
+    return FALLBACK_RATES[base]?.[target] ?? null;
   }
   const data = await client.query({ base });
   const rate = data?.rates?.[target];

@@ -139,7 +139,7 @@
     </div>
 
     <!-- F9 团队工作量视图：经理/管理员视角，看清成员订单负载 -->
-    <div class="page-card" style="margin-top:16px">
+    <div class="page-card team-card" style="margin-top:16px">
       <div class="card-title">
         团队工作量
         <el-tag size="small" type="info" style="margin-left:8px">订单负载</el-tag>
@@ -403,7 +403,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   position: relative;
   overflow: hidden;
-  animation: fadeUp .3s ease both;
+  animation: fadeUp .42s cubic-bezier(.22,.61,.36,1) both;
 }
 .role-workbench::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
@@ -454,10 +454,12 @@ onBeforeUnmount(() => {
 .chart { height: 300px; }
 .workload-totals { margin-top: 12px; font-size: 13px; color: var(--text-sub); background: var(--bg-lighter, #f7f9fc); border-radius: 8px; padding: 10px 14px; }
 
-/* 卡片渐次浮现 */
-.stat-grid { animation: fadeUp .3s ease both; }
-.chart-grid { animation: fadeUp .38s ease both; }
-.metric-grid { animation: fadeUp .46s ease both; }
+/* 卡片渐次浮现：自上而下错落入场（stagger），节奏更精致 */
+.role-workbench { animation-delay: .00s; }
+.stat-grid      { animation: fadeUp .42s cubic-bezier(.22,.61,.36,1) .06s both; }
+.chart-grid     { animation: fadeUp .42s cubic-bezier(.22,.61,.36,1) .12s both; }
+.metric-grid    { animation: fadeUp .42s cubic-bezier(.22,.61,.36,1) .18s both; }
+.team-card      { animation: fadeUp .42s cubic-bezier(.22,.61,.36,1) .24s both; }
 
 /* 窄屏适配：图表与指标卡堆叠为单/双列 */
 @media (max-width: 768px) {

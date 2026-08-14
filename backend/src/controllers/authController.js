@@ -6,6 +6,7 @@ const config = require('../config');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { getPermissions } = require('../services/permissionService');
 const sessionService = require('../services/sessionService');
+const twoFactorService = require('../services/twoFactorService');
 
 // P0-2 token 安全：refresh token（30 天长期凭证）经 httpOnly Cookie 承载，
 // 前端 JS 无法读取，阻断 XSS 窃取长期会话。access token 保持短效 header。
@@ -101,6 +102,17 @@ const login = asyncHandler(async (req, res) => {
   }
   // S3 登录成功：清除失败计数与锁定
   await user.update({ lastLoginAt: new Date(), loginFails: 0, lockedUntil: null });
+  // S4 2FA：若有需二次验证的用户，先签发 pending 暂态（5 分钟），验证通过才进正式会话
+  if (await twoFactorService.needs2fa(user)) {
+    const settings = await twoFactorService.getSecuritySettings();
+    const pendingToken = twoFactorService.signPendingToken(user);
+    return ok(res, {
+      pending: true,
+      pendingToken,
+      channels: twoFactorService.channelsFor(user, settings),
+      mustChangePassword: !!user.mustChangePassword,
+    }, '登录成功，请完成二次验证');
+  }
   // D8：签发带 ver（tokenVersion）与 jti 的 token；M3：同步签发 refresh token 并登记会话
   const session = await sessionService.createSession(user, deviceInfo(req));
   const token = signAccessToken(user, session.sessionId);
@@ -187,7 +199,7 @@ const sessions = asyncHandler(async (req, res) => {
 
 const me = asyncHandler(async (req, res) => {
   const user = await User.findByPk(req.user.id, {
-    attributes: ['id', 'username', 'name', 'role', 'email', 'phone', 'lastLoginAt', 'customerId', 'mustChangePassword'],
+    attributes: ['id', 'username', 'name', 'role', 'email', 'phone', 'lastLoginAt', 'customerId', 'mustChangePassword', 'twoFactorEnabled', 'twoFactorType', 'totpVerifiedAt'],
   });
   const permissions = await getPermissions(user.id);
   ok(res, { ...user.toJSON(), permissions });
@@ -208,4 +220,89 @@ const changePassword = asyncHandler(async (req, res) => {
   ok(res, null, '密码修改成功，其他设备需重新登录');
 });
 
-module.exports = { login, refresh, logout, logoutAll, sessions, me, changePassword };
+// S4 ── 二次认证端点 ──
+// 从 pending token 解析用户并校验 tokenVersion 未变（改密/禁用后暂态立即失效）
+async function userFromPending(token) {
+  if (!token) return null;
+  const decoded = twoFactorService.verifyPendingToken(token);
+  if (!decoded) return null;
+  const user = await User.findByPk(decoded.userId);
+  if (!user || user.status !== 'active') return null;
+  if ((decoded.ver || 0) !== Number(user.tokenVersion || 0)) return null;
+  return user;
+}
+
+// 登录 2FA 发送邮箱验证码（pending 态）
+const post2faSend = asyncHandler(async (req, res) => {
+  const user = await userFromPending((req.body || {}).pendingToken);
+  if (!user) return fail(res, '暂态凭证无效或已过期，请重新登录', 1, 401);
+  const result = await twoFactorService.sendEmailCode(user, { purpose: '登录' });
+  if (result.skipped) return fail(res, result.reason || '邮箱验证码发送失败', 1, 429);
+  if (result.sent) return ok(res, null, '验证码已发送');
+  return fail(res, '验证码发送失败，请稍后再试', 1, 500);
+});
+
+// 登录 2FA 校验（邮箱码/TOTP/备份码）→ 签发正式会话
+const post2faVerify = asyncHandler(async (req, res) => {
+  const { pendingToken, code } = req.body || {};
+  const user = await userFromPending(pendingToken);
+  if (!user) return fail(res, '暂态凭证无效或已过期，请重新登录', 1, 401);
+  if (!code) return fail(res, '请输入验证码');
+  if (!await twoFactorService.verifyAny(user, code)) return fail(res, '验证码错误或已过期', 1, 401);
+  const session = await sessionService.createSession(user, deviceInfo(req));
+  const token = signAccessToken(user, session.sessionId);
+  const permissions = await getPermissions(user.id);
+  setRefreshCookie(res, session.refreshToken);
+  ok(res, {
+    token,
+    refreshToken: session.refreshToken,
+    expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
+    user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: !!user.mustChangePassword },
+  }, '二次验证通过');
+});
+
+// TOTP 绑定（登录态）：返回 secret / otpauth URI / 二维码 + 备份码
+const setupTotp = asyncHandler(async (req, res) => {
+  const user = await User.findByPk(req.user.id);
+  const { secret, otpauthUri, qrDataURL } = await twoFactorService.setupTotp(user);
+  const { codes, hashes } = twoFactorService.generateBackupCodes();
+  await twoFactorService.storeBackupHashes(user, hashes);
+  ok(res, { secret, otpauthUri, qrDataURL, backupCodes: codes });
+});
+
+// 解绑 2FA（登录态 + 校验当前密码）
+const disable2fa = asyncHandler(async (req, res) => {
+  const { password } = req.body || {};
+  const user = await User.findByPk(req.user.id);
+  if (!await bcrypt.compare(password || '', user.password)) return fail(res, '密码校验失败');
+  user.twoFactorEnabled = false;
+  user.twoFactorType = null;
+  user.totpSecretEnc = null;
+  user.totpVerifiedAt = null;
+  user.backupCodesEnc = null;
+  await user.save();
+  ok(res, null, '已关闭二次验证');
+});
+
+// 敏感操作复核：发送邮箱验证码（登录态）
+const reauthSend = asyncHandler(async (req, res) => {
+  const user = await User.findByPk(req.user.id);
+  const result = await twoFactorService.sendEmailCode(user, { purpose: '操作复核' });
+  if (result.skipped) return fail(res, result.reason || '邮箱验证码发送失败', 1, 429);
+  if (result.sent) return ok(res, null, '验证码已发送');
+  return fail(res, '验证码发送失败，请稍后再试', 1, 500);
+});
+
+// 敏感操作复核：校验 2FA → 签发短效 reauth token
+const reauthVerify = asyncHandler(async (req, res) => {
+  const { code } = req.body || {};
+  const user = await User.findByPk(req.user.id);
+  if (!code) return fail(res, '请输入验证码');
+  if (!await twoFactorService.verifyAny(user, code)) return fail(res, '验证码错误或已过期', 1, 401);
+  ok(res, { reauthToken: twoFactorService.signReauthToken(user) }, '验证通过');
+});
+
+module.exports = {
+  login, refresh, logout, logoutAll, sessions, me, changePassword,
+  post2faSend, post2faVerify, setupTotp, disable2fa, reauthSend, reauthVerify,
+};

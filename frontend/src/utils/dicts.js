@@ -61,6 +61,23 @@ export const QUO_ITEM_CATEGORY = {
 };
 export const QUO_ITEM_DIRECTION = { revenue: '收入', cost: '成本' };
 
+// 多币种字典（ISO 4217 三位大写）
+export const CURRENCIES = [
+  { value: 'CNY', label: '人民币' },
+  { value: 'USD', label: '美元' },
+  { value: 'EUR', label: '欧元' },
+  { value: 'HKD', label: '港币' },
+  { value: 'JPY', label: '日元' },
+  { value: 'GBP', label: '英镑' },
+  { value: 'KRW', label: '韩元' },
+  { value: 'SGD', label: '新加坡元' },
+  { value: 'AUD', label: '澳元' },
+  { value: 'TWD', label: '新台币' },
+  { value: 'THB', label: '泰铢' },
+  { value: 'VND', label: '越南盾' },
+];
+export const CURRENCY_MAP = Object.fromEntries(CURRENCIES.map((c) => [c.value, c.label]));
+
 export const dictText = (map, key) => map[key] ?? key;
 export const statusOf = (map, key) => map[key] || { text: key, type: 'info' };
 // 统一金额格式化（唯一出口）：千分位 + 最多 2 位小数；

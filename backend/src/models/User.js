@@ -18,6 +18,11 @@ const User = sequelize.define('User', {
   mustChangePassword: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // Onboarding：默认账号首登强制改密（改密成功即清除）
   loginFails: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }, // S3 登录锁定：连续失败计数
   lockedUntil: { type: DataTypes.DATE, allowNull: true }, // S3 登录锁定：锁定截止时间（未锁定为 null）
+  twoFactorEnabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }, // S4 2FA：该用户是否强制二次验证
+  twoFactorType: { type: DataTypes.ENUM('totp', 'email'), allowNull: true }, // S4 2FA：已绑定通道类型
+  totpSecretEnc: { type: DataTypes.STRING(255), allowNull: true }, // S4 TOTP secret（AES 加密，见 utils/crypto）
+  totpVerifiedAt: { type: DataTypes.DATE, allowNull: true }, // S4 TOTP 首次校验时间
+  backupCodesEnc: { type: DataTypes.TEXT, allowNull: true }, // S4 备份码（SHA-256 哈希 JSON，一次性）
 }, { timestamps: true });
 
 module.exports = User;

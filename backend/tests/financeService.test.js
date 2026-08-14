@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 
 const { FinanceRecord, Order } = require('../src/models');
 const finance = require('../src/domains/finance/financeService');
+const periodGuard = require('../src/services/periodGuard');
 
 // 替换模型方法，捕获调用参数并返回可预测结果
 function patchFindAll(fn) {
@@ -220,4 +221,22 @@ test('summarizeProfitGroups: 按客户分组毛利，marginRate = 毛利/应收'
   assert.equal(list[0].orderCount, 2);
   assert.equal(list[0].margin, 140, '应收200-应付60');
   assert.equal(list[0].marginRate, 70);
+});
+
+// ===== periodGuard 结账回归（修复 FinanceRecord 未导入导致的 500）=====
+
+test('computePeriodSummary: 可正常汇总账期费用（FinanceRecord 已正确导入）', async () => {
+  let captured = null;
+  FinanceRecord.findAll = async (opts) => { captured = opts; return [
+    { direction: 'receivable', amount: 100, paidAmount: 40 },
+    { direction: 'payable', amount: 30, paidAmount: 10 },
+  ]; };
+  const s = await periodGuard.computePeriodSummary('2026-08');
+  assert.ok(captured, '应调用 FinanceRecord.findAll');
+  assert.equal(s.receivable, 100);
+  assert.equal(s.payable, 30);
+  assert.equal(s.received, 40);
+  assert.equal(s.paid, 10);
+  assert.equal(s.balance, 60, '应收100-已收40');
+  assert.equal(s.profit, 70, '应收100-应付30');
 });

@@ -3,6 +3,7 @@ const config = require('../config');
 const { User, Session } = require('../models');
 const { getPermissions, getEffectivePermissions } = require('../services/permissionService');
 const { verifyPlainKey, touchLastUsed } = require('../services/apiKeyService');
+const twoFactorService = require('../services/twoFactorService');
 const { logger } = require('../utils/logger');
 
 // 支持两种认证方式，优先级固定：
@@ -128,4 +129,26 @@ function requirePermission(module, action) {
 // 便捷封装：登录 + 权限一步到位
 const guard = (module, action) => [authRequired, requirePermission(module, action)];
 
-module.exports = { authRequired, denyApiKeyAuth, requireRole, requirePermission, forcePasswordChange, resolvePermissions, guard };
+// S4 敏感操作复核：若当前用户需 2FA，则要求 X-Reauth-Token（3 分钟短效）有效，
+// 否则返回 428 触发前端二次验证。改密/禁用后 tokenVersion 变化 → 即时失效。
+const requireReauthIfEnabled = async (req, res, next) => {
+  try {
+    // authRequired 的 req.user 不含 twoFactorEnabled，需按 DB 加载，避免误判
+    const dbUser = req.user && req.user.id ? await User.findByPk(req.user.id, { attributes: ['id', 'twoFactorEnabled', 'tokenVersion'] }) : null;
+    if (!dbUser || !(await twoFactorService.needs2fa(dbUser))) return next();
+    const token = (req.headers['x-reauth-token'] || '').trim();
+    if (!token) {
+      return res.status(428).json({ code: 428, message: '需要二次验证', reauthRequired: true });
+    }
+    const decoded = twoFactorService.verifyReauthToken(token);
+    // 比对 DB 的 tokenVersion，改密/禁用后即刻失效
+    if (!decoded || decoded.userId !== req.user.id || (decoded.ver || 0) !== Number(dbUser.tokenVersion || 0)) {
+      return res.status(428).json({ code: 428, message: '二次验证已过期，请重新验证', reauthRequired: true });
+    }
+    return next();
+  } catch (e) {
+    return next(e);
+  }
+};
+
+module.exports = { authRequired, denyApiKeyAuth, requireRole, requirePermission, forcePasswordChange, resolvePermissions, guard, requireReauthIfEnabled };

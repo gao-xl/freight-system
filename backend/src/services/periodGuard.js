@@ -1,7 +1,7 @@
 // 账期守卫：结账/扎帐/锁帐的核心服务
 // 负责账期归属解析、结账汇总计算、以及锁账写操作拦截
 const { Op } = require('sequelize');
-const { AccountingPeriod } = require('../models');
+const { AccountingPeriod, FinanceRecord } = require('../models');
 const { findRecordsByOrderId } = require('../domains/finance/financeService');
 
 // 由日期得到账期号，如 2026-08

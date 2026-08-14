@@ -2,6 +2,7 @@ import axios from 'axios';
 import { ElMessage } from 'element-plus';
 import router from '@/router';
 import { unwrapResponse } from './unwrap';
+import { requestReauth } from '@/utils/reauth';
 
 const request = axios.create({
   baseURL: '/api',
@@ -101,6 +102,19 @@ request.interceptors.response.use(
     if (status === 401) {
       forceLogout();
       return Promise.reject(error);
+    }
+
+    // S4 敏感操作复核：后端返回 428 → 弹窗完成二次验证 → 携带 reauthToken 重放原请求
+    if (status === 428 && !config._reauth) {
+      config._reauth = true;
+      try {
+        const reauthToken = await requestReauth();
+        config.headers = config.headers || {};
+        config.headers['x-reauth-token'] = reauthToken;
+        return request(config);
+      } catch (e) {
+        return Promise.reject(e);
+      }
     }
 
     if (!error.config?.silent) {

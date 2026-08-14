@@ -96,6 +96,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="password"><el-icon><Key /></el-icon>修改密码</el-dropdown-item>
+                <el-dropdown-item command="security"><el-icon><Lock /></el-icon>账户安全</el-dropdown-item>
                 <el-dropdown-item command="logout" divided><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -134,6 +135,9 @@
 
   <!-- 帮助中心（全局：F1 / 问号浮标，AC-16/17/18/27） -->
   <HelpCenterDrawer />
+  <!-- S4 账户安全（TOTP 绑定/关闭）与敏感操作复核弹窗 -->
+  <AccountSecurityDialog ref="actionSecRef" />
+  <ReauthDialog />
 </template>
 
 <script setup>
@@ -144,6 +148,8 @@ import { useAuthStore } from '@/stores/auth';
 import { changePasswordAPI, alertAPI, messageAPI, globalSearchAPI } from '@/api';
 import { createSSE } from '@/utils/sse';
 import HelpCenterDrawer from '@/components/HelpCenterDrawer.vue';
+import AccountSecurityDialog from '@/components/AccountSecurityDialog.vue';
+import ReauthDialog from '@/components/ReauthDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -151,6 +157,7 @@ const auth = useAuthStore();
 const collapsed = ref(false);
 const pwdVisible = ref(false);
 const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' });
+const actionSecRef = ref(null);
 const alertCount = ref(0);
 const msgCount = ref(0);
 // F6 订阅偏好缓存：关闭的分类不弹实时提示（默认全开）
@@ -227,6 +234,7 @@ const menuGroups = [
       { path: '/system/company', title: '公司设置', icon: 'OfficeBuilding', permission: 'system:company' },
       { path: '/system/notification-settings', title: '通知配置', icon: 'Bell', permission: 'integration:update' },
       { path: '/system/health', title: '系统健康', icon: 'Monitor', permission: 'system:user' },
+      { path: '/system/security-check', title: '安全检测', icon: 'Lock', permission: 'system:user' },
       { path: '/guide', title: '使用教程', icon: 'QuestionFilled' },
       { path: '/docs', title: '开发文档', icon: 'Reading', permission: 'system:docs' },
     ],
@@ -313,6 +321,8 @@ function handleCommand(cmd) {
   } else if (cmd === 'password') {
     pwdForm.value = { oldPassword: '', newPassword: '', confirm: '' };
     pwdVisible.value = true;
+  } else if (cmd === 'security') {
+    actionSecRef.value?.open();
   }
 }
 
