@@ -31,23 +31,26 @@
   /* ==========================================================
      三、中性色
      ========================================================== */
-  --text-main: #1a2332;
+  --text-main: #172033;
   --text-sub: #5b6b7b;
   --text-muted: #98a2b3;
-  --border: #e6eaf0;
-  --border-strong: #d5dbe4;
-  --bg-page: #f4f6fa;
+  --border: #e6ebf2;
+  --border-strong: #d3dbe6;
+  --bg-page: #f6f8fb;
   --bg-card: #ffffff;
+  --bg-subtle: #f2f5fa;
 
   /* ==========================================================
-     四、侧边栏（深蓝）
+     四、侧边栏（轻盈浅色）
      ========================================================== */
-  --sidebar-bg: #0f2647;
-  --sidebar-bg-2: #0b1e39;
-  --sidebar-bg-hover: rgba(255, 255, 255, 0.06);
-  --sidebar-active: var(--brand);
-  --sidebar-text: #9fb0c8;
-  --sidebar-text-active: #ffffff;
+  --sidebar-bg: #ffffff;
+  --sidebar-bg-2: #f8fafd;
+  --sidebar-border: #e6ebf2;
+  --sidebar-bg-hover: #f2f6fc;
+  --sidebar-active-bg: #eaf1fb;
+  --sidebar-active: #174a96;
+  --sidebar-text: #5b6b7b;
+  --sidebar-text-active: #174a96;
 
   /* ==========================================================
      五、几何（圆角）
@@ -61,10 +64,10 @@
   /* ==========================================================
      六、阴影（分层）
      ========================================================== */
-  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04);
-  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12), 0 4px 8px rgba(16, 24, 40, 0.06);
+  --shadow-xs: 0 1px 2px rgba(23, 32, 51, 0.04);
+  --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.05), 0 1px 3px rgba(23, 32, 51, 0.03);
+  --shadow-md: 0 2px 6px rgba(23, 32, 51, 0.06), 0 1px 2px rgba(23, 32, 51, 0.03);
+  --shadow-lg: 0 10px 28px rgba(23, 32, 51, 0.10), 0 3px 8px rgba(23, 32, 51, 0.05);
 
   /* ==========================================================
      七、字体

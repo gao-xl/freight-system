@@ -1,13 +1,13 @@
 <template>
   <el-container class="layout">
-    <!-- ============ 侧边栏 ============ -->
+    <!-- ============ 侧边栏（轻盈浅色） ============ -->
     <aside class="sidebar" :class="{ collapsed }">
       <div class="logo" @click="$router.push('/tasks')">
         <img src="/icons/icon-192.svg" class="logo-icon" alt="货代管理" />
         <span v-show="!collapsed" class="logo-text">货代管理系统</span>
       </div>
 
-      <nav class="menu-scroll">
+      <nav class="menu-scroll" aria-label="主导航">
         <div v-for="group in menuGroupsFiltered" :key="group.label" class="menu-group">
           <div v-show="!collapsed" class="group-label">{{ group.label }}</div>
           <template v-for="item in group.items" :key="item.path">
@@ -43,9 +43,9 @@
     <el-container class="main">
       <header class="topbar">
         <div class="left">
-          <el-icon class="collapse-btn" @click="collapsed = !collapsed">
-            <Expand v-if="collapsed" /><Fold v-else />
-          </el-icon>
+          <button class="collapse-btn" :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'" @click="collapsed = !collapsed">
+            <el-icon><Expand v-if="collapsed" /><Fold v-else /></el-icon>
+          </button>
           <div class="page-title">
             <span class="pt-main">{{ currentTitle }}</span>
             <span v-if="route.meta.title && route.meta.title !== currentTitle" class="pt-sub">/ {{ route.meta.title }}</span>
@@ -61,8 +61,9 @@
             :remote-method="searchMenu"
             :loading="searchLoading"
             :teleported="true"
-            placeholder="搜索功能 / 客户 / 订单 / 报价…"
+            placeholder="搜索功能 / 订单号 / 箱号 / 提单号…"
             class="quick-search"
+            aria-label="全局搜索"
             @change="goSearch"
           >
             <template #prefix><el-icon><Search /></el-icon></template>
@@ -78,15 +79,15 @@
           </el-select>
 
           <el-badge v-if="auth.isLoggedIn" :value="msgCount" :max="99" :hidden="!msgCount" type="danger" class="alert-badge">
-            <div class="icon-btn" @click="router.push('/messages')"><el-icon><Message /></el-icon></div>
+            <div class="icon-btn" aria-label="消息中心" @click="router.push('/messages')"><el-icon><Message /></el-icon></div>
           </el-badge>
 
           <el-badge v-if="auth.hasPermission('alert:read')" :value="alertCount" :max="99" :hidden="!alertCount" class="alert-badge">
-            <div class="icon-btn" @click="router.push('/alerts')"><el-icon><Bell /></el-icon></div>
+            <div class="icon-btn" aria-label="预警中心" @click="router.push('/alerts')"><el-icon><Bell /></el-icon></div>
           </el-badge>
 
           <el-dropdown @command="handleCommand">
-            <button class="user-chip">
+            <button class="user-chip" aria-label="用户菜单">
               <el-avatar :size="30" class="avatar">{{ auth.displayName.slice(0, 1) }}</el-avatar>
               <span v-show="!collapsed" class="uname">{{ auth.displayName }}</span>
               <span v-if="auth.role" v-show="!collapsed" class="role-pill">{{ roleMap[auth.role] }}</span>
@@ -165,21 +166,19 @@ let searchTimer = null;
 
 const roleMap = { admin: '管理员', manager: '经理', operator: '操作员', finance: '财务', viewer: '只读' };
 
-/* ============ 信息架构：按业务逻辑分组 ============ */
+/* ============ 信息架构：按业务域逻辑分组 ============ */
 const menuGroups = [
   {
     label: '工作台',
     items: [
       { path: '/tasks', title: '待办工作台', icon: 'Memo', permission: undefined },
-      { path: '/messages', title: '消息中心', icon: 'Message', permission: undefined },
       { path: '/dashboard', title: '经营看板', icon: 'Odometer', permission: 'dashboard:read' },
+      { path: '/messages', title: '消息中心', icon: 'Message', permission: undefined },
     ],
   },
   {
     label: '业务管理',
     items: [
-      { path: '/customers', title: '客户管理', icon: 'User', permission: 'customer:read' },
-      { path: '/suppliers', title: '供应商', icon: 'OfficeBuilding', permission: 'supplier:read' },
       { path: '/orders', title: '订单管理', icon: 'Tickets', permission: 'order:read' },
       { path: '/orders?type=export', title: '出口操作', icon: 'Promotion', permission: 'order:read' },
       { path: '/orders?type=import', title: '进口操作', icon: 'Download', permission: 'order:read' },
@@ -190,17 +189,24 @@ const menuGroups = [
     ],
   },
   {
-    label: '财务与报价',
+    label: '客户资源',
+    items: [
+      { path: '/customers', title: '客户管理', icon: 'User', permission: 'customer:read' },
+      { path: '/suppliers', title: '供应商', icon: 'OfficeBuilding', permission: 'supplier:read' },
+      { path: '/quotations', title: '报价询价', icon: 'PriceTag', permission: 'quotation:read' },
+    ],
+  },
+  {
+    label: '财务资金',
     items: [
       { path: '/finance', title: '财务管理', icon: 'Money', permission: 'finance:read' },
       { path: '/finance/invoices', title: '发票管理', icon: 'Ticket', permission: 'finance:read' }, // N2
       { path: '/finance/statement', title: '对账单', icon: 'Tickets', permission: 'finance:read' },
-      { path: '/quotations', title: '报价询价', icon: 'PriceTag', permission: 'quotation:read' },
       { path: '/import', title: '数据导入', icon: 'Upload', permission: undefined },
     ],
   },
   {
-    label: '对接与数据',
+    label: '数据与智能',
     items: [
       { path: '/ai', title: 'AI 助手', icon: 'MagicStick', permission: 'ai:use' },
       { path: '/qingdao', title: '青岛港看板', icon: 'Ship', permission: 'qingdao:read' },
@@ -208,29 +214,36 @@ const menuGroups = [
       { path: '/external', title: '外部数据', icon: 'DataAnalysis', permission: 'track:read' },
       { path: '/integrations', title: '外部对接', icon: 'Connection', permission: 'integration:read' },
       { path: '/alerts', title: '预警中心', icon: 'Bell', permission: 'alert:read' },
-      { path: '/system/business-rules', title: '业务规则', icon: 'SetUp', permission: 'alert:read' },
-      { path: '/system/workflow', title: '流程配置', icon: 'Share', permission: 'alert:read' },
-      { path: '/system/reports', title: '报表设计', icon: 'DataAnalysis', permission: 'dashboard:read' },
     ],
   },
   {
-    label: '系统设置',
+    label: '配置与系统',
     items: [
       { path: '/print-templates', title: '单证模板', icon: 'Printer', permission: 'print:read' },
+      { path: '/system/business-rules', title: '业务规则', icon: 'SetUp', permission: 'alert:read' },
+      { path: '/system/workflow', title: '流程配置', icon: 'Share', permission: 'alert:read' },
+      { path: '/system/reports', title: '报表设计', icon: 'DataAnalysis', permission: 'dashboard:read' },
       { path: '/system', title: '系统管理', icon: 'Setting', permission: 'system:user' },
       { path: '/system/company', title: '公司设置', icon: 'OfficeBuilding', permission: 'system:company' },
       { path: '/system/notification-settings', title: '通知配置', icon: 'Bell', permission: 'integration:update' },
       { path: '/system/health', title: '系统健康', icon: 'Monitor', permission: 'system:user' },
-      { path: '/docs', title: '开发文档', icon: 'Reading' },
       { path: '/guide', title: '使用教程', icon: 'QuestionFilled' },
+      { path: '/docs', title: '开发文档', icon: 'Reading', permission: 'system:docs' },
     ],
   },
 ];
 
-// 按权限过滤，空分组不渲染
+// C1：开发文档仅对管理员可见（前端最小方案，避免对所有业务角色暴露开发内容）
+const DEV_ROLES = ['admin', 'manager'];
 const menuGroupsFiltered = computed(() =>
   menuGroups
-    .map((g) => ({ ...g, items: g.items.filter((m) => auth.hasPermission(m.permission)) }))
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((m) => {
+        if (m.path === '/docs' && !DEV_ROLES.includes(auth.role)) return false;
+        return auth.hasPermission(m.permission);
+      }),
+    }))
     .filter((g) => g.items.length)
 );
 
@@ -386,10 +399,11 @@ onUnmounted(() => {
 <style scoped>
 .layout { height: 100vh; }
 
-/* ============ 侧边栏 ============ */
+/* ============ 侧边栏（轻盈浅色） ============ */
 .sidebar {
   width: 220px;
-  background: linear-gradient(180deg, var(--sidebar-bg) 0%, var(--sidebar-bg-2) 100%);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
   transition: width .22s ease;
   overflow: hidden;
   display: flex;
@@ -403,29 +417,28 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 16px;
-  color: #fff;
+  padding: 0 18px;
+  color: var(--text-main);
   font-weight: 700;
   font-size: 16px;
   cursor: pointer;
   white-space: nowrap;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--sidebar-border);
 }
 .sidebar.collapsed .logo { padding: 0; justify-content: center; }
-.logo-icon { width: 24px; height: 24px; display: block; flex-shrink: 0; }
+.logo-icon { width: 26px; height: 26px; display: block; flex-shrink: 0; }
 
-.menu-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 12px 0 20px; }
+.menu-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 0 20px; }
 .menu-scroll::-webkit-scrollbar { width: 4px; }
-.menu-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
+.menu-scroll::-webkit-scrollbar-thumb { background: rgba(23, 32, 51, 0.12); }
 
-.menu-group { margin-bottom: 6px; }
+.menu-group { margin-bottom: 4px; }
 .group-label {
-  padding: 12px 20px 6px;
+  padding: 14px 22px 6px;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 1px;
-  color: rgba(159, 176, 200, 0.55);
-  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -433,29 +446,30 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  height: 42px;
-  margin: 2px 10px;
+  height: 40px;
+  margin: 2px 12px;
   padding: 0 12px;
   border-radius: 9px;
   color: var(--sidebar-text);
   cursor: pointer;
   white-space: nowrap;
   position: relative;
+  border: 1px solid transparent;
   transition: background .15s ease, color .15s ease;
 }
-.menu-item:hover { background: var(--sidebar-bg-hover); color: #fff; }
+.menu-item:hover { background: var(--sidebar-bg-hover); color: var(--sidebar-active); }
 .menu-item.active {
-  background: var(--sidebar-active);
+  background: var(--sidebar-active-bg);
   color: var(--sidebar-text-active);
-  box-shadow: 0 4px 10px rgba(31, 95, 191, 0.35);
+  font-weight: 600;
 }
-.sidebar.collapsed .menu-item { justify-content: center; padding: 0; margin: 2px 10px; }
+.sidebar.collapsed .menu-item { justify-content: center; padding: 0; margin: 2px 12px; }
 .mi-icon { font-size: 18px; flex-shrink: 0; }
 .mi-title { font-size: 14px; }
 
-.sidebar-foot { padding: 12px 20px; }
-.foot-line { height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 10px; }
-.foot-text { font-size: 11px; color: rgba(159,176,200,0.5); white-space: nowrap; }
+.sidebar-foot { padding: 12px 22px; }
+.foot-line { height: 1px; background: var(--sidebar-border); margin-bottom: 10px; }
+.foot-text { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 /* ============ 主区域 ============ */
 /* el-container 默认横向排列；因顶栏/内容用原生标签而非 el-header/el-main，
@@ -477,8 +491,22 @@ onUnmounted(() => {
   gap: 12px;
 }
 .topbar .left { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.collapse-btn { font-size: 20px; cursor: pointer; color: var(--text-sub); }
-.collapse-btn:hover { color: var(--brand); }
+.collapse-btn {
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text-sub);
+  background: none;
+  border: none;
+  padding: 4px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background .15s, color .15s;
+}
+.collapse-btn:hover { background: var(--brand-light); color: var(--brand); }
+.collapse-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .page-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .pt-main { font-size: 15px; font-weight: 600; color: var(--text-main); }
 .pt-sub { font-size: 13px; color: var(--text-muted); }

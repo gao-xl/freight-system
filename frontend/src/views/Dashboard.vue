@@ -45,25 +45,25 @@
         <div class="sub">进行中 {{ stats.orderInProgress }} · 已完成 {{ stats.orderCompleted }}</div>
         <el-icon class="icon" style="color:var(--brand)"><Document /></el-icon>
       </div>
-      <div class="stat-card" style="border-color:var(--warning)">
+      <div class="stat-card" style="--stat-accent:var(--warning)">
         <div class="label">待处理订舱</div>
         <div class="value" style="color:var(--warning)">{{ stats.bookingWait }}</div>
         <div class="sub">新订舱 / 已确认</div>
         <el-icon class="icon" style="color:var(--warning)"><Ship /></el-icon>
       </div>
-      <div class="stat-card" style="border-color:var(--danger)">
+      <div class="stat-card" style="--stat-accent:var(--danger)">
         <div class="label">待放行报关</div>
         <div class="value" style="color:var(--danger)">{{ stats.customsPending }}</div>
         <div class="sub">申报中 / 查验中</div>
         <el-icon class="icon" style="color:var(--danger)"><Stamp /></el-icon>
       </div>
-      <div class="stat-card" style="border-color:#7c3aed">
+      <div class="stat-card" style="--stat-accent:#7c3aed">
         <div class="label">应收余额</div>
         <div class="value" style="color:#7c3aed">{{ money(stats.receivableBalance) }}</div>
         <div class="sub">应付余额 {{ money(stats.payableBalance) }}</div>
         <el-icon class="icon" style="color:#7c3aed"><Money /></el-icon>
       </div>
-      <div class="stat-card" style="border-color:#059669">
+      <div class="stat-card" style="--stat-accent:#059669">
         <div class="label">客户 / 供应商</div>
         <div class="value" style="color:#059669">{{ stats.customerTotal }} <span style="font-size:16px">/</span> {{ stats.supplierTotal }}</div>
         <div class="sub">活跃资源池</div>
@@ -396,18 +396,19 @@ onBeforeUnmount(() => {
 
 /* 角色工作台 */
 .role-workbench {
-  background: #fff;
+  background: linear-gradient(135deg, #ffffff 0%, var(--bg-subtle) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
+  padding: 20px 22px;
   margin-bottom: 16px;
   position: relative;
   overflow: hidden;
   animation: fadeUp .3s ease both;
 }
 .role-workbench::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
   background: var(--rb-accent);
+  border-radius: 0 4px 4px 0;
 }
 .rb-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .rb-identity { display: flex; align-items: baseline; gap: 10px; }
@@ -424,8 +425,8 @@ onBeforeUnmount(() => {
 .rb-action {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
   padding: 12px 14px;
-  background: var(--bg-lighter, #f7f9fc);
-  border: 1px solid var(--border-lighter, #eef1f5);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 10px;
   cursor: pointer; text-align: left;
   transition: transform .16s, box-shadow .16s, border-color .16s;
