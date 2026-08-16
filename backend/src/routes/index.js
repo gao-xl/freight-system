@@ -402,6 +402,7 @@ router.post('/exchange-rates', guard('finance', 'update'), exchangeRate.upsert);
 router.post('/exchange-rates/refresh', guard('finance', 'update'), exchangeRate.refresh);
 router.get('/finance/customers/:customerId/credit', guard('finance', 'read'), finance.creditCheck); // B6 信用额度
 router.get('/finance/monthly-trend', guard('finance', 'read'), finance.monthlyTrend);
+router.get('/finance/profit-compare', guard('finance', 'read'), finance.profitCompare);
 router.get('/finance/reconcile', guard('finance', 'read'), finance.reconcile);
 router.get('/finance/statement', guard('finance', 'read'), financeStatement.statement); // P2.4 对账单
 // 结账/扎帐/锁帐（须在 /finance/:id 之前注册，避免 periods 被 :id 捕获）

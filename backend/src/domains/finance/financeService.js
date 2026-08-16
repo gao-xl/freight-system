@@ -140,21 +140,67 @@ async function getFinancialSummary(where) {
   return summarizeRecords(rows);
 }
 
-// 月度应收应付趋势（按 createdAt 归月；where 需含年度 createdAt 范围）
+// 月度趋势（含利润和毛利率，按 createdAt 归月；where 需含年度 createdAt 范围）
 function summarizeMonthlyTrend(rows) {
-  const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, receivable: 0, payable: 0 }));
+  const months = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, receivable: 0, payable: 0, profit: 0, marginRate: 0 }));
   for (const r of rows) {
     const m = new Date(r.createdAt).getMonth();
-    const amt = Number(r.amount);
+    // 使用本币折算金额优先（多币种准确），回退原币金额
+    const amt = r.localAmount != null ? Number(r.localAmount) : Number(r.amount);
     if (r.direction === 'receivable') months[m].receivable += amt;
     else months[m].payable += amt;
+  }
+  for (const m of months) {
+    m.profit = Number((m.receivable - m.payable).toFixed(2));
+    m.marginRate = m.receivable ? Number(((m.profit / m.receivable) * 100).toFixed(2)) : 0;
   }
   return months;
 }
 
 async function getMonthlyTrend(year, where) {
-  const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'createdAt'] });
+  const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'localAmount', 'createdAt'] });
   return summarizeMonthlyTrend(rows);
+}
+
+// 利润对比：本期 vs 上期（环比）或去年同月（同比）
+function summarizeProfitCompare(rows, compareType = 'mom') {
+  const current = { receivable: 0, payable: 0, profit: 0 };
+  const previous = { receivable: 0, payable: 0, profit: 0 };
+  const now = new Date();
+  const currentStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const prevStart = compareType === 'mom'
+    ? new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    : new Date(now.getFullYear() - 1, now.getMonth(), 1);
+  const prevEnd = compareType === 'mom' ? currentStart : new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  for (const r of rows) {
+    const d = new Date(r.createdAt);
+    const amt = r.localAmount != null ? Number(r.localAmount) : Number(r.amount);
+    if (r.direction === 'receivable') {
+      if (d >= currentStart) current.receivable += amt;
+      else if (d >= prevStart && d < prevEnd) previous.receivable += amt;
+    } else {
+      if (d >= currentStart) current.payable += amt;
+      else if (d >= prevStart && d < prevEnd) previous.payable += amt;
+    }
+  }
+  [current, previous].forEach((p) => {
+    p.profit = Number((p.receivable - p.payable).toFixed(2));
+    p.marginRate = p.receivable ? Number(((p.profit / p.receivable) * 100).toFixed(2)) : 0;
+  });
+  const diff = {
+    profit: Number((current.profit - previous.profit).toFixed(2)),
+    profitRate: previous.profit ? Number((((current.profit - previous.profit) / Math.abs(previous.profit)) * 100).toFixed(2)) : 0,
+    marginRate: Number((current.marginRate - previous.marginRate).toFixed(2)),
+    receivable: Number((current.receivable - previous.receivable).toFixed(2)),
+    payable: Number((current.payable - previous.payable).toFixed(2)),
+  };
+  return { current, previous, diff, compareType, period: { currentLabel: compareType === 'mom' ? '本月' : '今年本月', previousLabel: compareType === 'mom' ? '上月' : '去年同月' } };
+}
+
+async function getProfitCompare(where, compareType = 'mom') {
+  const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'localAmount', 'createdAt'] });
+  return summarizeProfitCompare(rows, compareType);
 }
 
 // 对账单汇总（按订单/客户归集应收/应付/余额；where 由调用方按数据隔离构造）
@@ -320,6 +366,8 @@ module.exports = {
   getFinancialSummary,
   summarizeMonthlyTrend,
   getMonthlyTrend,
+  summarizeProfitCompare,
+  getProfitCompare,
   summarizeReconcile,
   buildReconcile,
   bucketAgAging,

@@ -209,6 +209,7 @@ const menuGroups = [
       { path: '/finance', title: '财务管理', icon: 'Money', permission: 'finance:read' },
       { path: '/finance/invoices', title: '发票管理', icon: 'Ticket', permission: 'finance:read' }, // N2
       { path: '/finance/statement', title: '对账单', icon: 'Tickets', permission: 'finance:read' },
+      { path: '/finance/profit-report', title: '利润报表', icon: 'DataAnalysis', permission: 'finance:read' },
       { path: '/import', title: '数据导入', icon: 'Upload', permission: undefined },
     ],
   },
@@ -262,7 +263,7 @@ const activeMenu = computed(() => {
   if (route.path === '/orders' && route.query.type === 'export') return '/orders?type=export';
   if (route.path === '/orders' && route.query.type === 'import') return '/orders?type=import';
   if (route.path.startsWith('/quotations')) return '/quotations';
-  if (route.path.startsWith('/finance')) return route.path === '/finance/statement' ? '/finance/statement' : '/finance';
+  if (route.path.startsWith('/finance')) return ['/finance/statement', '/finance/profit-report'].includes(route.path) ? route.path : '/finance';
   if (route.path.startsWith('/system')) return route.path;
   if (route.path === '/print-templates') return '/print-templates';
   return route.path;

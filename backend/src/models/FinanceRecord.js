@@ -57,7 +57,10 @@ async function resolveLocalAmount(instance) {
   try {
     // 延迟 require：避免模型加载阶段与 services/externalService 循环依赖
     const { getRate } = require('../services/externalService');
-    const rate = await getRate(currency, 'CNY');
+    // 月固定汇率：按记录所属会计期间取汇率（settleMonth 优先，否则按创建时间）
+    const raw = instance.settleMonth || instance.createdAt || new Date();
+    const period = raw instanceof Date ? raw.toISOString().slice(0, 7) : String(raw).slice(0, 7);
+    const rate = await getRate(currency, 'CNY', period);
     if (rate != null) {
       instance.exchangeRate = Number(rate);
       instance.localAmount = Number((amount * rate).toFixed(2));

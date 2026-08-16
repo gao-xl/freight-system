@@ -81,25 +81,31 @@ const recentOrders = asyncHandler(async (req, res) => {
   ok(res, rows);
 });
 
-// B1 经营指标：回款率、毛利率、应收/应付、利润
+// B1 经营指标：回款率、毛利率、应收/应付、利润（多币种准确：localAmount 优先）
 // 方案 A：高频读缓存（短 TTL），缓存键含数据作用域签名。
 const metrics = asyncHandler(async (req, res) => {
   const data = await readThrough(req, 'dashboard', 'metrics', config.cache.dashboardTtl, async () => {
     const where = await scopedWhere(req, {});
-    const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'paidAmount'] });
-    let receivable = 0, received = 0, payable = 0, paid = 0;
+    const rows = await FinanceRecord.findAll({ where, attributes: ['direction', 'amount', 'localAmount', 'paidAmount', 'exchangeRate'] });
+    let receivable = 0, payable = 0;
+    let received = 0, paid = 0;
     for (const r of rows) {
-      const amt = Number(r.amount), paidAmt = Number(r.paidAmount);
-      if (r.direction === 'receivable') { receivable += amt; received += paidAmt; }
-      else { payable += amt; paid += paidAmt; }
+      const amt = r.localAmount != null ? Number(r.localAmount) : Number(r.amount);
+      const paidAmt = Number(r.paidAmount);
+      // 已收付按比例折算为本币：paidAmount / amount * localAmount
+      const localPaid = r.localAmount != null
+        ? Number((paidAmt * Math.abs(Number(r.amount) ? Number(r.localAmount) / Number(r.amount) : 1)).toFixed(2))
+        : paidAmt;
+      if (r.direction === 'receivable') { receivable += amt; received += localPaid; }
+      else { payable += amt; paid += localPaid; }
     }
     const profit = receivable - payable;
     return {
-      receivable, received, receivableBalance: receivable - received,
-      payable, paid, payableBalance: payable - paid,
+      receivable, received, receivableBalance: Number((receivable - received).toFixed(2)),
+      payable, paid, payableBalance: Number((payable - paid).toFixed(2)),
       profit,
-      collectionRate: receivable ? Number(((received / receivable) * 100).toFixed(2)) : 0, // 回款率
-      marginRate: receivable ? Number(((profit / receivable) * 100).toFixed(2)) : 0,       // 毛利率
+      collectionRate: receivable ? Number(((received / receivable) * 100).toFixed(2)) : 0,
+      marginRate: receivable ? Number(((profit / receivable) * 100).toFixed(2)) : 0,
     };
   });
   ok(res, data);

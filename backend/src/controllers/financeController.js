@@ -74,6 +74,20 @@ const monthlyTrend = asyncHandler(async (req, res) => {
   ok(res, data);
 });
 
+// 利润对比（环比/同比）
+const profitCompare = asyncHandler(async (req, res) => {
+  const type = req.query.type === 'yoy' ? 'yoy' : 'mom';
+  const now = new Date();
+  const rangeStart = type === 'yoy'
+    ? new Date(now.getFullYear() - 1, now.getMonth(), 1)
+    : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const baseWhere = { createdAt: { [Op.gte]: rangeStart, [Op.lt]: rangeEnd } };
+  const finalWhere = await scopedWhere(req, baseWhere);
+  const data = await finance.getProfitCompare(finalWhere, type);
+  ok(res, data);
+});
+
 // Excel 导出财务流水
 const exportExcel = asyncHandler(async (req, res) => {
   const finalWhere = await scopedWhere(req, {});
@@ -856,7 +870,7 @@ const exportDigitalTax = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  ...base, summary, monthlyTrend, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, batchIssueInvoice, createInvoiceFromFees,
+  ...base, summary, monthlyTrend, profitCompare, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, batchIssueInvoice, createInvoiceFromFees,
   cancelInvoice, writeoff, batchWriteoff, currencySummary, currencyReconcile, creditCheck, createPayment, paymentList,
   periods, ensurePeriods, closePeriod, lockPeriod, unlockPeriod, periodStatement, batchCreate, aging,
   reverse, getReversals, digitalTaxPreview, exportDigitalTax,

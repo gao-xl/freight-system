@@ -424,14 +424,15 @@
       </template>
     </el-dialog>
 
-    <!-- 汇率管理（多币种） -->
+    <!-- 汇率管理（多币种 · 月固定汇率） -->
     <el-dialog v-model="fxDialog" title="汇率管理" width="680px">
       <div class="batch-tip">
-        基准币种 <b>{{ fxBase }}</b> → 目标币种。当日汇率优先，缺失时回退最近记录或内置兜底；可手动修改或触发自动刷新。
+        基准币种 <b>{{ fxBase }}</b> → 目标币种。月固定汇率：当期优先，缺失时沿用最近上期或内置兜底；每会计期间调整一次。
       </div>
-      <div style="margin:10px 0">
+      <div style="margin:10px 0;display:flex;align-items:center;gap:12px">
+        <el-date-picker v-model="fxPeriod" type="month" value-format="YYYY-MM" placeholder="选择会计期间" size="small" style="width:150px" @change="loadExchangeRates" />
         <el-button size="small" :loading="fxSaving" @click="refreshExchangeRatesFx"><el-icon><Refresh /></el-icon>自动刷新</el-button>
-        <span style="margin-left:12px;font-size:12px;color:var(--text-muted)">汇率日期：{{ fxRateDate || '-' }}</span>
+        <span style="font-size:12px;color:var(--text-muted)">会计期间：{{ fxPeriod || '-' }}</span>
       </div>
       <el-table :data="fxList" v-loading="fxLoading" size="small" border>
         <el-table-column prop="targetCurrency" label="币种" width="90">
@@ -442,13 +443,13 @@
             <el-input-number v-model="row.rate" :min="0.000001" :precision="6" :step="0.01" size="small" style="width:130px" />
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="100">
+        <el-table-column label="来源" width="110">
           <template #default="{ row }">
             <el-tag size="small" :type="row.source === 'db' ? 'success' : row.source === 'latest' ? 'warning' : 'info'">{{ FX_SOURCE_TEXT[row.source] || row.source }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="汇率日期" width="110">
-          <template #default="{ row }">{{ row.rateDate || '-' }}</template>
+        <el-table-column label="生效月份" width="110">
+          <template #default="{ row }">{{ row.period || '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" width="90">
           <template #default="{ row }">
@@ -829,19 +830,19 @@ async function loadDefaultCurrency() {
   } catch { defaultCurrency.value = 'CNY'; }
 }
 
-// ===== 汇率管理（多币种：查看/手动维护/刷新）=====
+// ===== 汇率管理（多币种 · 月固定汇率：查看/手动维护/刷新）=====
 const fxDialog = ref(false);
 const fxLoading = ref(false);
 const fxSaving = ref(false);
 const fxBase = ref('USD');
 const fxList = ref([]);
-const fxRateDate = ref('');
+const fxPeriod = ref(new Date().toISOString().slice(0, 7));
 async function loadExchangeRates() {
   fxLoading.value = true;
   try {
-    const d = await exchangeRateAPI.list({ base: fxBase.value });
+    const d = await exchangeRateAPI.list({ base: fxBase.value, period: fxPeriod.value });
     fxList.value = d.list || [];
-    fxRateDate.value = d.rateDate || '';
+    fxPeriod.value = d.period || fxPeriod.value;
   } finally { fxLoading.value = false; }
 }
 function openFx() { fxDialog.value = true; loadExchangeRates(); }
@@ -850,11 +851,11 @@ async function saveExchangeRate(row) {
   if (!Number.isFinite(rate) || rate <= 0) return ElMessage.warning('汇率必须为正数');
   fxSaving.value = true;
   try {
-    if (row.id) {
+    if (row.id && row.source === 'db') {
       await exchangeRateAPI.update(row.id, { rate });
       ElMessage.success(`${row.baseCurrency}/${row.targetCurrency} 汇率已更新`);
     } else {
-      await exchangeRateAPI.upsert({ baseCurrency: row.baseCurrency, targetCurrency: row.targetCurrency, rate, rateDate: fxRateDate.value || undefined });
+      await exchangeRateAPI.upsert({ baseCurrency: row.baseCurrency, targetCurrency: row.targetCurrency, rate, period: fxPeriod.value });
       ElMessage.success('汇率已保存');
     }
     loadExchangeRates();
@@ -864,13 +865,13 @@ async function saveExchangeRate(row) {
 async function refreshExchangeRatesFx() {
   fxSaving.value = true;
   try {
-    const d = await exchangeRateAPI.refresh();
+    const d = await exchangeRateAPI.refresh({ period: fxPeriod.value });
     ElMessage.success(d.msg || '汇率已刷新');
     loadExchangeRates();
   } catch (e) { /* 拦截器 */ }
   finally { fxSaving.value = false; }
 }
-const FX_SOURCE_TEXT = { db: '当日', latest: '最近', fallback: '内置兜底' };
+const FX_SOURCE_TEXT = { db: '当期', latest: '沿用上期', fallback: '内置兜底' };
 
 async function save() {
   saving.value = true;

@@ -55,12 +55,12 @@ function startAlertScheduler() {
   track(runAutomations().catch((e) => logger.error('[AUTOMATION] 首次执行失败', { message: e.message })));
   // E1 外部跟踪自动拉取（船期 6h / AIS 2h / 场站 4h，复用本调度入口注册）
   jobs.push(...startTrackingAutoPull());
-  // P3 汇率自动同步：每日 01:00 刷新汇率并落库（目标币种/基准可用 FX_TARGETS/FX_BASE 配置）
+  // P3 汇率自动同步：每日 01:00 检查当月固定汇率，缺失才补录（月内固定，不覆盖已调整的当期汇率）
   const fxJob = cron.schedule('0 1 * * *', () => {
     track((async () => {
       try {
-        const n = await refreshExchangeRates();
-        logger.info(`[EXTERNAL] 每日汇率同步完成，更新 ${n} 条`);
+        const n = await refreshExchangeRates(undefined, undefined, undefined, { overwrite: false });
+        logger.info(`[EXTERNAL] 汇率同步完成，补录 ${n} 条`);
       } catch (e) {
         logger.error('[EXTERNAL] 汇率同步失败', { message: e.message });
         await trackJobResult('scheduler:exchange-rate', e);

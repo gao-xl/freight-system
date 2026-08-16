@@ -56,7 +56,7 @@ const customerBase = Joi.object({
   status: enumVal(['active', 'inactive']),
   lastFollowAt: date,
   nextFollowAt: date,
-});
+}).unknown(true);
 const customerCreate = customerBase.keys({ name: Joi.string().trim().max(100).required() });
 const customerUpdate = customerBase;
 
@@ -74,7 +74,7 @@ const supplierBase = Joi.object({
   paymentTerms: str(100),
   remark: text,
   status: enumVal(['active', 'inactive']),
-});
+}).unknown(true);
 const supplierCreate = supplierBase.keys({ name: Joi.string().trim().max(100).required() });
 const supplierUpdate = supplierBase;
 
@@ -107,7 +107,7 @@ const orderBase = Joi.object({
   releaseStatus: enumVal(['none', 'pending', 'approved', 'delivered']),
   remark: text,
   version: Joi.number().integer().min(0).optional(), // P3.7 乐观锁：携带则服务端校验版本
-});
+}).unknown(true);
 const orderCreate = orderBase.keys({ customerId: id.required() });
 const orderUpdate = orderBase;
 
@@ -128,7 +128,7 @@ const bookingBase = Joi.object({
   eta: dateOnly,
   freightCharge: dec,
   remark: text,
-});
+}).unknown(true);
 const bookingCreate = bookingBase.keys({ orderId: id.required() });
 const bookingUpdate = bookingBase;
 
@@ -144,7 +144,7 @@ const freightRateBase = Joi.object({
   validFrom: date,
   validTo: date,
   remark: str(255),
-});
+}).unknown(true);
 const freightRateCreate = freightRateBase.keys({
   originPort: Joi.string().trim().max(50).required(),
   destPort: Joi.string().trim().max(50).required(),
@@ -168,7 +168,7 @@ const customsBase = Joi.object({
   submitDate: dateOnly,
   releaseDate: dateOnly,
   remark: text,
-});
+}).unknown(true);
 const customsCreate = customsBase.keys({ orderId: id.required() });
 const customsUpdate = customsBase;
 
@@ -182,7 +182,7 @@ const documentBase = Joi.object({
   issuedBy: str(50),
   issueDate: dateOnly,
   remark: text,
-});
+}).unknown(true);
 const documentCreate = documentBase;
 const documentUpdate = documentBase;
 
@@ -203,7 +203,7 @@ const financeBase = Joi.object({
   dueDate: dateOnly,
   remark: text,
   settleMonth: dateOnly, // 账期：结算归属月份（可空，为空则按 createdAt 归属）
-});
+}).unknown(true);
 const financeCreate = financeBase.keys({ direction: Joi.string().valid('receivable', 'payable').required() });
 const financeUpdate = financeBase;
 
@@ -213,7 +213,7 @@ const followBase = Joi.object({
   content: text,
   nextFollowAt: date,
   status: enumVal(['open', 'done']),
-});
+}).unknown(true);
 const followCreate = followBase.keys({ content: Joi.string().trim().min(1).max(2000).required() });
 const followUpdate = followBase;
 

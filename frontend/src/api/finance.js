@@ -21,6 +21,7 @@ export const feeTemplateAPI = crud('fee-templates'); // N1 费用模板
 export const financeSummaryAPI = () => request.get('/finance/summary');
 export const financeAgingAPI = () => request.get('/finance/aging'); // N5 AR 账龄
 export const financeTrendAPI = (year) => request.get(`/finance/monthly-trend?year=${year}`);
+export const financeProfitCompareAPI = (params) => request.get('/finance/profit-compare', { params });
 export const financeExportAPI = () => request.get('/finance/export', { responseType: 'blob' });
 // 财务对账/开票/核销（B4, N2）
 export const financeReconcileAPI = (params) => request.get('/finance/reconcile', { params });
@@ -49,12 +50,12 @@ export const financeUnlockPeriodAPI = (code, data) => request.post(`/finance/per
 export const financePeriodStatementAPI = (code) => request.get(`/finance/periods/${code}/statement`);
 // P2.4 对账单
 export const financeStatementAPI = (params) => request.get('/finance/statement', { params });
-// 多币种：汇率管理（查看/手动维护/刷新/换算）
+// 多币种：汇率管理（月固定汇率，period=YYYY-MM）
 export const exchangeRateAPI = {
   list: (params) => request.get('/exchange-rates', { params }),
   update: (id, data) => request.put(`/exchange-rates/${id}`, data),
   upsert: (data) => request.post('/exchange-rates', data),
-  refresh: () => request.post('/exchange-rates/refresh'),
+  refresh: (data) => request.post('/exchange-rates/refresh', data),
   convert: (data) => request.post('/exchange-rates/convert', data),
 };
 // 系统默认币种（CompanyProfile.defaultCurrency）

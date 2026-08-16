@@ -33,6 +33,7 @@ const routes = [
       { path: 'finance', name: 'finance', component: () => import('@/views/finance/FinanceList.vue'), meta: { title: '财务管理', icon: 'Money', permission: 'finance:read' } },
       { path: 'finance/invoices', name: 'invoices', component: () => import('@/views/finance/InvoiceList.vue'), meta: { title: '发票管理', icon: 'Ticket', permission: 'finance:read' } }, // N2
       { path: 'finance/statement', name: 'statement', component: () => import('@/views/finance/StatementList.vue'), meta: { title: '对账单', icon: 'Tickets', permission: 'finance:read' } },
+      { path: 'finance/profit-report', name: 'profitReport', component: () => import('@/views/finance/ProfitReport.vue'), meta: { title: '利润报表', icon: 'DataAnalysis', permission: 'finance:read' } },
       { path: 'import', name: 'import', component: () => import('@/views/import/ImportCenter.vue'), meta: { title: '数据导入', icon: 'Upload', permission: undefined } },
       { path: 'quotations', name: 'quotations', component: () => import('@/views/quotations/QuotationList.vue'), meta: { title: '报价询价', icon: 'PriceTag', permission: 'quotation:read' } },
       { path: 'quotations/edit/:id?', name: 'quotationEdit', component: () => import('@/views/quotations/QuotationEdit.vue'), meta: { title: '编辑报价', hidden: true, permission: 'quotation:create' } },

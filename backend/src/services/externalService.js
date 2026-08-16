@@ -25,30 +25,47 @@ const FALLBACK_RATES = {
   JPY: { USD: 0.00667, CNY: 0.048, EUR: 0.00613, HKD: 0.052 },
 };
 
-// 汇率：优先读库（当日），否则调适配器并落库
-async function getRate(base = 'USD', target = 'CNY') {
-  const today = new Date().toISOString().slice(0, 10);
+// 会计期间工具：period 为 YYYY-MM（缺省取当月）；monthRange 返回 [当月首日, 次月首日) 的日期区间
+function periodOf(period) {
+  if (!period) return new Date().toISOString().slice(0, 7);
+  return String(period).slice(0, 7);
+}
+function monthRange(period) {
+  const p = periodOf(period);
+  const start = new Date(`${p}-01T00:00:00Z`);
+  const next = new Date(start);
+  next.setUTCMonth(next.getUTCMonth() + 1);
+  return { start: start.toISOString().slice(0, 10), next: next.toISOString().slice(0, 10) };
+}
+
+// 汇率：月固定汇率——取指定会计期间（默认当月）的固定汇率
+// 规则：当期 → 最近上期 → 内置兜底；只读不落库（落库由 refresh / 手动维护负责）
+async function getRate(base = 'USD', target = 'CNY', period) {
+  const { start, next } = monthRange(period);
   const hit = await ExchangeRate.findOne({
-    where: { baseCurrency: base, targetCurrency: target, rateDate: today },
+    where: {
+      baseCurrency: base, targetCurrency: target,
+      rateDate: { [Op.gte]: start, [Op.lt]: next },
+    },
+    order: [['rateDate', 'DESC']],
   });
   if (hit) return Number(hit.rate);
 
-  const client = await IntegrationClient.get('exchange_rate');
-  if (!client.cfg || !client.cfg.enabled) {
-    // 未启用时返回内置固定汇率兜底
-    return FALLBACK_RATES[base]?.[target] ?? null;
-  }
-  const data = await client.query({ base });
-  const rate = data?.rates?.[target];
-  if (rate) {
-    await ExchangeRate.create({ baseCurrency: base, targetCurrency: target, rate, rateDate: today });
-  }
-  return rate != null ? Number(rate) : null;
+  const prev = await ExchangeRate.findOne({
+    where: {
+      baseCurrency: base, targetCurrency: target,
+      rateDate: { [Op.lt]: start },
+    },
+    order: [['rateDate', 'DESC']],
+  });
+  if (prev) return Number(prev.rate);
+
+  return FALLBACK_RATES[base]?.[target] ?? null;
 }
 
-// 批量刷新汇率（定时任务调用）——目标币种与基准币种可用环境变量配置
-// FX_BASE=USD  FX_TARGETS=CNY,EUR,JPY,HKD,GBP
-async function refreshExchangeRates(targets, base) {
+// 批量刷新汇率（定时任务 / 手动触发）——月固定汇率：写入指定会计期间（默认当月）首日
+// opts.overwrite=false（定时任务）：当期已有汇率则跳过，保持月内固定；true（手动）：覆盖当期
+async function refreshExchangeRates(targets, base, period, opts = {}) {
   const list = (targets || process.env.FX_TARGETS || 'CNY,EUR,JPY,HKD,GBP')
     .split(',')
     .map((s) => s.trim().toUpperCase())
@@ -60,15 +77,23 @@ async function refreshExchangeRates(targets, base) {
     return 0;
   }
   const data = await client.query({ base: based });
-  const today = new Date().toISOString().slice(0, 10);
+  const { start, next } = monthRange(period);
+  const rateDate = start;
   let n = 0;
   for (const t of list) {
     if (t === based) continue;
     const rate = data?.rates?.[t];
-    if (rate) {
-      await ExchangeRate.upsert({ baseCurrency: based, targetCurrency: t, rate, rateDate: today });
-      n++;
-    }
+    if (!rate) continue;
+    const monthRows = await ExchangeRate.findAll({
+      where: {
+        baseCurrency: based, targetCurrency: t,
+        rateDate: { [Op.gte]: start, [Op.lt]: next },
+      },
+    });
+    if (monthRows.length && !opts.overwrite) continue; // 月内固定：已有当期汇率则不覆盖
+    if (monthRows.length) await ExchangeRate.destroy({ where: { id: monthRows.map((r) => r.id) } });
+    await ExchangeRate.create({ baseCurrency: based, targetCurrency: t, rate, rateDate });
+    n++;
   }
   return n;
 }
@@ -88,11 +113,12 @@ async function schedule(payload) {
   return withCache(key, 24 * 3600 * 1000, () => client.query(payload));
 }
 
-// 汇率查询（含缓存落库）
+// 汇率查询（含缓存落库；会计期间纳入缓存键，避免跨期命中旧汇率）
 async function rate(payload) {
   const base = (payload?.base || 'USD').toUpperCase();
   const target = (payload?.target || 'CNY').toUpperCase();
-  return withCache(`rate:${base}:${target}`, 6 * 3600 * 1000, () => getRate(base, target));
+  const period = payload?.period ? periodOf(payload.period) : '';
+  return withCache(`rate:${base}:${target}:${period}`, 6 * 3600 * 1000, () => getRate(base, target, period));
 }
 
 // C4 运价查询
@@ -115,4 +141,4 @@ async function freightRate(payload) {
   return withCache(key, 6 * 3600 * 1000, () => client.query(payload));
 }
 
-module.exports = { getRate, refreshExchangeRates, vessel, schedule, rate, freightRate };
+module.exports = { getRate, refreshExchangeRates, periodOf, monthRange, vessel, schedule, rate, freightRate };
