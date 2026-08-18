@@ -4,7 +4,7 @@
 // 渲染安全：所有业务字段在输出前均经 escapeHtml 转义，阻断存储型 XSS。
 
 // 支持的文档类型
-const SUPPORTED = ['bl', 'statement', 'invoice', 'debit_note'];
+const SUPPORTED = ['bl', 'statement', 'invoice', 'debit_note', 'gate_in_notice', 'booking_confirmation'];
 
 function supports(docType) {
   return SUPPORTED.includes(docType);
@@ -365,6 +365,273 @@ function renderDebitNote(bizData) {
   return pageShell('费用通知单', 'DEBIT NOTE', '订单号', o.orderNo || '', body, { footer: '本费用通知单由货代管理系统生成' });
 }
 
+// ---------- 入货通知单 ----------
+function renderGateInNotice(bizData) {
+  const o = bizData.order || {};
+  const b = bizData.booking || {};
+  const customer = o.customer?.name || '';
+  const vessel = [b.vesselName, b.voyageNo].filter(Boolean).join(' / ');
+  const terminal = o.terminal || '';
+  const openTime = o.openTime ? fmtDate(o.openTime) : '';
+  const cutoffTime = o.cutoffTime ? fmtDate(o.cutoffTime) : '';
+  const containerType = b.containerType || '';
+  const containerQty = b.containerQty != null ? b.containerQty : '';
+  const containerNo = o.containerNo || '';
+  const etd = o.etd || '';
+  const eta = o.eta || '';
+
+  const body = `
+  <table class="meta">
+    <tr>
+      <td style="width:50%;"><div class="lbl">客户名称</div><div class="val">${escapeHtml(customer)}</div></td>
+      <td style="width:50%;"><div class="lbl">订单号</div><div class="val">${escapeHtml(o.orderNo || '')}</div></td>
+    </tr>
+    <tr>
+      <td><div class="lbl">船名 / 航次</div><div class="val">${escapeHtml(vessel)}</div></td>
+      <td><div class="lbl">承运人</div><div class="val">${escapeHtml(b.supplier?.name || '')}</div></td>
+    </tr>
+    <tr>
+      <td><div class="lbl">起运港</div><div class="val">${escapeHtml(o.originPort || '')}</div></td>
+      <td><div class="lbl">目的港</div><div class="val">${escapeHtml(o.destPort || '')}</div></td>
+    </tr>
+  </table>
+
+  <div class="highlight-box">
+    <div class="highlight-title">&#9888; 码头与截港信息</div>
+    <div class="highlight-row">
+      <div class="highlight-item"><span class="hl">码头</span><span>${escapeHtml(terminal || '-')}</span></div>
+      <div class="highlight-item"><span class="hl">开港时间</span><span>${escapeHtml(openTime || '-')}</span></div>
+      <div class="highlight-item"><span class="hl">截港时间</span><span class="red">${escapeHtml(cutoffTime || '-')}</span></div>
+    </div>
+  </div>
+
+  <table class="detail">
+    <thead><tr>
+      <th style="width:18%;">箱型</th>
+      <th style="width:10%;">箱量</th>
+      <th style="width:22%;">箱号</th>
+      <th style="width:18%;">件数</th>
+      <th style="width:16%;">重量(t)</th>
+      <th style="width:16%;">体积(m³)</th>
+    </tr></thead>
+    <tbody><tr>
+      <td>${escapeHtml(containerType)}</td>
+      <td class="num">${escapeHtml(containerQty)}</td>
+      <td>${escapeHtml(containerNo)}</td>
+      <td class="num">${escapeHtml(o.packageCount != null ? o.packageCount : '')}</td>
+      <td class="num">${escapeHtml(o.cargoWeight != null ? o.cargoWeight : '')}</td>
+      <td class="num">${escapeHtml(o.cargoVolume != null ? o.cargoVolume : '')}</td>
+    </tr></tbody>
+  </table>
+
+  <table class="meta">
+    <tr>
+      <td style="width:100%;"><div class="lbl">货描</div><div class="val">${lines(o.cargoDesc || '')}</div></td>
+    </tr>
+    <tr>
+      <td style="width:50%;"><div class="lbl">预计发运 (ETD)</div><div class="val">${escapeHtml(etd)}</div></td>
+      <td style="width:50%;"><div class="lbl">预计到港 (ETA)</div><div class="val">${escapeHtml(eta)}</div></td>
+    </tr>
+  </table>
+
+  <div class="notice-box">
+    <div class="notice-title">重要提示</div>
+    <ol>
+      <li>请务必在<b>截港时间</b>前将货物送至指定码头，逾期将无法进港。</li>
+      <li>送货时请携带本通知单及装箱单，以便场站核验。</li>
+      <li>如有疑问，请联系我司操作人员。</li>
+    </ol>
+  </div>
+
+  <div class="sign-row">
+    <div class="sign"><div class="line"></div>制单人</div>
+    <div class="sign"><div class="line"></div>客户签收</div>
+  </div>`;
+
+  const extraStyle = `
+  .highlight-box{border:2px solid #d00;border-radius:6px;padding:14px 16px;margin-bottom:14px;background:#fff5f5;}
+  .highlight-title{font-size:14px;font-weight:700;color:#d00;margin-bottom:10px;}
+  .highlight-row{display:flex;gap:24px;flex-wrap:wrap;}
+  .highlight-item{font-size:14px;}
+  .highlight-item .hl{display:block;font-size:11px;color:#555;letter-spacing:1px;margin-bottom:2px;}
+  .highlight-item .red{color:#d00;font-weight:700;}
+  .notice-box{border:1px solid #999;border-radius:4px;padding:14px 16px;margin-bottom:14px;background:#fafafa;}
+  .notice-title{font-size:13px;font-weight:700;margin-bottom:8px;color:#333;}
+  .notice-box ol{margin:0;padding-left:20px;font-size:12px;line-height:1.8;color:#444;}
+  .notice-box ol li{margin-bottom:2px;}`;
+
+  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"/>
+<style>
+  @page{size:A4;margin:0;}
+  *{box-sizing:border-box;}
+  body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',-apple-system,sans-serif;color:#111;margin:0;padding:0;}
+  .page{width:100%;padding:26px 30px;position:relative;}
+  .doc-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px double #333;padding-bottom:10px;margin-bottom:18px;}
+  .doc-head .title{font-size:26px;font-weight:700;letter-spacing:3px;color:#111;}
+  .doc-head .subtitle{font-size:12px;color:#555;margin-top:4px;letter-spacing:1px;}
+  .doc-head .no{font-size:12px;text-align:right;line-height:1.7;color:#333;}
+  .doc-head .no b{font-size:16px;letter-spacing:1px;}
+  .doc-foot{margin-top:30px;border-top:1px solid #999;padding-top:8px;font-size:11px;color:#888;text-align:center;}
+  .meta{width:100%;border-collapse:collapse;margin-bottom:14px;}
+  .meta td{border:1px solid #bbb;padding:8px 10px;vertical-align:top;font-size:13px;}
+  .meta .lbl{font-size:11px;color:#555;font-weight:600;letter-spacing:1px;margin-bottom:4px;}
+  .meta .val{line-height:1.6;}
+  table.detail{width:100%;border-collapse:collapse;margin-bottom:14px;}
+  table.detail th,table.detail td{border:1px solid #999;padding:7px 9px;font-size:12px;vertical-align:top;}
+  table.detail th{background:#f2f2f2;font-size:11px;letter-spacing:0.5px;text-align:left;}
+  table.detail td.num{text-align:right;white-space:nowrap;}
+  .sign-row{display:flex;justify-content:space-between;margin-top:30px;font-size:12px;}
+  .sign-row .sign{width:42%;}
+  .sign-row .line{border-bottom:1px solid #333;height:34px;margin-bottom:6px;}
+  ${extraStyle}
+  @media print{body{-webkit-print-color-adjust:exact;}}
+</style></head><body><div class="page">
+  <div class="doc-head">
+    <div>
+      <div class="title">入货通知单</div>
+      <div class="subtitle">GATE-IN NOTICE</div>
+    </div>
+    <div class="no">订单号<br/><b>${escapeHtml(o.orderNo || '')}</b></div>
+  </div>
+  ${body}
+  <div class="doc-foot">本入货通知单由货代管理系统生成</div>
+</div></body></html>`;
+}
+
+// ---------- 订舱确认单 ----------
+function renderBookingConfirmation(bizData) {
+  const o = bizData.order || {};
+  const b = bizData.booking || {};
+  const customer = o.customer?.name || '';
+  const vessel = [b.vesselName, b.voyageNo].filter(Boolean).join(' / ');
+  const bookingDate = b.bookingDate ? fmtDate(b.bookingDate) : '';
+  const containerType = b.containerType || '';
+  const containerQty = b.containerQty != null ? b.containerQty : '';
+  const etd = b.etd || o.etd || '';
+  const eta = b.eta || o.eta || '';
+  const terminal = o.terminal || '';
+  const cutoffTime = o.cutoffTime ? fmtDate(o.cutoffTime) : '';
+  const openTime = o.openTime ? fmtDate(o.openTime) : '';
+  const freightCharge = b.freightCharge != null ? b.freightCharge : '';
+
+  const body = `
+  <table class="meta">
+    <tr>
+      <td style="width:50%;"><div class="lbl">客户名称</div><div class="val">${escapeHtml(customer)}</div></td>
+      <td style="width:50%;"><div class="lbl">订单号</div><div class="val">${escapeHtml(o.orderNo || '')}</div></td>
+    </tr>
+    <tr>
+      <td><div class="lbl">订舱日期</div><div class="val">${escapeHtml(bookingDate)}</div></td>
+      <td><div class="lbl">承运人</div><div class="val">${escapeHtml(b.supplier?.name || '')}</div></td>
+    </tr>
+  </table>
+
+  <div class="confirm-box">
+    <div class="confirm-title">&#10003; 舱位已确认</div>
+    <div class="confirm-row">
+      <div class="confirm-item"><span class="cl">船名 / 航次</span><span class="cvl">${escapeHtml(vessel || '-')}</span></div>
+      <div class="confirm-item"><span class="cl">箱型 / 箱量</span><span class="cvl">${escapeHtml(containerType || '-')} &times; ${escapeHtml(containerQty || '0')}</span></div>
+    </div>
+  </div>
+
+  <table class="meta">
+    <tr>
+      <td style="width:50%;"><div class="lbl">起运港</div><div class="val">${escapeHtml(o.originPort || '')}</div></td>
+      <td style="width:50%;"><div class="lbl">目的港</div><div class="val">${escapeHtml(o.destPort || '')}</div></td>
+    </tr>
+  </table>
+
+  <table class="detail">
+    <thead><tr>
+      <th style="width:40%;">货描</th>
+      <th style="width:12%;" class="num">件数</th>
+      <th style="width:12%;" class="num">重量(t)</th>
+      <th style="width:12%;" class="num">体积(m³)</th>
+      <th style="width:12%;">箱号</th>
+      <th style="width:12%;">运费</th>
+    </tr></thead>
+    <tbody><tr>
+      <td>${lines(o.cargoDesc || '')}</td>
+      <td class="num">${escapeHtml(o.packageCount != null ? o.packageCount : '')}</td>
+      <td class="num">${escapeHtml(o.cargoWeight != null ? o.cargoWeight : '')}</td>
+      <td class="num">${escapeHtml(o.cargoVolume != null ? o.cargoVolume : '')}</td>
+      <td>${escapeHtml(o.containerNo || '')}</td>
+      <td class="num">${fmtMoney(freightCharge)}</td>
+    </tr></tbody>
+  </table>
+
+  <table class="schedule">
+    <tr>
+      <td><div class="lbl">预计发运 (ETD)</div><div class="val">${escapeHtml(etd)}</div></td>
+      <td><div class="lbl">预计到港 (ETA)</div><div class="val">${escapeHtml(eta)}</div></td>
+      <td><div class="lbl">码头</div><div class="val">${escapeHtml(terminal || '-')}</div></td>
+    </tr>
+    <tr>
+      <td><div class="lbl">开港时间</div><div class="val">${escapeHtml(openTime || '-')}</div></td>
+      <td colspan="2"><div class="lbl">截关时间</div><div class="val" style="color:#d00;font-weight:700;">${escapeHtml(cutoffTime || '-')}</div></td>
+    </tr>
+  </table>
+
+  ${b.remark ? `<div class="remark-box"><div class="remark-title">备注</div><div class="remark-text">${lines(b.remark)}</div></div>` : ''}
+
+  <div class="sign-row">
+    <div class="sign"><div class="line"></div>制单人</div>
+    <div class="sign"><div class="line"></div>客户确认</div>
+  </div>`;
+
+  const extraStyle = `
+  .confirm-box{border:2px solid #1a8a1a;border-radius:6px;padding:14px 16px;margin-bottom:14px;background:#f0fff0;}
+  .confirm-title{font-size:14px;font-weight:700;color:#1a8a1a;margin-bottom:10px;}
+  .confirm-row{display:flex;gap:32px;flex-wrap:wrap;}
+  .confirm-item{font-size:14px;}
+  .confirm-item .cl{display:block;font-size:11px;color:#555;letter-spacing:1px;margin-bottom:2px;}
+  .confirm-item .cvl{font-size:15px;font-weight:600;}
+  table.schedule{width:100%;border-collapse:collapse;margin-bottom:14px;}
+  table.schedule td{border:1px solid #bbb;padding:8px 10px;vertical-align:top;font-size:13px;}
+  table.schedule .lbl{font-size:11px;color:#555;font-weight:600;letter-spacing:1px;margin-bottom:4px;}
+  table.schedule .val{line-height:1.6;}
+  .remark-box{border:1px solid #ddd;border-radius:4px;padding:12px 14px;margin-bottom:14px;background:#fafafa;}
+  .remark-title{font-size:12px;font-weight:700;color:#555;margin-bottom:6px;}
+  .remark-text{font-size:12px;line-height:1.6;white-space:pre-line;}`;
+
+  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"/>
+<style>
+  @page{size:A4;margin:0;}
+  *{box-sizing:border-box;}
+  body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',-apple-system,sans-serif;color:#111;margin:0;padding:0;}
+  .page{width:100%;padding:26px 30px;position:relative;}
+  .doc-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px double #333;padding-bottom:10px;margin-bottom:18px;}
+  .doc-head .title{font-size:26px;font-weight:700;letter-spacing:3px;color:#111;}
+  .doc-head .subtitle{font-size:12px;color:#555;margin-top:4px;letter-spacing:1px;}
+  .doc-head .no{font-size:12px;text-align:right;line-height:1.7;color:#333;}
+  .doc-head .no b{font-size:16px;letter-spacing:1px;}
+  .doc-foot{margin-top:30px;border-top:1px solid #999;padding-top:8px;font-size:11px;color:#888;text-align:center;}
+  .meta{width:100%;border-collapse:collapse;margin-bottom:14px;}
+  .meta td{border:1px solid #bbb;padding:8px 10px;vertical-align:top;font-size:13px;}
+  .meta .lbl{font-size:11px;color:#555;font-weight:600;letter-spacing:1px;margin-bottom:4px;}
+  .meta .val{line-height:1.6;}
+  table.detail{width:100%;border-collapse:collapse;margin-bottom:14px;}
+  table.detail th,table.detail td{border:1px solid #999;padding:7px 9px;font-size:12px;vertical-align:top;}
+  table.detail th{background:#f2f2f2;font-size:11px;letter-spacing:0.5px;text-align:left;}
+  table.detail td.num{text-align:right;white-space:nowrap;}
+  .sign-row{display:flex;justify-content:space-between;margin-top:30px;font-size:12px;}
+  .sign-row .sign{width:42%;}
+  .sign-row .line{border-bottom:1px solid #333;height:34px;margin-bottom:6px;}
+  ${extraStyle}
+  @media print{body{-webkit-print-color-adjust:exact;}}
+</style></head><body><div class="page">
+  <div class="doc-head">
+    <div>
+      <div class="title">订舱确认单</div>
+      <div class="subtitle">BOOKING CONFIRMATION</div>
+    </div>
+    <div class="no">订舱号<br/><b>${escapeHtml(b.bookingNo || '')}</b></div>
+  </div>
+  ${body}
+  <div class="doc-foot">本订舱确认单由货代管理系统生成</div>
+</div></body></html>`;
+}
+
 // ---------- 分发入口 ----------
 function renderBuiltinHTML(docType, bizData) {
   switch (docType) {
@@ -372,6 +639,8 @@ function renderBuiltinHTML(docType, bizData) {
     case 'statement': return renderStatement(bizData);
     case 'invoice': return renderInvoice(bizData);
     case 'debit_note': return renderDebitNote(bizData);
+    case 'gate_in_notice': return renderGateInNotice(bizData);
+    case 'booking_confirmation': return renderBookingConfirmation(bizData);
     default: return null;
   }
 }

@@ -2,6 +2,7 @@ const { OrderContainer, Order } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const events = require('../services/eventBus');
+const { validateISO6346 } = require('../utils/containerValidator');
 
 const base = crudController({
   model: OrderContainer,
@@ -21,6 +22,20 @@ const saveByOrder = asyncHandler(async (req, res) => {
   const order = await Order.findByPk(req.params.orderId);
   if (!order) return fail(res, '订单不存在', 1, 404);
   const items = Array.isArray(req.body.items) ? req.body.items : [];
+  // ISO 6346 校验
+  const invalid = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.containerNo) {
+      const result = validateISO6346(it.containerNo);
+      if (!result.valid) {
+        invalid.push(`第${i + 1}行箱号「${it.containerNo}」: ${result.reason}`);
+      }
+    }
+  }
+  if (invalid.length > 0) {
+    return fail(res, `箱号校验失败:\n${invalid.join('\n')}`, 1, 422);
+  }
   const existing = await OrderContainer.findAll({ where: { orderId: order.id } });
   const existingMap = new Map(existing.map((e) => [e.id, e]));
   const keepIds = [];

@@ -19,6 +19,7 @@ const { startBackupScheduler, stopBackupScheduler } = require('./services/backup
 const { subscribeEvents: subscribeAlertEvents } = require('./services/alertService');
 const { subscribeEvents: subscribeAutomationEvents } = require('./services/automationService');
 const { subscribe: subscribeNotificationEvents } = require('./services/notificationService');
+const { subscribe: subscribeCustomerNotificationEvents } = require('./services/customerNotificationService'); // P2-4 客户订阅通知
 const { subscribe: subscribeRealtime, closeAll: closeRealtime } = require('./services/realtimeService'); // F5/F6 实时推送
 // 方案 A：读缓存失效订阅（运价写事件 → 失效 rate 缓存）
 const { subscribe: subscribeCacheInvalidation } = require('./services/cacheInvalidation');
@@ -280,6 +281,8 @@ async function start() {
   subscribeRealtime();
   // 方案 A：订阅运价写事件 → 失效读缓存
   subscribeCacheInvalidation();
+  // P2-4 客户订阅通知：按 PortalSubscription 偏好下发订单/跟踪/账单/报关事件
+  subscribeCustomerNotificationEvents();
   // F8 可观测性：启动周期采样（DB 连接池 / 事件循环延迟 / 缓存命中）
   metricsService.startSampler(sequelize, cacheService);
   logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化 + 通知推送 + 实时推送）');

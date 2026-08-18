@@ -13,4 +13,7 @@ export const portalAPI = {
   submitSI: (orderId, data) => request.post(`/portal/orders/${orderId}/si`, data, { silent: true }),
   // E3 运价查询：GET /portal/rates?from=&to=&keyword=
   rates: (params) => request.get('/portal/rates', { params, silent: true }),
+  // P2-4 通知订阅偏好：GET 读取矩阵 / PUT 保存
+  subscriptions: () => request.get('/portal/subscriptions', { silent: true }),
+  saveSubscriptions: (items) => request.put('/portal/subscriptions', { items }, { silent: true }),
 };

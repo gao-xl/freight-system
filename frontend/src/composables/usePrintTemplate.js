@@ -3,7 +3,7 @@
 // content = { blocks: [{type, ...}] }，字段 key 使用 `数据源.字段` 点路径（如 order.customer.name）
 import { printTemplateAPI } from '@/api';
 
-// 单据类型（与后端 PrintTemplate.docType ENUM 一致；debit_note 为 D3 新增）
+// 单据类型（与后端 PrintTemplate.docType ENUM 一致；debit_note 为 D3 新增，gate_in_notice/booking_confirmation 为 D5 新增）
 export const PRINT_DOC_TYPES = [
   { value: 'bl', label: '提单' },
   { value: 'invoice', label: '发票' },
@@ -14,6 +14,8 @@ export const PRINT_DOC_TYPES = [
   { value: 'statement', label: '对账单' },
   { value: 'order', label: '订单操作单' },
   { value: 'settlement', label: '结算单' },
+  { value: 'gate_in_notice', label: '入货通知单' },
+  { value: 'booking_confirmation', label: '订舱确认单' },
 ];
 
 export const docTypeLabel = (v) => PRINT_DOC_TYPES.find((d) => d.value === v)?.label || v;

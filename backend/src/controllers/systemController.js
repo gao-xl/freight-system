@@ -1,4 +1,6 @@
 const { User, Role, Permission, UserRole, AuditLog, CompanyProfile } = require('../services/dataAccess');
+const sequelize = require('../db');
+const { Op } = require('sequelize');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { validatePassword } = require('../utils/passwordPolicy');
 const { invalidate, hasPermission } = require('../services/permissionService');
@@ -180,21 +182,33 @@ const assignRoles = asyncHandler(async (req, res) => {
   ok(res, null, '角色已分配');
 });
 
-// 审计日志查询：GET /system/audit-logs?module=&username=&action=&keyword=
+// 审计日志查询：GET /system/audit-logs?module=&username=&action=&startDate=&endDate=
 const auditLogs = asyncHandler(async (req, res) => {
   const { page, pageSize, offset, limit } = getPagination(req.query);
-  const { module, username, action } = req.query;
+  const { module, username, action, startDate, endDate } = req.query;
   const where = {};
   if (module) where.module = module;
   if (username) where.username = username;
   if (action) where.action = action;
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+    if (endDate) where.createdAt[Op.lte] = new Date(endDate + 'T23:59:59.999Z');
+  }
   const { rows, count } = await AuditLog.findAndCountAll({
     where,
     order: [['id', 'DESC']],
     offset,
     limit,
   });
-  ok(res, { list: rows, total: count, page, pageSize });
+  // 汇总统计（不翻页，基于当前筛选条件）
+  const stats = await AuditLog.findAll({
+    attributes: ['module', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
+    where,
+    group: ['module'],
+    raw: true,
+  });
+  ok(res, { list: rows, total: count, page, pageSize, stats: stats.map((s) => ({ module: s.module, count: Number(s.cnt) })) });
 });
 
 // ---------- Onboarding 系统健康与默认设置（Spec §5） ----------

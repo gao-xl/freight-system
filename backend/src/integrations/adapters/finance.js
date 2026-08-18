@@ -6,9 +6,10 @@ const code = 'finance';
 
 async function call(cfg, payload, action) {
   const url = `${cfg.baseUrl || ''}/api/${action}`;
-  const headers = {};
-  if (cfg.apiKey) headers['X-API-Key'] = cfg.apiKey;
-  const resp = await axios.post(url, payload, { headers, timeout: 8000 });
+  // P2-1 网关统一注入鉴权头（api_key/basic/oauth2），adapter 只需合并即可支持任意认证方式
+  const headers = { ...(cfg.gatewayHeaders || {}) };
+  if (!headers['X-API-Key'] && cfg.apiKey) headers['X-API-Key'] = cfg.apiKey;
+  const resp = await axios.post(url, payload, { headers, timeout: cfg.gatewayTimeout || 8000 });
   return resp.data;
 }
 

@@ -101,6 +101,12 @@ module.exports = {
     wechatEnabled: process.env.NOTIFY_WECHAT !== 'off', // NOTIFY_WECHAT=off 关闭企微渠道
     webhookUrl: process.env.WEBHOOK_URL || '',
     webhookEnabled: process.env.NOTIFY_WEBHOOK !== 'off', // NOTIFY_WEBHOOK=off 关闭通用渠道
+    // P2-4 客户通知渠道：微信订阅号模板消息（公众号）。WECHAT_MP_OPENIDS 为接收模板消息的 openid 列表（逗号分隔）
+    wechatMpAppId: process.env.WECHAT_MP_APPID || '',
+    wechatMpSecret: process.env.WECHAT_MP_SECRET || '',
+    wechatMpTemplate: process.env.WECHAT_MP_TEMPLATE || '',
+    wechatMpOpenIds: String(process.env.WECHAT_MP_OPENIDS || '').split(',').map((s) => s.trim()).filter(Boolean),
+    wechatMpEnabled: process.env.NOTIFY_WECHAT_MP !== 'off', // NOTIFY_WECHAT_MP=off 关闭客户微信渠道
     // 可选订阅的关键业务事件（逗号分隔），默认只推送预警；如 order.created,order.transitioned
     businessEvents: process.env.NOTIFY_BUSINESS_EVENTS || '',
   },

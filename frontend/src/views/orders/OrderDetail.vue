@@ -9,6 +9,17 @@
         </div>
       </div>
       <div class="head-right">
+        <el-dropdown v-permission="'print:read'" trigger="click" @command="handlePrint">
+          <el-button type="primary" plain><el-icon><Printer /></el-icon>打印<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="bl"><el-icon><Document /></el-icon>提单</el-dropdown-item>
+              <el-dropdown-item command="gate_in_notice"><el-icon><Document /></el-icon>入货通知单</el-dropdown-item>
+              <el-dropdown-item v-if="detail.bookings.length" command="booking_confirmation"><el-icon><Document /></el-icon>订舱确认单</el-dropdown-item>
+              <el-dropdown-item command="debit_note"><el-icon><Document /></el-icon>费用通知单</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-tag :type="statusOf(ORDER_STATUS, detail.order.status).type" size="large">{{ statusOf(ORDER_STATUS, detail.order.status).text }}</el-tag>
         <el-button type="primary" plain @click="changeStatus">流转状态</el-button>
       </div>
@@ -171,9 +182,12 @@
             <el-button type="primary" size="small" @click="addContainer"><el-icon><Plus /></el-icon>添加箱</el-button>
           </div>
           <el-table :data="containers" size="small" stripe>
-            <el-table-column label="箱号" min-width="140">
-              <template #default="{ row }"><el-input v-model="row.containerNo" size="small" /></template>
-            </el-table-column>
+            <el-table-column label="箱号" min-width="160">
+                <template #default="{ row, $index }">
+                  <el-input v-model="row.containerNo" size="small" :class="{ 'is-error': containerErrors[$index] }" @blur="validateContainerNo($index)" />
+                  <span v-if="containerErrors[$index]" class="field-error">{{ containerErrors[$index] }}</span>
+                </template>
+              </el-table-column>
             <el-table-column label="封号" width="130">
               <template #default="{ row }"><el-input v-model="row.sealNo" size="small" /></template>
             </el-table-column>
@@ -479,6 +493,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { Printer, Document, ArrowDown } from '@element-plus/icons-vue';
 import { orderDetailAPI, orderTimelineAPI, orderFlowAPI, orderAdvanceAPI, orderNodesAPI, updateOrderNodeAPI, bookingAPI, customsAPI, documentAPI, trackAPI, financeAPI, financeBatchAPI, feeTemplateAPI, supplierAPI, orderAPI, orderContainersAPI, saveOrderContainersAPI, releaseAPI, systemDefaultsAPI } from '@/api';
 import {
   ORDER_STATUS, ORDER_TYPE, MODE, SERVICE_TYPE, BOOKING_STATUS, CUSTOMS_STATUS,
@@ -596,7 +611,27 @@ const doneNodeCount = computed(() => orderNodes.value.filter((n) => n.status ===
 // C6 一单多箱
 const CONTAINER_STATUS = { planned: '计划', gate_in: '已进港', loaded: '已装船', arrived: '已到港', delivered: '已送达' };
 const containers = ref([]);
+const containerErrors = ref({});
 const savingContainers = ref(false);
+
+// ISO 6346 校验位算法
+const CHAR_MAP = { A:10, B:12, C:13, D:14, E:15, F:16, G:17, H:18, I:19, J:20, K:21, L:23, M:24, N:25, O:26, P:27, Q:28, R:29, S:30, T:31, U:32, V:34, W:35, X:36, Y:37, Z:38 };
+function validateISO6346(no) {
+  if (!no) return null;
+  const n = no.trim().toUpperCase();
+  if (!/^[A-Z]{3}U\d{6}\d$/.test(n)) return '箱号格式错误，应为4位字母+7位数字';
+  let sum = 0;
+  for (let i = 0; i < 10; i++) {
+    const c = n[i];
+    sum += (c >= '0' && c <= '9' ? +c : CHAR_MAP[c]) * Math.pow(2, i);
+  }
+  if ((sum % 11) % 10 !== +n[10]) return '校验位不匹配，请检查箱号';
+  return null;
+}
+function validateContainerNo(idx) {
+  const err = validateISO6346(containers.value[idx]?.containerNo);
+  containerErrors.value = { ...containerErrors.value, [idx]: err };
+}
 function addContainer() {
   containers.value.push({ orderId: detail.value.order.id, sizeType: '40', status: 'planned', weight: 0, volume: 0, packageCount: 0 });
 }
@@ -605,6 +640,15 @@ async function loadContainers() {
   try { containers.value = await orderContainersAPI(route.params.id); } catch (e) { containers.value = []; }
 }
 async function saveContainers() {
+  // 保存前校验所有箱号
+  for (let i = 0; i < containers.value.length; i++) {
+    validateContainerNo(i);
+  }
+  const errors = Object.values(containerErrors.value).filter(Boolean);
+  if (errors.length > 0) {
+    ElMessage.warning(`有 ${errors.length} 个箱号校验未通过，请修正后再保存`);
+    return;
+  }
   savingContainers.value = true;
   try {
     await saveOrderContainersAPI(route.params.id, { items: containers.value });
@@ -726,6 +770,13 @@ async function doBatchApprove(approve) {
   } catch { /* 取消 */ }
 }
 
+// 打印入口：打开新窗口渲染 PDF（D5 新增入货通知单/订舱确认单）
+function handlePrint(docType) {
+  const id = detail.value?.order?.id;
+  if (!id) return;
+  window.open(`/api/print/${docType}/${id}`, '_blank');
+}
+
 onMounted(async () => {
   load();
   loadDefaultCurrency(); // 多币种：系统默认币种
@@ -783,6 +834,8 @@ function onMobileChange(e) {
 .page-card { margin-bottom: 16px; }
 .table-topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
 .left { display:flex; align-items:center; }
+.field-error { color: var(--danger, #dc2626); font-size: 11px; display: block; line-height: 1.4; }
+:deep(.is-error .el-input__inner) { border-color: var(--danger, #dc2626) !important; }
 
 /* 窄屏适配：头部堆叠、工具栏换行、弹窗占满宽度 */
 @media (max-width: 768px) {

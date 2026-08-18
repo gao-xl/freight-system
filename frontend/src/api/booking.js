@@ -11,4 +11,7 @@ const crud = (resource) => ({
   restore: (id) => request.post(`/${resource}/${id}/restore`),
 });
 
-export const bookingAPI = crud('bookings');
+export const bookingAPI = {
+  ...crud('bookings'),
+  copy: (id) => request.post(`/bookings/${id}/copy`),
+};

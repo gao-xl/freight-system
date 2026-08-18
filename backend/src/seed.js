@@ -4,8 +4,9 @@ const {
   sequelize, User, Customer, Supplier, Order, Booking,
   CustomsDeclaration, Document, ShipmentTrack, FinanceRecord, IntegrationConfig,
   Quotation, QuotationItem, Role, Permission, UserRole, RolePermission,
-  QingdaoNode, YardMeta,
+  QingdaoNode, YardMeta, HsCode,
 } = require('./models');
+const hsCodes = require('./seedData/hsCodes');
 
 async function seed() {
   await sequelize.sync({ force: true });
@@ -224,6 +225,10 @@ async function seed() {
   ];
   await YardMeta.bulkCreate(yardMetas);
 
+  // P1-3 HS编码知识库
+  await HsCode.bulkCreate(hsCodes);
+  console.log(`HS编码种子数据已导入 ${hsCodes.length} 条`);
+
   // RBAC：权限点定义
   const PERMS = [];
   const addPerms = (module, actions, nameFn) => {
@@ -239,6 +244,7 @@ async function seed() {
   addPerms('document', ['create', 'read', 'update', 'delete'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除' })[a]}单证`);
   addPerms('track', ['create', 'read', 'update', 'delete'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除' })[a]}跟踪`);
   addPerms('finance', ['create', 'read', 'update', 'delete', 'approve', 'close', 'lock', 'unlock'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', close: '结账/扎帐', lock: '锁帐', unlock: '解锁' })[a]}财务`);
+  addPerms('budget', ['create', 'read', 'update', 'delete', 'approve'], (a) => `${({ create: '编制', read: '查看', update: '维护', delete: '删除', approve: '审批调整' })[a]}预算`);
   addPerms('quotation', ['create', 'read', 'update', 'delete', 'approve', 'convert'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', convert: '转订单' })[a]}报价`);
   addPerms('integration', ['read', 'update', 'trigger'], (a) => `${({ read: '查看', update: '配置', trigger: '触发' })[a]}对接`);
   addPerms('ai', ['use'], () => '使用AI助手');
@@ -278,6 +284,7 @@ async function seed() {
       ...actionGroup('print', ['read', 'write']),
       ...actionGroup('release', ['read', 'create', 'approve']),
       ...actionGroup('ai', ['use']),
+      ...actionGroup('budget', ['create', 'read', 'update', 'delete', 'approve']),
       ...actionGroup('dashboard', ['read']),
     ],
     operator: [
@@ -301,6 +308,7 @@ async function seed() {
       ...actionGroup('print', ['read']),
       ...actionGroup('release', ['read']),
       ...actionGroup('ai', ['use']),
+      ...actionGroup('budget', ['create', 'read', 'update', 'approve']),
       ...actionGroup('dashboard', ['read']),
     ],
     viewer: [
@@ -312,6 +320,7 @@ async function seed() {
       ...actionGroup('yard', ['read']),
       ...actionGroup('print', ['read']),
       ...actionGroup('ai', ['use']),
+      ...actionGroup('budget', ['read']),
       ...actionGroup('dashboard', ['read']),
     ],
   };

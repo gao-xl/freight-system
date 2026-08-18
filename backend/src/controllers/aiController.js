@@ -124,4 +124,125 @@ const test = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { chat, extract, generate, recommend, status, getSettings, saveSettings, test };
+// P3-1 智能 HS 归类：优先调用大模型返回 Top5，未启用/失败时回退本地 HS 知识库关键词检索。
+const { HsCode } = require('../services/dataAccess');
+const { Op } = require('sequelize');
+const hsClassify = asyncHandler(async (req, res) => {
+  const text = String((req.body && req.body.text) || '').trim();
+  if (!text) return fail(res, '请输入商品品名或描述');
+  const items = [];
+  let source = '';
+  try {
+    const r = await svc.chat({
+      question: [
+        `请根据以下商品描述给出最可能的 5 个 HS 编码（含校准建议）：「${text.slice(0, 200)}」`,
+        '只返回 JSON 数组，每项含字段：code(6位)、name、importRate(进口关税率%)、exportRate(出口退税率%)、vatRate(增值税率%)、reason。不要额外文字。',
+      ].join('\n'),
+      json: true,
+    });
+    let arr = null;
+    const raw = r && r.content;
+    const m = raw ? raw.match(/\[[\s\S]*\]/) : null;
+    if (m) { try { arr = JSON.parse(m[0]); } catch { arr = null; } }
+    if (Array.isArray(arr) && arr.length) {
+      source = 'ai';
+      for (const it of arr.slice(0, 5)) {
+        items.push({
+          code: String(it.code || ''), name: it.name || text, importRate: it.importRate, exportRate: it.exportRate,
+          vatRate: it.vatRate, supervision: '', confidence: null, reason: it.reason || '',
+        });
+      }
+    }
+  } catch (e) {
+    if (e.code !== 'AI_NOT_ENABLED' && e.code !== 'AI_NOT_CONFIGURED') {
+      // 其它异常仅记录，仍走本地兜底
+      const { logger } = require('../utils/logger');
+      logger.warn('[HS分类] AI 调用失败，回退本地检索', { message: e.message });
+    }
+  }
+  if (!items.length) {
+    source = 'local';
+    const rows = await HsCode.findAll({
+      where: { [Op.or]: [{ name: { [Op.like]: `%${text}%` } }, { code: { [Op.like]: `%${text}%` } }] },
+      order: [['isCommon', 'DESC']], limit: 8,
+    });
+    // 关键词拆分词后二次模糊匹配，提升召回
+    const tokens = text.replace(/\s+/g, '').slice(0, 12);
+    const fuzzy = tokens.length > 1
+      ? await HsCode.findAll({ where: { name: { [Op.like]: `%${tokens}%` } }, limit: 8 })
+      : [];
+    const seen = new Set();
+    for (const row of [...rows, ...fuzzy]) {
+      if (seen.has(row.code)) continue;
+      seen.add(row.code);
+      items.push({
+        code: row.code, name: row.name, importRate: row.importRate, exportRate: row.exportRate,
+        vatRate: row.vatRate, supervision: row.supervision || '', confidence: null, reason: '本地知识库匹配',
+      });
+      if (items.length >= 5) break;
+    }
+  }
+  ok(res, { source, text, items });
+});
+
+// P3-1 客户门户智能客服：仅限客户角色，基于其自身订单/跟踪/账单/运价上下文作答。
+// AI 未启用时回退基于本地数据的确定性回答。
+const { Order, ShipmentTrack, FinanceRecord } = require('../services/dataAccess');
+const customerSupport = asyncHandler(async (req, res) => {
+  const customerId = req.user.customerId;
+  if (!customerId) return fail(res, '当前账号未关联客户档案', 1, 403);
+  const question = String((req.body && req.body.question) || '').trim();
+  if (!question) return fail(res, '请输入您的问题');
+  try {
+    const orders = await Order.findAll({ where: { customerId }, order: [['createdAt', 'DESC']], limit: 5, attributes: ['id', 'orderNo', 'status', 'route', 'etaDate', 'createdAt'] });
+    const orderIds = orders.map((o) => o.id);
+    const tracks = orderIds.length ? await ShipmentTrack.findAll({ where: { orderId: { [Op.in]: orderIds } }, order: [['createdAt', 'DESC']], limit: 10, attributes: ['orderId', 'location', 'status', 'createdAt'] }) : [];
+    const bills = orderIds.length ? await FinanceRecord.findAll({ where: { orderId: { [Op.in]: orderIds }, status: { [Op.ne]: 'waived' } }, order: [['createdAt', 'DESC']], limit: 8, attributes: ['orderId', 'direction', 'amount', 'currency', 'status', 'dueDate'] }) : [];
+    const pendingOrderCount = await Order.count({ where: { customerId, status: { [Op.notIn]: ['completed', 'cancelled'] } } });
+    const brief = {
+      客户订单数: orders.length, 进行中订单: pendingOrderCount,
+      最近订单: orders.map((o) => `${o.orderNo}(${o.status}${o.route ? `/${o.route}` : ''}${o.etaDate ? `/ETA ${o.etaDate}` : ''})`).join('；'),
+      最近动态: tracks.slice(0, 5).map((t) => `${t.orderId}:${t.location || ''}${t.status || ''}`).join('；'),
+      近期账单: bills.slice(0, 5).map((b) => `${b.orderId}:${b.direction === 'receivable' ? '应收' : '应付'}${b.amount}${b.currency || ''}(${b.status})`).join('；'),
+    };
+    let content = '';
+    try {
+      const r = await svc.chat({
+        question: [
+          `你是货代系统的客户服务助手，仅依据以下该客户的业务数据回答（勿捏造）：`,
+          JSON.stringify(brief, null, 1),
+          `客户问题：${question.slice(0, 300)}`,
+        ].join('\n'),
+      });
+      content = (r && r.content) || '';
+    } catch (e) {
+      content = '';
+    }
+    if (content) return ok(res, { answer: content, mode: 'ai', brief });
+    // 确定性兜底
+    const q = question;
+    let answer = '';
+    if (/订单|单号|有几个|数量/.test(q)) {
+      answer = `您当前共有 ${orders.length} 条最近订单，其中进行中 ${pendingOrderCount} 单。`;
+    } else if (/跟踪|运输|到哪|位置|ETA|到港|派送/.test(q)) {
+      answer = tracks.length
+        ? `最近物流动态：${tracks.slice(0, 5).map((t) => `${t.orderId} 号订单：${t.location || ''}${t.status || ''}`).join('；')}`
+        : '最近暂无物流动态记录。';
+    } else if (/账单|费用|应收|金额|多少钱/.test(q)) {
+      answer = bills.length
+        ? `近期账单：${bills.slice(0, 5).map((b) => `${b.orderId} 号订单 ${b.amount}${b.currency || ''}（${b.status}）`).join('；')}`
+        : '近期暂无账单。';
+    } else if (/业务|客服|联系|电话/.test(q)) {
+      answer = '您可在工作时段联系专属客服为您服务。您也可以留下具体问题，我们会尽快处理。';
+    } else {
+      answer = `已收到您的问题。可尝试询问：我的订单进度？最近物流到哪了？近期账单有哪些？`;
+    }
+    ok(res, { answer, mode: 'local', brief });
+  } catch (e) {
+    const { logger } = require('../utils/logger');
+    logger.warn('[客服] 数据组装失败', { message: e.message });
+    ok(res, { answer: '暂时无法获取您的业务数据，请稍后再试或联系客服专员。', mode: 'local', brief: {} });
+  }
+});
+
+module.exports = { chat, extract, generate, recommend, status, getSettings, saveSettings, test, hsClassify, customerSupport };

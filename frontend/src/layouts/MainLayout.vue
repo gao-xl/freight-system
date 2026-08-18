@@ -210,6 +210,7 @@ const menuGroups = [
       { path: '/finance/invoices', title: '发票管理', icon: 'Ticket', permission: 'finance:read' }, // N2
       { path: '/finance/statement', title: '对账单', icon: 'Tickets', permission: 'finance:read' },
       { path: '/finance/profit-report', title: '利润报表', icon: 'DataAnalysis', permission: 'finance:read' },
+      { path: '/finance/budget', title: '预算管理', icon: 'PieChart', permission: 'budget:read' }, // P3-2
       { path: '/import', title: '数据导入', icon: 'Upload', permission: undefined },
     ],
   },

@@ -60,7 +60,7 @@
         <div class="toolbar">
           <el-button v-permission="'print:write'" type="primary" @click="goPrintDesigner"><el-icon><Printer /></el-icon>进入打印模板设计器</el-button>
         </div>
-        <el-alert type="info" :closable="false" show-icon title="可配置提单、发票、装箱单、报价单、报关单、对账单等单据的打印模板（字段、布局、Logo、页眉页脚），设计后各模块打印按钮将按默认模板渲染。" />
+        <el-alert type="info" :closable="false" show-icon title="可配置提单、入货通知单、订舱确认单、发票、装箱单、报价单、报关单、对账单、费用通知单等单据的打印模板（字段、布局、Logo、页眉页脚），设计后各模块打印按钮将按默认模板渲染。" />
       </el-tab-pane>
       <el-tab-pane label="小组管理" name="group">
         <div class="toolbar">
@@ -135,7 +135,8 @@
         </div>
         <el-alert type="info" :closable="false" show-icon title="自定义字段：公司可给订单/客户等业务加字段（如指定货代、付款条款），无需改代码。新增后在对应业务表单中动态渲染。" />
       </el-tab-pane>
-      <el-tab-pane label="审计日志" name="audit">        <div class="toolbar audit-filter">
+      <el-tab-pane label="审计日志" name="audit">
+        <div class="toolbar audit-filter">
           <el-input v-model="auditQuery.username" placeholder="操作人" clearable style="width:140px" @keyup.enter="loadAudit" />
           <el-select v-model="auditQuery.module" placeholder="模块" clearable style="width:160px" @change="loadAudit">
             <el-option v-for="m in moduleNames" :key="m" :label="moduleName[m] || m" :value="m" />
@@ -145,7 +146,16 @@
             <el-option label="修改" value="update" />
             <el-option label="删除" value="delete" />
           </el-select>
+          <el-date-picker v-model="auditDateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width:260px" @change="loadAudit" />
           <el-button type="primary" @click="loadAudit"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button @click="exportAuditCSV"><el-icon><Download /></el-icon>导出CSV</el-button>
+        </div>
+        <!-- 模块汇总统计 -->
+        <div v-if="auditStats.length" class="audit-stats">
+          <span class="stats-label">模块分布：</span>
+          <el-tag v-for="s in auditStats" :key="s.module" size="small" style="margin-right:6px" type="info">
+            {{ moduleName[s.module] || s.module }}: {{ s.count }}
+          </el-tag>
         </div>
         <el-table :data="audits" v-loading="loadingAudit" stripe size="small">
           <el-table-column prop="id" label="ID" width="70" />
@@ -364,17 +374,41 @@ async function removeNumberSeg(row) {
 
 // 审计日志
 const auditQuery = ref({ page: 1, pageSize: 20, username: '', module: '', action: '' });
+const auditDateRange = ref(null);
 const audits = ref([]);
 const auditTotal = ref(0);
+const auditStats = ref([]);
 const loadingAudit = ref(false);
 async function loadAudit() {
   loadingAudit.value = true;
   try {
-    const data = await auditLogAPI({ ...auditQuery.value, page: auditQuery.value.page, pageSize: auditQuery.value.pageSize });
+    const params = { ...auditQuery.value, page: auditQuery.value.page, pageSize: auditQuery.value.pageSize };
+    if (auditDateRange.value && auditDateRange.value.length === 2) {
+      params.startDate = auditDateRange.value[0];
+      params.endDate = auditDateRange.value[1];
+    }
+    const data = await auditLogAPI(params);
     audits.value = data.list || [];
     auditTotal.value = data.total || 0;
+    auditStats.value = data.stats || [];
   } catch (e) { /* 拦截器提示 */ }
   finally { loadingAudit.value = false; }
+}
+function exportAuditCSV() {
+  if (!audits.value.length) return ElMessage.warning('无数据可导出');
+  const header = ['ID', '操作人', '模块', '动作', '摘要', 'IP', '时间'];
+  const rows = audits.value.map((r) => [
+    r.id, r.username, moduleName[r.module] || r.module,
+    { create: '创建', update: '修改', delete: '删除' }[r.action] || r.action,
+    r.summary || '', r.ip, String(r.createdAt || '').replace('T', ' ').slice(0, 19),
+  ]);
+  const csv = [header, ...rows].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `审计日志_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  ElMessage.success('导出成功');
 }
 
 // 用户
@@ -537,4 +571,6 @@ async function testSmtp() {
 .sec-desc { font-size: 13px; color: var(--text-muted); margin: 0 0 14px; }
 .sec-card .muted { margin-left: 10px; font-size: 12px; color: var(--text-muted); }
 .sec-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.audit-stats { padding: 10px 0; display: flex; align-items: center; flex-wrap: wrap; }
+.audit-stats .stats-label { font-size: 13px; color: var(--text-sub); margin-right: 4px; }
 </style>

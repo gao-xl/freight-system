@@ -40,9 +40,10 @@
       <el-table-column label="状态" width="100">
         <template #default="{ row }"><el-tag :type="statusOf(BOOKING_STATUS, row.status).type" size="small">{{ statusOf(BOOKING_STATUS, row.status).text }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="210" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+          <el-button link type="success" @click="copyBooking(row)">复制</el-button>
           <el-button v-if="row.status==='new'" link type="warning" @click="setStatus(row,'confirmed')">确认</el-button>
           <el-button link type="danger" @click="remove(row)">删除</el-button>
         </template>
@@ -155,6 +156,13 @@ async function save() {
 async function setStatus(row, status) {
   await bookingAPI.update(row.id, { ...row, status });
   ElMessage.success('状态已更新');
+  load();
+}
+
+async function copyBooking(row) {
+  await ElMessageBox.confirm(`确认复制订舱「${row.bookingNo}」？将创建新订舱，保留船名/航次/承运人/箱型等信息。`, '提示', { type: 'info' });
+  await bookingAPI.copy(row.id);
+  ElMessage.success('订舱已复制');
   load();
 }
 

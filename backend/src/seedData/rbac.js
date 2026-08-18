@@ -21,6 +21,8 @@ function buildPermissions() {
   PERMS.push(...addPerms('document', ['create', 'read', 'update', 'delete'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除' })[a]}单证`));
   PERMS.push(...addPerms('track', ['create', 'read', 'update', 'delete'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除' })[a]}跟踪`));
   PERMS.push(...addPerms('finance', ['create', 'read', 'update', 'delete', 'approve', 'close', 'lock', 'unlock'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', close: '结账/扎帐', lock: '锁帐', unlock: '解锁' })[a]}财务`));
+  // P3-2 预算管理权限
+  PERMS.push(...addPerms('budget', ['create', 'read', 'update', 'delete', 'approve'], (a) => `${({ create: '编制', read: '查看', update: '维护', delete: '删除', approve: '审批调整' })[a]}预算`));
   PERMS.push(...addPerms('quotation', ['create', 'read', 'update', 'delete', 'approve', 'convert'], (a) => `${({ create: '新建', read: '查看', update: '编辑', delete: '删除', approve: '审批', convert: '转订单' })[a]}报价`));
   PERMS.push(...addPerms('integration', ['read', 'update', 'trigger'], (a) => `${({ read: '查看', update: '配置', trigger: '触发' })[a]}对接`));
   PERMS.push(...addPerms('ai', ['use'], (a) => '使用AI助手'));
@@ -68,6 +70,7 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('print', ['read', 'write']),
       ...actionGroup('release', ['read', 'create', 'approve']),
       ...aiUse(),
+      ...actionGroup('budget', ['create', 'read', 'update', 'delete', 'approve']),
       ...actionGroup('dashboard', ['read']),
     ],
     operator: [
@@ -80,6 +83,7 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('print', ['read']),
       ...actionGroup('release', ['read', 'create']), // 操作员可查看并申请放单；审批权保留给 manager
       ...aiUse(),
+      ...actionGroup('budget', ['read']),
       ...actionGroup('dashboard', ['read']),
     ],
     finance: [
@@ -92,6 +96,7 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('print', ['read']),
       ...actionGroup('release', ['read']),
       ...aiUse(),
+      ...actionGroup('budget', ['create', 'read', 'update', 'approve']),
       ...actionGroup('dashboard', ['read']),
     ],
     viewer: [
@@ -101,8 +106,9 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('qingdao', ['read']),
       ...actionGroup('alert', ['read']),
       ...actionGroup('yard', ['read']),
-      ...actionGroup('print', ['read']),
+      ...actionGroup('release', ['read']),
       ...aiUse(),
+      ...actionGroup('budget', ['read']),
       ...actionGroup('dashboard', ['read']),
     ],
   };

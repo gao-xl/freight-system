@@ -81,13 +81,13 @@ async function buildBusinessBrief(scope) {
 }
 
 // 1) 智能问答 / 业务助手：可带业务摘要上下文
-async function chat({ question, scope, temperature }) {
+async function chat({ question, scope, temperature, json }) {
   const brief = scope ? await buildBusinessBrief(scope) : null;
   const system = brief
     ? `你是货运代理管理系统的智能业务助手。以下是当前账号可见的核心业务概览（JSON）：\n${JSON.stringify(brief)}\n
 请基于该概览和你的知识回答用户问题；涉及系统内具体数据时如实说明，不要编造不存在的数字。回答使用简体中文，简洁专业。`
     : '你是货运代理管理系统的智能业务助手。回答使用简体中文，简洁专业，不要编造系统内不存在的具体数据。';
-  const result = await callAI({ system, user: question, temperature: temperature ?? 0.4 });
+  const result = await callAI({ system, user: question, temperature: temperature ?? 0.4, json });
   return { content: result.content, model: result.model };
 }
 

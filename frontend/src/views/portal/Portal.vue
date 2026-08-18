@@ -76,6 +76,10 @@
         <el-tab-pane label="运价查询" name="rates">
           <PortalRates />
         </el-tab-pane>
+
+        <el-tab-pane label="通知订阅" name="subscriptions">
+          <NotificationSubscription />
+        </el-tab-pane>
       </el-tabs>
     </div>
 
@@ -115,6 +119,9 @@
     </el-dialog>
 
     <PortalSiDialog v-model="siVisible" :order-id="siOrder?.id" :order-no="siOrder?.orderNo" />
+
+    <!-- P3-1 智能客服 -->
+    <PortalSupport />
   </div>
 </template>
 
@@ -128,6 +135,8 @@ import { portalAPI } from '@/api';
 import { downloadBlob } from '@/utils/download';
 import PortalRates from './PortalRates.vue';
 import PortalSiDialog from './PortalSiDialog.vue';
+import NotificationSubscription from './NotificationSubscription.vue';
+import PortalSupport from './PortalSupport.vue';
 import { ORDER_STATUS, ORDER_TYPE, MODE, TRACK_STAGE, FIN_CATEGORY, FIN_STATUS, dictText, statusOf, money } from '@/utils/dicts';
 
 const router = useRouter();
