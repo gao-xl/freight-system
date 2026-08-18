@@ -104,6 +104,8 @@ class ModuleRegistryImpl {
    * 单个模块加载失败被隔离，不影响其他模块与服务启动。
    */
   loadFromDir(modulesDir) {
+    // 归一化为绝对路径：require() 对无 ./ 前缀的相对路径会按模块名解析，导致全部模块加载失败
+    modulesDir = path.resolve(modulesDir);
     const result = { dir: modulesDir, loaded: [], skipped: [], errors: [] };
 
     let entries;

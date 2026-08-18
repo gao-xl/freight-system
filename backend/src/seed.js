@@ -253,7 +253,9 @@ async function seed() {
   addPerms('yard', ['read', 'update'], (a) => `${({ read: '查看', update: '查询/维护' })[a]}场站信息`);
   addPerms('print', ['read', 'write'], (a) => `${({ read: '查看/打印', write: '设计模板' })[a]}`);
   addPerms('release', ['read', 'create', 'approve'], (a) => `${({ read: '查看', create: '申请', approve: '审批' })[a]}放单`);
-  addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company'], (a) => `${({ user: '用户', role: '角色', permission: '权限', audit: '审计', group: '小组', custom: '自定义字段', company: '公司设置' })[a]}管理`);
+  addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company', '*'], (a) => a === '*'
+    ? '系统运维（备份/恢复/健康检查/自动化）'
+    : `${({ user: '用户', role: '角色', permission: '权限', audit: '审计', group: '小组', custom: '自定义字段', company: '公司设置' })[a]}管理`);
   const permissionRecords = await Permission.bulkCreate(PERMS);
 
   // RBAC：内置角色（含 B2 数据权限范围）

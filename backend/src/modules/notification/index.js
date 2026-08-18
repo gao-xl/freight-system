@@ -88,7 +88,8 @@ module.exports = {
     }));
 
     // E2 推送记录查询（管理端）：GET /notifications?page=1&pageSize=20&eventType=&channel=&status=
-    router.get('/notifications', guard('system', 'read'), notificationController.list);
+    // 用 system:*（已注册权限点）而非 system:read（未注册，导致非 admin 角色永远无法被授权）
+    router.get('/notifications', guard('system', '*'), notificationController.list);
 
     logger.info('[NOTIFY] 事件订阅由内置 notificationService 统一负责（server.js 启动时注册），本模块仅提供配置与记录查询');
   },
