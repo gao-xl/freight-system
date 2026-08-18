@@ -3,6 +3,8 @@
 const browserPool = require("../browser/pool");
 const lhtLogin = require("../scrapers/luhaitong/login");
 const containerScraper = require("../scrapers/luhaitong/container");
+const ygtLogin = require("../scrapers/yungangtong/login");
+const vipContainer = require("../scrapers/yungangtong/vip-container");
 const normalizer = require("../adapters/data-normalizer");
 const changeDetector = require("../adapters/change-detector");
 const cacheAdapter = require("../adapters/cache-adapter");
@@ -94,6 +96,37 @@ class ContainerTracker {
       if (page) await page.close().catch(() => {});
       release();
     }
+  }
+
+  /**
+   * 云港通 VIP 单箱查询（青岛港）
+   * @param {string} containerNo - 集装箱号
+   * @param {string} ieFlag - I=进口, E=出口
+   * @returns {Promise<object>} 标准化集装箱状态
+   */
+  async trackByContainerNo(containerNo, ieFlag = "I") {
+    const { context, release } = await browserPool.acquire();
+    let page;
+    try {
+      page = await ygtLogin.ensureLoggedIn(context);
+      // 建立模块 session（VIP API 需要模块上下文）
+      await page.goto(config.yungangtong.vipQueryUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: config.browser.navigationTimeout,
+      }).catch(() => {});
+      await this._sleep(3000);
+
+      const raw = await vipContainer.queryByContainerNo(page, containerNo, { ieFlag });
+      return normalizer.normalizeYgtContainerStatus(raw);
+    } finally {
+      if (page) await page.close().catch(() => {});
+      release();
+    }
+  }
+
+  _sleep(min = 1000, max = 2000) {
+    const delay = Math.floor(Math.random() * (max - min) + min);
+    return new Promise((r) => setTimeout(r, delay));
   }
 
   async _notifyChange(containerNo, blNo, changes) {

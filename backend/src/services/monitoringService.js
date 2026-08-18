@@ -120,15 +120,16 @@ async function buildSnapshot() {
 
 // ── 规则评估 ──
 // 返回 { firing: [...], all: [{...rule, current, firing}] }
+// node_timeout 由 escalateStuckNodes 独立结算（基于订单节点脏数据扫描），不在此做阈值比较，
+// 仅回填其阈值便于展示，避免制造虚假的「mon:node_timeout」基础设施预警。
 async function evaluate(rules, snapshot) {
-  const all = await Promise.all(rules.map(async (rule) => {
+  const all = rules.map((rule) => {
+    const isNodeRule = rule.key === 'node_timeout' || String(rule.field || '').startsWith('node.');
     let current = getPath(snapshot, rule.field);
-    if (current == null && rule.field === 'node.timeoutHours') {
-      // 节点超时阈值由本服务在 escalate 内单独结算，这里只回填阈值便于展示
-      current = rule.value;
-    }
-    return { ...rule, current: current == null ? null : Math.round(current * 100) / 100, firing: rule.enabled && fired(rule, current) };
-  }));
+    if (isNodeRule) current = rule.value;
+    const firingNow = rule.enabled && !isNodeRule && current != null && fired(rule, current);
+    return { ...rule, current: current == null ? null : Math.round(current * 100) / 100, firing: firingNow };
+  });
   const firing = all.filter((r) => r.firing);
   return { firing, all };
 }
@@ -178,7 +179,7 @@ async function escalateStuckNodes(rules) {
     const ids = orders.map((o) => o.id);
     const [instances, templates, alerts] = await Promise.all([
       OrderNode.findAll({ where: { orderId: { [Op.in]: ids } } }),
-      FlowNode.findAll({ where: { enabled: true }, order: [['businessType', 'ASC'], ['sort', 'ASC'], ['id', 'ASC']] }),
+      FlowNode.findAll({ where: { enabled: true }, order: [['bizType', 'ASC'], ['sort', 'ASC'], ['id', 'ASC']] }),
       AlertRecord.findAll({ where: { dedupKey: { [Op.like]: 'node:%' } } }),
     ]);
     const instByOrder = new Map();

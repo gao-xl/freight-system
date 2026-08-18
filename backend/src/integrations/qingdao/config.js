@@ -13,6 +13,7 @@ module.exports = {
     // VIP 通关状态 API
     vipApi: {
       customsStatus: "/api/web/vip/vipOceantally/queryByBillNo",
+      containerStatus: "/api/web/vip/vipOceantally/queryByContainerNo",
       usage: "/api/web/vip/vipUsage/querySingleUsage",
     },
     username: process.env.YGT_USERNAME || "",

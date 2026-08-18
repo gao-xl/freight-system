@@ -78,6 +78,37 @@ class DataNormalizer {
   }
 
   /**
+   * 标准化云港通 VIP 单箱查询结果
+   * 输入为 vip-container.js 输出（container 对象 + nodes 对象）
+   * @param {object} raw - 云港通单箱查询原始结果
+   * @returns {object} 标准化结果
+   */
+  normalizeYgtContainerStatus(raw) {
+    const mapping = config.statusMapping.container;
+    const nodes = Object.values(raw.nodes || {}).map((n) => ({
+      key: n.key,
+      name: n.name,
+      completed: n.completed,
+      time: n.time,
+      flag: n.flag,
+      count: n.count,
+      internalKey: mapping[n.key] || n.key,
+    }));
+    return {
+      containerNo: raw.containerNo,
+      blNo: raw.blNo,
+      ieFlag: raw.ieFlag || "I",
+      queriedAt: raw.queriedAt,
+      source: raw.source || "yungangtong",
+      status: this._mapStatus(raw.status, mapping),
+      vessel: raw.vessel || {},
+      container: raw.container || null,
+      nodes,
+      lastCompletedNode: this._lastCompletedNode(nodes),
+    };
+  }
+
+  /**
    * 标准化船舶动态
    * @param {object} raw - 船讯网API原始数据
    * @returns {object} 标准化结果

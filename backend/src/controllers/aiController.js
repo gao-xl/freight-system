@@ -194,15 +194,15 @@ const customerSupport = asyncHandler(async (req, res) => {
   const question = String((req.body && req.body.question) || '').trim();
   if (!question) return fail(res, '请输入您的问题');
   try {
-    const orders = await Order.findAll({ where: { customerId }, order: [['createdAt', 'DESC']], limit: 5, attributes: ['id', 'orderNo', 'status', 'route', 'etaDate', 'createdAt'] });
+    const orders = await Order.findAll({ where: { customerId }, order: [['createdAt', 'DESC']], limit: 5, attributes: ['id', 'orderNo', 'status', 'eta', 'createdAt'] });
     const orderIds = orders.map((o) => o.id);
-    const tracks = orderIds.length ? await ShipmentTrack.findAll({ where: { orderId: { [Op.in]: orderIds } }, order: [['createdAt', 'DESC']], limit: 10, attributes: ['orderId', 'location', 'status', 'createdAt'] }) : [];
+    const tracks = orderIds.length ? await ShipmentTrack.findAll({ where: { orderId: { [Op.in]: orderIds } }, order: [['createdAt', 'DESC']], limit: 10, attributes: ['orderId', 'location', 'stage', 'createdAt'] }) : [];
     const bills = orderIds.length ? await FinanceRecord.findAll({ where: { orderId: { [Op.in]: orderIds }, status: { [Op.ne]: 'waived' } }, order: [['createdAt', 'DESC']], limit: 8, attributes: ['orderId', 'direction', 'amount', 'currency', 'status', 'dueDate'] }) : [];
     const pendingOrderCount = await Order.count({ where: { customerId, status: { [Op.notIn]: ['completed', 'cancelled'] } } });
     const brief = {
       客户订单数: orders.length, 进行中订单: pendingOrderCount,
-      最近订单: orders.map((o) => `${o.orderNo}(${o.status}${o.route ? `/${o.route}` : ''}${o.etaDate ? `/ETA ${o.etaDate}` : ''})`).join('；'),
-      最近动态: tracks.slice(0, 5).map((t) => `${t.orderId}:${t.location || ''}${t.status || ''}`).join('；'),
+      最近订单: orders.map((o) => `${o.orderNo}(${o.status}${o.eta ? `/ETA ${o.eta}` : ''})`).join('；'),
+      最近动态: tracks.slice(0, 5).map((t) => `${t.orderId}:${t.location || ''}${t.stage || ''}`).join('；'),
       近期账单: bills.slice(0, 5).map((b) => `${b.orderId}:${b.direction === 'receivable' ? '应收' : '应付'}${b.amount}${b.currency || ''}(${b.status})`).join('；'),
     };
     let content = '';
@@ -226,7 +226,7 @@ const customerSupport = asyncHandler(async (req, res) => {
       answer = `您当前共有 ${orders.length} 条最近订单，其中进行中 ${pendingOrderCount} 单。`;
     } else if (/跟踪|运输|到哪|位置|ETA|到港|派送/.test(q)) {
       answer = tracks.length
-        ? `最近物流动态：${tracks.slice(0, 5).map((t) => `${t.orderId} 号订单：${t.location || ''}${t.status || ''}`).join('；')}`
+        ? `最近物流动态：${tracks.slice(0, 5).map((t) => `${t.orderId} 号订单：${t.location || ''}${t.stage || ''}`).join('；')}`
         : '最近暂无物流动态记录。';
     } else if (/账单|费用|应收|金额|多少钱/.test(q)) {
       answer = bills.length

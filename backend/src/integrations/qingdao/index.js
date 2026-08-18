@@ -100,6 +100,15 @@ module.exports = {
   },
 
   /**
+   * 云港通 VIP 单箱查询（青岛港）
+   * @param {string} containerNo - 集装箱号
+   * @param {string} ieFlag - I=进口, E=出口
+   */
+  async trackContainer(containerNo, ieFlag) {
+    return containerTracker.trackByContainerNo(containerNo, ieFlag);
+  },
+
+  /**
    * 获取港口船舶动态
    * @param {string} portCode - 港口代码，默认 CNTAO
    */
