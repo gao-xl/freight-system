@@ -38,7 +38,7 @@ module.exports = {
     }
 
     // ── HS 编码知识库 ──
-    if (!(await this.tableExists(queryInterface, 'HsCodes'))) {
+    if (!(await tableExists('HsCodes'))) {
       await queryInterface.createTable('HsCodes', {
         id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
         code: { type: Sequelize.STRING(20), allowNull: false },
@@ -59,7 +59,7 @@ module.exports = {
     }
 
     // ── 客户通知订阅偏好 ──
-    if (!(await this.tableExists(queryInterface, 'PortalSubscriptions'))) {
+    if (!(await tableExists('PortalSubscriptions'))) {
       await queryInterface.createTable('PortalSubscriptions', {
         id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
         customerId: { type: Sequelize.INTEGER, allowNull: false },
@@ -74,7 +74,7 @@ module.exports = {
     }
 
     // ── 预算表头 ──
-    if (!(await this.tableExists(queryInterface, 'Budgets'))) {
+    if (!(await tableExists('Budgets'))) {
       await queryInterface.createTable('Budgets', {
         id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
         name: { type: Sequelize.STRING(120), allowNull: false },
@@ -98,7 +98,7 @@ module.exports = {
     }
 
     // ── 预算明细行 ──
-    if (!(await this.tableExists(queryInterface, 'BudgetLines'))) {
+    if (!(await tableExists('BudgetLines'))) {
       await queryInterface.createTable('BudgetLines', {
         id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
         budgetId: { type: Sequelize.INTEGER, allowNull: false },
@@ -114,7 +114,7 @@ module.exports = {
     }
 
     // ── 预算调整审批 ──
-    if (!(await this.tableExists(queryInterface, 'BudgetAdjustments'))) {
+    if (!(await tableExists('BudgetAdjustments'))) {
       await queryInterface.createTable('BudgetAdjustments', {
         id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
         budgetId: { type: Sequelize.INTEGER, allowNull: false },
