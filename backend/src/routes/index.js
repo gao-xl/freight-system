@@ -57,6 +57,7 @@ const voucher = require('../controllers/voucherController'); // P2-3 财务凭�
 const customsSync = require('../controllers/customsSyncController'); // P2-2 报关单申报/查询
 const portalSubscription = require('../controllers/portalSubscriptionController'); // P2-4 客户通知订阅偏好
 const budget = require('../controllers/budgetController'); // P3-2 预算管理
+const monitor = require('../controllers/monitorController'); // P3-3 运维监控增强
 
 const router = express.Router();
 
@@ -522,6 +523,12 @@ router.delete('/budgets/:id/lines/:lineId', guard('budget', 'update'), budget.re
 router.post('/budgets/:id/status', guard('budget', 'update'), budget.transition);
 router.post('/budgets/:id/adjustments', guard('budget', 'update'), budget.createAdjustment);
 router.post('/budgets/adjustments/:adjId/review', guard('budget', 'approve'), budget.reviewAdjustment);
+
+// P3-3 运维监控（运维中心使用，仅系统管理员）
+router.get('/ops/monitor/snapshot', authRequired, requirePermission('system', '*'), monitor.snapshot);
+router.get('/ops/monitor/rules', authRequired, requirePermission('system', '*'), monitor.getRules);
+router.put('/ops/monitor/rules', authRequired, requirePermission('system', '*'), monitor.putRules);
+router.post('/ops/monitor/escalate/run', authRequired, requirePermission('system', '*'), monitor.runEscalate);
 
 // 报价/询价
 router.get('/quotations', authRequired, requirePermission('quotation', 'read'), quotation.list);

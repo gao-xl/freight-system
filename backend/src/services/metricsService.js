@@ -59,12 +59,109 @@ const eventLoopLag = new client.Gauge({
   help: '事件循环实时延迟（毫秒）',
 });
 
-// 记录一次 HTTP 请求的 RED 指标
+// ── 滚动请求速率窗口（QPS / 5xx 错误率）──
+// 以「秒」为桶统计请求量与 5xx 数，保留最近 RATE_WINDOW_SEC 秒，供监控快照与告警判断
+// 使用近 60s 得出实时 QPS 与错误率，避免「自启动以来累计均值」掩盖瞬时劣化。
+const RATE_WINDOW_SEC = 120;
+const bootAt = Date.now();
+const secBuckets = new Map(); // epochSec -> { total, errors5xx }
+
+function pruneBuckets() {
+  const cutoff = Math.floor(Date.now() / 1000) - RATE_WINDOW_SEC;
+  for (const sec of secBuckets.keys()) {
+    if (sec < cutoff) secBuckets.delete(sec);
+  }
+}
+
+// 记录一次 HTTP 请求：RED 指标 + 滚动速率（仅统计非健康检查的 API 请求，与控制台口径一致）
 function recordHttp({ method, route, status, durationMs }) {
   try {
     httpRequests.inc({ method, route, status }, 1);
     httpDuration.observe({ method, route }, durationMs / 1000);
+    const sec = Math.floor(Date.now() / 1000);
+    if (!secBuckets.has(sec)) secBuckets.set(sec, { total: 0, errors5xx: 0 });
+    const b = secBuckets.get(sec);
+    b.total += 1;
+    if (status >= 500) b.errors5xx += 1;
+    if (bucketsGrew++ % 32 === 0) pruneBuckets();
   } catch (e) { /* 指标容错 */ }
+}
+let bucketsGrew = 0;
+
+// 近 windowSec 秒的请求量与 5xx 数（横跨窗口时按整桶求和）
+function windowCounts(windowSec = 60) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const from = nowSec - windowSec;
+  let total = 0;
+  let errors = 0;
+  for (const [sec, b] of secBuckets) {
+    if (sec > from) { total += b.total; errors += b.errors5xx; }
+  }
+  return { total, errors };
+}
+
+// 摄取 5xx 计数（consolidate）：供告警规则用；QPS 用 windowCounts().total / windowSec
+function qps(windowSec = 60) {
+  const { total } = windowCounts(windowSec);
+  return windowSec > 0 ? total / windowSec : 0;
+}
+
+// 500 错误率（近 windowSec 秒）
+function errorRate5xx(windowSec = 60) {
+  const { total, errors } = windowCounts(windowSec);
+  return total > 0 ? errors / total : 0;
+}
+
+// 读取 HTTP 累计直方图，估算 p50/p95（秒单位）
+function latencyQuantiles(quantiles = [0.5, 0.95]) {
+  try {
+    const hist = client.register.getSingleMetric('http_request_duration_seconds');
+    if (!hist || !hist.get) return {};
+    const { values } = hist.get();
+    if (!Array.isArray(values) || !values.length) return {};
+    const bucketStarts = values.map((v) => v.labels && v.labels.le !== undefined ? v.labels.le : null).filter((x) => x !== null);
+    const rawBuckets = values.filter((v) => v.labels && v.labels.le !== undefined);
+    const total = rawBuckets.reduce((s, v) => s + (v.value || 0), 0);
+    const out = {};
+    for (const q of quantiles) {
+      const target = total * q;
+      let acc = 0;
+      for (const v of rawBuckets) {
+        acc += v.value || 0;
+        if (acc >= target) { out[`p${q * 100}`] = Number(v.labels.le); break; }
+      }
+      if (!(`p${q * 100}` in out)) out[`p${q * 100}`] = bucketStarts[bucketStarts.length - 1] || 0;
+    }
+    return out;
+  } catch (e) { return {}; }
+}
+
+// 汇总快照（供监控仪表盘与告警规则复用）
+function snapshot({ dbPool, dbPingMs, cacheHitRate, activeAlerts } = {}) {
+  return {
+    uptimeSec: Math.round((Date.now() - bootAt) / 1000),
+    rates: {
+      qps: Math.round(qps(60) * 100) / 100,
+      errorRate5xx: Math.round(errorRate5xx(60) * 10000) / 100,
+      windowRequests: windowCounts(60).total,
+      windowErrors5xx: windowCounts(60).errors,
+    },
+    latency: latencyQuantiles([0.5, 0.95]),
+    process: {
+      rssMB: Math.round((process.memoryUsage().rss || 0) / 1024 / 1024),
+      heapMB: Math.round((process.memoryUsage().heapUsed || 0) / 1024 / 1024),
+      cpuPercent: process.cpuUsage ? Math.round(((process.cpuUsage().user + process.cpuUsage().system) / 1000000 / 60) * 100) : 0,
+      eventLoopLagMs: Math.round((eventLoopLag.get() || 0) * 10) / 10,
+      nodeVersion: process.version,
+    },
+    db: dbPool ? {
+      used: dbPool.used, idle: dbPool.idle, available: dbPool.available, maxTotal: dbPool.maxTotal,
+      usedPct: dbPool.maxTotal ? Math.round((dbPool.used / dbPool.maxTotal) * 1000) / 10 : 0,
+      pingMs: dbPingMs != null ? dbPingMs : null,
+    } : null,
+    cache: cacheHitRate != null ? { hitRate: Math.round(cacheHitRate * 10000) / 100 } : null,
+    alerts: activeAlerts != null ? { active: activeAlerts } : null,
+  };
 }
 
 // 记录一次慢请求
@@ -145,4 +242,5 @@ const contentType = client.register.contentType;
 
 module.exports = {
   recordHttp, recordSlow, recordEvent, sampleCache, sampleDbPool, startSampler, stopSampler, registry, contentType,
+  qps, errorRate5xx, windowCounts, snapshot, latencyQuantiles,
 };

@@ -25,6 +25,8 @@ const { subscribe: subscribeRealtime, closeAll: closeRealtime } = require('./ser
 const { subscribe: subscribeCacheInvalidation } = require('./services/cacheInvalidation');
 // F8 可观测性：Prometheus 指标 + 周期采样
 const metricsService = require('./services/metricsService');
+// P3-3 运维监控增强：指标快照 + 告警规则 + 流程节点超时自动升级
+const monitoringService = require('./services/monitoringService');
 const cacheService = require('./services/cacheService');
 // Onboarding 地基：启动自动迁移 + 启动自检（bootstrap）
 const { runMigrations } = require('./services/migrateRunner');
@@ -207,6 +209,8 @@ function shutdown(signal) {
   closeRealtime();
   // F8 可观测性：停止指标周期采样
   metricsService.stopSampler();
+  // P3-3 运维监控：停止指标评估与告警结算
+  monitoringService.stopMonitoring();
   if (!server) {
     process.exit(0);
     return;
@@ -285,6 +289,8 @@ async function start() {
   subscribeCustomerNotificationEvents();
   // F8 可观测性：启动周期采样（DB 连接池 / 事件循环延迟 / 缓存命中）
   metricsService.startSampler(sequelize, cacheService);
+  // P3-3 运维监控：启动指标评估 + 告警结算 + 流程节点升级
+  monitoringService.startMonitoring();
   logger.info('[EVENT] 事件驱动监听已启动（预警 + 自动化 + 通知推送 + 实时推送）');
   server = app.listen(config.port, () => {
     logger.info(`[SERVER] 货运代理管理系统后端已启动: http://localhost:${config.port}`);
