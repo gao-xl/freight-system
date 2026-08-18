@@ -1,10 +1,11 @@
 # CD 部署流水线（F10 基础设施）
 # 触发：推送到 main（镜像已由 ci.yml 的 docker-build 作业构建并推送）
-# 动作：SSH 到目标服务器 → docker compose pull → up -d → 探活 /api/health 与 /api/metrics
+# 动作：SSH 到目标服务器 → docker login ACR → docker compose pull → up -d → 探活 /api/health 与 /api/metrics
 # 前置：仓库需配置 Secrets：
 #   DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY（私钥） / DEPLOY_PATH（docker-compose 目录）
+#   ACR_REGISTRY / ACR_NAMESPACE / ACR_USERNAME / ACR_PASSWORD（与 ci.yml 相同，供服务器拉取登录）
 # 服务器 DEPLOY_PATH 下的 .env 需包含：
-#   IMAGE_REGISTRY=ghcr.io/<owner>/   IMAGE_TAG=main   （命中 CI push 的 GHCR 镜像）
+#   IMAGE_REGISTRY=<ACR_REGISTRY>/<ACR_NAMESPACE>/   IMAGE_TAG=main   （命中 CI push 的 ACR 镜像）
 #   DB_PASSWORD=<高强度密码> 等项目必需变量（参照 .env.example）
 # 未配置 DEPLOY_HOST 时该作业自动跳过（fail-open），不影响 CI 通过。
 
@@ -52,12 +53,13 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      - name: 拉取镜像并重启服务
+      - name: 登录 ACR、拉取镜像并重启服务
         if: steps.check.outputs.skip != 'true'
         run: |
           ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=15 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ${{ secrets.DEPLOY_PATH }} && \
+            "echo '${{ secrets.ACR_PASSWORD }}' | docker login '${{ secrets.ACR_REGISTRY }}' -u '${{ secrets.ACR_USERNAME }}' --password-stdin && \
+             cd ${{ secrets.DEPLOY_PATH }} && \
              docker compose pull && \
              docker compose up -d --remove-orphans && \
              docker image prune -f || true"

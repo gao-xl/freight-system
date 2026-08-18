@@ -70,3 +70,9 @@ backend/pa.tgz
 
 # 代码审查工具产物（brooks-lint 本地运行历史，非项目交付物）
 .brooks-lint-history.json
+
+# 浏览器自动化数据（本地运行时状态，禁止提交）
+.browser-data/
+
+# Tesseract OCR 训练数据（大文件，禁止提交）
+*.traineddata

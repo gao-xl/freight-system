@@ -104,10 +104,10 @@ services:
   backend:
     build:
       context: ./backend
-    # 镜像名做成可配（对齐 CD 的 GHCR 推送标签）：
+    # 镜像名做成可配（对齐 CD 的 ACR 推送标签）：
     #   本地构建/单机：docker compose build → freight-system-backend:latest（与 docker-bake.hcl 默认一致）
-    #   服务器拉取：.env 设 IMAGE_REGISTRY=ghcr.io/<owner>/ IMAGE_TAG=main，
-    #     docker compose pull 即可命中 CI 推送的 ghcr.io/<owner>/freight-system-backend:main
+    #   服务器拉取：.env 设 IMAGE_REGISTRY=<ACR_REGISTRY>/<ACR_NAMESPACE>/ IMAGE_TAG=main，
+    #     docker compose pull 即可命中 CI 推送的 <ACR_REGISTRY>/<ACR_NAMESPACE>/freight-system-backend:main
     image: ${IMAGE_REGISTRY:-}freight-system-backend:${IMAGE_TAG:-latest}
     container_name: freight-backend
     restart: unless-stopped
