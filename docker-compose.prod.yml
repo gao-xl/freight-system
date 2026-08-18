@@ -6,19 +6,18 @@
 #   3. 资源限制按低内存服务器（1G RAM + 2G swap）调低
 #   4. gitea 占用 3000 端口，backend 对外映射改为 3001，frontend 用 8080
 #
+# 镜像来源：CI 在 GitHub 云端构建并推送 ghcr.io，服务器只 pull 不本地构建。
 # 使用方式：
-#   cp .env.prod .env && vim .env   (填 JWT_SECRET 等)
-#   cd docs-site && npm ci && npm run build   (生成 backend/public/docs)
-#   docker compose -f docker-compose.prod.yml build
+#   cp .env.prod .env && vim .env   (填 JWT_SECRET 等，并设 IMAGE_REGISTRY / IMAGE_TAG)
+#   docker compose -f docker-compose.prod.yml pull
 #   docker compose -f docker-compose.prod.yml up -d
+# 如需本地构建（开发调试），去掉 image 前的 IMAGE_REGISTRY 变量并改回 build 即可。
 
 name: freight-system-prod
 
 services:
   backend:
-    build:
-      context: ./backend
-    image: freight-system-backend:prod
+    image: ${IMAGE_REGISTRY:-}freight-system-backend:${IMAGE_TAG:-latest}
     container_name: freight-backend
     restart: unless-stopped
     env_file: .env
@@ -53,9 +52,7 @@ services:
           memory: 512M
 
   frontend:
-    build:
-      context: ./frontend
-    image: freight-system-frontend:prod
+    image: ${IMAGE_REGISTRY:-}freight-system-frontend:${IMAGE_TAG:-latest}
     container_name: freight-frontend
     restart: unless-stopped
     environment:

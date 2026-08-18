@@ -67,8 +67,8 @@ jobs:
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u '${{ secrets.GHCR_USERNAME }}' --password-stdin && \
              cd ${{ secrets.DEPLOY_PATH }} && \
-             docker compose pull && \
-             docker compose up -d --remove-orphans && \
+             docker compose -f docker-compose.prod.yml pull && \
+             docker compose -f docker-compose.prod.yml up -d --remove-orphans && \
              docker image prune -f || true"
 
       - name: 等待后端健康
