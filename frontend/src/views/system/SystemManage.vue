@@ -210,6 +210,32 @@
       <el-tab-pane label="备份与恢复" name="backup">
         <BackupRestore />
       </el-tab-pane>
+      <el-tab-pane label="运维中心" name="ops">
+        <div class="ops-band">
+          <div class="ops-status">
+            <span class="ops-label">实时快照</span>
+            <template v-if="opsSnapshot">
+              <span class="ops-chip">QPS {{ opsSnapshot.rates?.qps }}</span>
+              <span class="ops-chip" :class="(opsSnapshot.rates?.errorRate5xx || 0) >= 5 ? 'bad' : (opsSnapshot.rates?.errorRate5xx > 0 ? 'warn' : '')">5xx {{ opsSnapshot.rates?.errorRate5xx }}%</span>
+              <span class="ops-chip" :class="(opsSnapshot.db?.usedPct || 0) >= 90 ? 'bad' : (opsSnapshot.db?.usedPct >= 54 ? 'warn' : '')">DB池 {{ opsSnapshot.db?.usedPct }}%</span>
+              <span class="ops-chip" :class="(opsSnapshot.process?.eventLoopLagMs || 0) >= 200 ? 'bad' : 'ok'">事件循环 {{ opsSnapshot.process?.eventLoopLagMs }}ms</span>
+              <span class="ops-chip">在途预警 {{ opsSnapshot.alerts?.active ?? '-' }}</span>
+            </template>
+            <span v-else class="ops-chip dim">快照未加载</span>
+          </div>
+          <div class="ops-card-grid">
+            <div v-for="c in opsCards" :key="c.to" class="ops-card" @click="gotoOps(c)">
+              <el-icon :size="26" color="#409eff"><component :is="c.icon" /></el-icon>
+              <div class="ops-card-body"><b>{{ c.title }}</b><span>{{ c.desc }}</span></div>
+              <el-icon class="ops-arrow"><ArrowRight /></el-icon>
+            </div>
+          </div>
+          <div class="ops-actions">
+            <el-button type="warning" :loading="escalating" @click="runEscalate"><el-icon><Top /></el-icon>手动扫描流程节点超时</el-button>
+            <el-button @click="loadOps"><el-icon><Refresh /></el-icon>刷新快照</el-button>
+          </div>
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 用户表单 -->
@@ -311,6 +337,7 @@ import { ref, reactive, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { userAPI, roleAPI, permissionAPI, auditLogAPI, numberSegmentAPI, securityAPI } from '@/api';
+import { monitorAPI } from '@/api/monitor';
 import DemoDataManager from '@/components/DemoDataManager.vue';
 import BackupRestore from '@/components/BackupRestore.vue';
 
@@ -322,6 +349,12 @@ const goCustomFields = () => router.push('/system/custom-fields');
 const goCompany = () => router.push('/system/company');
 const goNotification = () => router.push('/system/notification-settings');
 const goAiSettings = () => router.push('/system/ai-settings');
+// P3-4 运维中心入口
+const goHealth = () => router.push('/system/health');
+const goOpsMonitor = () => router.push('/system/monitor');
+const goSecurity = () => router.push('/system/security-check');
+const opsSnapshot = ref(null);
+const escalating = ref(false);
 const users = ref([]);
 const roles = ref([]);
 const permissions = ref([]);
@@ -518,7 +551,32 @@ onMounted(async () => {
   loadAudit();
   loadNumberSegs();
   loadSecurity();
+  loadOps();
 });
+
+// P3-4 运维中心：拉取运行态快照 + 触发节点升级扫描
+async function loadOps() {
+  try {
+    const res = await monitorAPI.snapshot();
+    opsSnapshot.value = res.data;
+  } catch (e) { opsSnapshot.value = null; }
+}
+async function runEscalate() {
+  escalating.value = true;
+  try {
+    const r = await monitorAPI.runEscalate();
+    ElMessage.success(`节点升级扫描完成：升级 ${r.escalated} 条，结案 ${r.resolved} 条`);
+    loadOps();
+  } catch (e) { /* 拦截器已提示 */ } finally { escalating.value = false; }
+}
+const opsCards = [
+  { icon: 'Monitor', title: '运维监控', desc: 'QPS、延迟、DB 连接池、告警规则与流程节点超时自动升级', to: 'goOpsMonitor' },
+  { icon: 'DataLine', title: '系统健康', desc: '数据库/缓存/磁盘等健康检查与一键自检', to: 'goHealth' },
+  { icon: 'Lock', title: '安全检测', desc: '越权访问、敏感字段、备份检查等安全基线扫描', to: 'goSecurity' },
+];
+function gotoOps(card) {
+  ({ goOpsMonitor, goHealth, goSecurity }[card.to])();
+}
 
 // S4 安全设置（2FA 开关 + SMTP 配置）
 const secForm = ref({ security: { enabled: false, emailEnabled: true, totpEnabled: true }, smtp: { host: '', port: 465, user: '', pass: '', from: '' }, passConfigured: false });
@@ -573,4 +631,22 @@ async function testSmtp() {
 .sec-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 .audit-stats { padding: 10px 0; display: flex; align-items: center; flex-wrap: wrap; }
 .audit-stats .stats-label { font-size: 13px; color: var(--text-sub); margin-right: 4px; }
+
+/* P3-4 运维中心 */
+.ops-band { display: flex; flex-direction: column; gap: 16px; }
+.ops-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; background: #f7f9fc; border: 1px solid var(--border); border-radius: 10px; }
+.ops-label { font-weight: 600; color: var(--text-main); font-size: 13px; margin-right: 4px; }
+.ops-chip { font-size: 13px; padding: 2px 10px; border-radius: 12px; background: #ecf5ff; color: #409eff; font-variant-numeric: tabular-nums; }
+.ops-chip.ok { background: #f0f9eb; color: #67c23a; }
+.ops-chip.warn { background: #fdf6ec; color: #e6a23c; }
+.ops-chip.bad { background: #fef0f0; color: #f56c6c; }
+.ops-chip.dim { background: #f4f4f5; color: #909399; }
+.ops-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.ops-card { display: flex; align-items: center; gap: 12px; padding: 16px; background: #fff; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+.ops-card:hover { box-shadow: var(--shadow); border-color: #b3d8ff; }
+.ops-card-body { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.ops-card-body b { font-size: 15px; color: var(--text-main); }
+.ops-card-body span { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+.ops-arrow { color: #c0c4cc; }
+.ops-actions { display: flex; gap: 10px; }
 </style>
