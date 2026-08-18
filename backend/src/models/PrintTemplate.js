@@ -16,6 +16,12 @@ const PrintTemplate = sequelize.define('PrintTemplate', {
   header: { type: DataTypes.TEXT },          // 自定义页眉（文本/HTML）
   footer: { type: DataTypes.TEXT },          // 自定义页脚
   remark: { type: DataTypes.TEXT },
+  // P0 套打配置
+  overlayMode: { type: DataTypes.BOOLEAN, defaultValue: false }, // 是否套打模式
+  offsetX: { type: DataTypes.DECIMAL(5, 2), defaultValue: 0 },   // 水平偏移 mm
+  offsetY: { type: DataTypes.DECIMAL(5, 2), defaultValue: 0 },   // 垂直偏移 mm
+  scale: { type: DataTypes.DECIMAL(4, 2), defaultValue: 1.0 },   // 缩放比例 0.5-2.0
+  paperSize: { type: DataTypes.STRING(20) },                     // 套打纸张规格（如 A4/Letter/自定义）
 }, {
   timestamps: true,
   indexes: [{ fields: ['docType'] }],

@@ -204,6 +204,13 @@ function renderHTML(tpl, blocks, header, footer) {
   const body = blocks.map(blockToHtml).join('');
   const safeHeader = sanitizeTemplateHtml(header);
   const safeFooter = sanitizeTemplateHtml(footer);
+  const overlay = tpl.overlayMode === true || tpl.overlayMode === 'true';
+  const offsetX = Number(tpl.offsetX) || 0;
+  const offsetY = Number(tpl.offsetY) || 0;
+  const scale = Number(tpl.scale) || 1;
+  const overlayStyle = overlay
+    ? `body { transform: translate(${offsetX}mm, ${offsetY}mm) scale(${scale}); transform-origin: top left; }`
+    : '';
   return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"/>
 <style>
   body{font-family:'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',-apple-system,sans-serif;color:#222;margin:24px;}
@@ -219,7 +226,7 @@ function renderHTML(tpl, blocks, header, footer) {
   .blk-sign .sign-row{display:flex;gap:24px;margin:24px 0;}
   .blk-footer{color:#888;font-size:12px;margin-top:24px;border-top:1px solid #eee;padding-top:8px;}
   .page-header,.page-footer{font-size:12px;color:#888;}
-  /* 打印分页：表格跨页时表头重复、行不折断（D1） */
+  ${overlayStyle}
   @media print {
     .blk-table thead{display:table-header-group;}
     .blk-table tr{page-break-inside:avoid;}
@@ -236,7 +243,7 @@ ${safeFooter ? `<div class="page-footer">${safeFooter}</div>` : ''}
 // H1 修复：req 为当前请求（含 req.dataScope），所有业务取数统一叠加数据范围过滤，
 // 阻断通过枚举 bizId/customerId 越权读取其它小组业务数据的 IDOR 漏洞。
 async function loadBizData(docType, bizId, opts = {}, req = null) {
-  const { Order, Booking, Customer, Quotation, QuotationItem, CustomsDeclaration, Supplier, Invoice } = require('../models');
+  const { Order, Booking, Customer, Quotation, QuotationItem, CustomsDeclaration, Supplier, Invoice, DebitNote, BillOfLading } = require('../models');
   const { findRecordsByOrderId, findRecordsByOrderIds } = require('../domains/finance/financeService');
   const biz = {};
   // 在既有 where 上叠加数据范围约束（req 为空时退化为不限制，供无请求场景的模板预览使用）
@@ -247,7 +254,7 @@ async function loadBizData(docType, bizId, opts = {}, req = null) {
     return model.findOne({ where, include });
   };
   // D3：debit_note 加入订单取数（DN 基于订单 + 费用明细）
-  if (['bl', 'order', 'packing_list', 'customs', 'statement', 'settlement', 'debit_note'].includes(docType)) {
+  if (['bl', 'order', 'packing_list', 'customs', 'statement', 'settlement', 'debit_note', 'gate_in_notice', 'booking_confirmation'].includes(docType)) {
     const order = await scopedPk(Order, bizId, [
       { model: Customer, as: 'customer' },
       { model: Booking, include: [{ model: Supplier, as: 'supplier' }] },
@@ -267,6 +274,24 @@ async function loadBizData(docType, bizId, opts = {}, req = null) {
       { model: Order, as: 'order' },
     ]);
     if (inv) biz.invoice = inv.toJSON();
+  }
+  // P0 提单打印：加载提单数据
+  if (docType === 'bl') {
+    const bl = await scopedPk(BillOfLading, bizId, [
+      { model: Order, as: 'order', attributes: ['id', 'orderNo'] },
+      { model: Supplier, as: 'carrier', attributes: ['id', 'name', 'code'] },
+      { model: BillOfLading, as: 'masterBl', attributes: ['id', 'blNo', 'blType'] },
+    ]);
+    if (bl) biz.bl = bl.toJSON();
+  }
+  // P0 借记通知单打印：加载 DebitNote 数据
+  if (docType === 'debit_note') {
+    const dn = await scopedPk(DebitNote, bizId, [
+      { model: Order, as: 'order', attributes: ['id', 'orderNo'] },
+      { model: Supplier, as: 'supplier', attributes: ['id', 'name', 'code'] },
+      { model: BillOfLading, as: 'bl', attributes: ['id', 'blNo', 'blType'] },
+    ]);
+    if (dn) biz.debitNote = dn.toJSON();
   }
   if (docType === 'quotation') {
     const q = await scopedPk(Quotation, bizId, [

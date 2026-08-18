@@ -38,6 +38,8 @@ const payment = require('../controllers/paymentController');
 const company = require('../controllers/companyController');
 const automation = require('../controllers/automationController');
 const importCtrl = require('../controllers/importController');
+const debitNote = require('../controllers/debitNoteController'); // P0 借记通知单
+const billOfLading = require('../controllers/billOfLadingController'); // P0 提单
 const freightRate = require('../controllers/freightRateController');
 const businessRule = require('../controllers/businessRuleController');
 const workflow = require('../controllers/workflowController');
@@ -46,7 +48,15 @@ const exchangeRate = require('../controllers/exchangeRateController'); // 汇率
 const searchCtrl = require('../controllers/searchController');
 const numberSegment = require('../controllers/numberSegmentController'); // P1 发票号段
 const customerAttachment = require('../controllers/customerAttachmentController'); // P1 客户附件
+const quotationTemplate = require('../controllers/quotationTemplateController'); // P1-1 报价模板
+const hsCode = require('../controllers/hsCodeController'); // P1-3 HS编码知识库
+const batch = require('../controllers/batchController'); // P1-2 批量操作
 const ai = require('../controllers/aiController'); // 第三方 AI 能力
+const gateway = require('../controllers/gatewayController'); // P2-1 API 集成网关
+const voucher = require('../controllers/voucherController'); // P2-3 财务凭证/数电发票推送
+const customsSync = require('../controllers/customsSyncController'); // P2-2 报关单申报/查询
+const portalSubscription = require('../controllers/portalSubscriptionController'); // P2-4 客户通知订阅偏好
+const budget = require('../controllers/budgetController'); // P3-2 预算管理
 
 const router = express.Router();
 
@@ -162,6 +172,10 @@ router.delete('/system/backup/:filename', authRequired, requirePermission('syste
 router.post('/system/backup/inspect', authRequired, requirePermission('system', '*'), restoreUpload.single('file'), backupCtrl.inspect);
 router.get('/system/backup/download/:filename', authRequired, requirePermission('system', '*'), backupCtrl.download);
 router.post('/system/restore', authRequired, requirePermission('system', '*'), restoreUpload.single('file'), backupCtrl.restore);
+
+// P2-2 海关单一窗口入站回调（外部系统 Webhook，走 HMAC 签名鉴权，非 JWT）
+// 必须在全局 authRequired 之前注册，外部海关无法持有本系统 JWT。
+router.post('/callbacks/customs', gateway.customsCallback);
 
 // 数据隔离：所有业务路由统一注入 req.dataScope（范围：all/group/self）
 // 控制器通过 scopedWhere/scopedFindOne 等辅助函数消费该范围，实现行级数据隔离
@@ -338,7 +352,7 @@ router.delete('/orders/:id', guard('order', 'delete'), requireReauthIfEnabled, o
 
 // C6 一单多箱
 router.get('/orders/:orderId/containers', guard('order', 'read'), container.listByOrder);
-router.put('/orders/:orderId/containers', guard('order', 'update'), container.saveByOrder);
+router.put('/orders/:orderId/containers', guard('order', 'update'), validate(S.containerSave), container.saveByOrder);
 router.get('/containers', guard('order', 'read'), container.list);
 router.get('/containers/:id', guard('order', 'read'), container.get);
 router.delete('/containers/:id', guard('order', 'delete'), container.remove);
@@ -359,6 +373,7 @@ router.get('/bookings/:id', guard('booking', 'read'), booking.get);
 router.post('/bookings', guard('booking', 'create'), validate(S.bookingCreate), booking.create);
 router.put('/bookings/:id', guard('booking', 'update'), validate(S.bookingUpdate), booking.update);
 router.post('/bookings/:id/restore', guard('booking', 'update'), booking.restore); // U5 回收站恢复
+router.post('/bookings/:id/copy', guard('booking', 'create'), booking.copy); // P0-3 订舱复制
 router.delete('/bookings/:id', guard('booking', 'delete'), booking.remove);
 
 // 报关
@@ -367,6 +382,10 @@ router.get('/customs/:id', guard('customs', 'read'), customs.get);
 router.post('/customs', guard('customs', 'create'), validate(S.customsCreate), customs.create);
 router.put('/customs/:id', guard('customs', 'update'), validate(S.customsUpdate), customs.update);
 router.delete('/customs/:id', guard('customs', 'delete'), customs.remove);
+
+// P1-3 HS编码知识库
+router.get('/hs-codes/search', guard('customs', 'read'), hsCode.search);
+router.get('/hs-codes/chapters', guard('customs', 'read'), hsCode.chapters);
 
 // 单证
 router.get('/documents', guard('document', 'read'), document.list);
@@ -436,6 +455,35 @@ router.post('/finance', guard('finance', 'create'), validate(S.financeCreate), f
 router.put('/finance/:id', guard('finance', 'update'), validate(S.financeUpdate), finance.update);
 router.delete('/finance/:id', guard('finance', 'delete'), requireReauthIfEnabled, finance.remove);
 
+// P0 对账（应收/应付/单票三维）
+router.get('/finance/reconcile/receivable', guard('finance', 'read'), finance.reconcileReceivable);
+router.get('/finance/reconcile/payable', guard('finance', 'read'), finance.reconcilePayable);
+router.get('/finance/reconcile/per-shipment', guard('finance', 'read'), finance.reconcilePerShipment);
+router.get('/finance/reconcile/export', guard('finance', 'read'), finance.exportReconciliation);
+router.post('/finance/reconcile/auto-match', guard('finance', 'update'), finance.autoMatchReconcile);
+
+// P0 借记通知单
+router.get('/debit-notes', guard('finance', 'read'), debitNote.list);
+router.get('/debit-notes/:id', guard('finance', 'read'), debitNote.get);
+router.post('/debit-notes', guard('finance', 'create'), validate(S.debitNoteCreate), debitNote.create);
+router.put('/debit-notes/:id', guard('finance', 'update'), validate(S.debitNoteUpdate), debitNote.update);
+router.delete('/debit-notes/:id', guard('finance', 'delete'), requireReauthIfEnabled, debitNote.remove);
+router.post('/debit-notes/batch-delete', guard('finance', 'delete'), requireReauthIfEnabled, debitNote.batchRemove);
+router.post('/debit-notes/batch-update', guard('finance', 'update'), debitNote.batchUpdate);
+router.post('/debit-notes/:id/restore', guard('finance', 'update'), debitNote.restore);
+
+// P0 提单（主单/分单）
+router.get('/bills-of-lading', guard('order', 'read'), billOfLading.list);
+router.get('/bills-of-lading/:id/house-bls', guard('order', 'read'), billOfLading.houseBls);
+router.get('/bills-of-lading/:id', guard('order', 'read'), billOfLading.get);
+router.post('/bills-of-lading', guard('order', 'create'), validate(S.blCreate), billOfLading.create);
+router.put('/bills-of-lading/:id', guard('order', 'update'), validate(S.blUpdate), billOfLading.update);
+router.delete('/bills-of-lading/:id', guard('order', 'delete'), requireReauthIfEnabled, billOfLading.remove);
+router.post('/bills-of-lading/batch-delete', guard('order', 'delete'), requireReauthIfEnabled, billOfLading.batchRemove);
+router.post('/bills-of-lading/batch-update', guard('order', 'update'), billOfLading.batchUpdate);
+router.post('/bills-of-lading/:id/restore', guard('order', 'update'), billOfLading.restore);
+router.get('/orders/:orderId/bills-of-lading', guard('order', 'read'), billOfLading.byOrder);
+
 // 外部系统对接
 router.get('/integrations', guard('integration', 'read'), integration.list);
 router.get('/integrations/registry', guard('integration', 'read'), integration.registry);
@@ -444,6 +492,36 @@ router.post('/integrations', guard('integration', 'update'), integration.create)
 router.put('/integrations/:id', guard('integration', 'update'), integration.update);
 router.delete('/integrations/:id', guard('integration', 'update'), integration.remove);
 router.post('/integrations/trigger', guard('integration', 'trigger'), integration.trigger);
+
+// P2-1 API 集成网关：手动调用 / 日志查询 / 运行态概览
+router.post('/integrations/gateway/send', guard('integration', 'trigger'), gateway.invoke);
+router.get('/integrations/gateway/logs', guard('integration', 'read'), gateway.logs);
+router.get('/integrations/gateway/status', guard('integration', 'read'), gateway.status);
+
+// P2-2 报关单申报/状态查询（海关单一窗口）
+router.post('/customs-declarations/:id/submit', guard('customs', 'update'), customsSync.submit);
+router.get('/customs-declarations/:id/sync-status', guard('customs', 'read'), customsSync.query);
+
+// P3-1 AI深化：智能HS归类 / 客户门户智能客服
+router.post('/ai/hs-classify', guard('customs', 'read'), ai.hsClassify);
+router.post('/portal/ai-support', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), ai.customerSupport);
+
+// P2-3 财务凭证导出/推送 + 数电发票推送
+router.get('/finance/vouchers/preview', guard('finance', 'read'), voucher.preview);
+router.get('/finance/vouchers/export', guard('finance', 'read'), voucher.exportVoucher);
+router.post('/finance/vouchers/push', guard('finance', 'update'), voucher.pushVoucher);
+router.post('/finance/vouchers/invoices/push', guard('finance', 'update'), voucher.pushInvoice);
+
+// P3-2 预算管理
+router.get('/budgets', guard('budget', 'read'), budget.list);
+router.get('/budgets/:id', guard('budget', 'read'), budget.detail);
+router.post('/budgets', guard('budget', 'create'), budget.create);
+router.post('/budgets/:id/lines', guard('budget', 'update'), budget.addLine);
+router.put('/budgets/:id/lines/:lineId', guard('budget', 'update'), budget.updateLine);
+router.delete('/budgets/:id/lines/:lineId', guard('budget', 'update'), budget.removeLine);
+router.post('/budgets/:id/status', guard('budget', 'update'), budget.transition);
+router.post('/budgets/:id/adjustments', guard('budget', 'update'), budget.createAdjustment);
+router.post('/budgets/adjustments/:adjId/review', guard('budget', 'approve'), budget.reviewAdjustment);
 
 // 报价/询价
 router.get('/quotations', authRequired, requirePermission('quotation', 'read'), quotation.list);
@@ -455,6 +533,14 @@ router.delete('/quotations/:id', authRequired, requirePermission('quotation', 'd
 router.post('/quotations/:id/send', authRequired, requirePermission('quotation', 'update'), quotation.send);
 router.post('/quotations/:id/confirm', authRequired, requirePermission('quotation', 'update'), quotation.confirm);
 router.post('/quotations/:id/convert-order', authRequired, requirePermission('quotation', 'convert'), quotation.convertOrder);
+
+// P1-1 报价模板
+router.get('/quotation-templates', authRequired, requirePermission('quotation', 'read'), quotationTemplate.list);
+router.get('/quotation-templates/match', authRequired, requirePermission('quotation', 'read'), quotationTemplate.match);
+router.get('/quotation-templates/:id', authRequired, requirePermission('quotation', 'read'), quotationTemplate.get);
+router.post('/quotation-templates', authRequired, requirePermission('quotation', 'create'), quotationTemplate.create);
+router.put('/quotation-templates/:id', authRequired, requirePermission('quotation', 'update'), quotationTemplate.update);
+router.delete('/quotation-templates/:id', authRequired, requirePermission('quotation', 'delete'), quotationTemplate.remove);
 
 // P2.7 本地运价小库（服务报价；权限沿用 quotation 模块）
 router.get('/freight-rates/search', guard('quotation', 'read'), freightRate.search); // 检索需在 :id 之前
@@ -661,5 +747,13 @@ router.post('/portal/orders/:id/si', authRequired, requireRole('customer', 'admi
  *       401: { description: 未登录 }
  */
 router.get('/portal/rates', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portal.rates);
+
+// P2-4 客户通知订阅偏好（仅本客户，customerId 隔离）
+router.get('/portal/subscriptions', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portalSubscription.getSubscriptions);
+router.put('/portal/subscriptions', authRequired, requireRole('customer', 'admin', 'manager', 'operator', 'finance', 'viewer'), portalSubscription.upsertSubscriptions);
+
+// P1-2 批量操作
+router.post('/batch/bookings', authRequired, requirePermission('booking', 'create'), batch.batchBooking);
+router.post('/batch/print', authRequired, requirePermission('print', 'read'), batch.batchPrint);
 
 module.exports = router;

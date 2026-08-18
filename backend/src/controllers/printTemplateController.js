@@ -38,6 +38,11 @@ const copy = asyncHandler(async (req, res) => {
     header: src.header,
     footer: src.footer,
     isDefault: false,
+    overlayMode: src.overlayMode,
+    offsetX: src.offsetX,
+    offsetY: src.offsetY,
+    scale: src.scale,
+    paperSize: src.paperSize,
   });
   ok(res, item, '复制成功');
 });

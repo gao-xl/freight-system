@@ -53,6 +53,14 @@ const MessagePreference = require('./MessagePreference'); // F6 消息订阅偏�
 const Session = require('./Session'); // M3 登录会话（refresh token 哈希）
 const NumberSegment = require('./NumberSegment'); // P1 发票号段
 const CustomerAttachment = require('./CustomerAttachment'); // P1 客户附件
+const DebitNote = require('./DebitNote'); // P0 借记通知单
+const BillOfLading = require('./BillOfLading'); // P0 提单（主单/分单）
+const QuotationTemplate = require('./QuotationTemplate'); // P1-1 报价模板
+const HsCode = require('./HsCode'); // P1-3 HS编码知识库
+const PortalSubscription = require('./PortalSubscription'); // P2-4 客户通知订阅偏好
+const Budget = require('./Budget'); // P3-2 预算表头
+const BudgetLine = require('./BudgetLine'); // P3-2 预算明细行
+const BudgetAdjustment = require('./BudgetAdjustment'); // P3-2 预算调整
 
 // 关联关系
 Order.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
@@ -71,6 +79,18 @@ Customer.hasMany(Contact, { as: 'contacts', foreignKey: 'customerId' });
 // P1 客户附件关联
 CustomerAttachment.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
 Customer.hasMany(CustomerAttachment, { as: 'attachments', foreignKey: 'customerId' });
+
+// P2-4 客户通知订阅偏好关联
+PortalSubscription.belongsTo(Customer, { as: 'customer', foreignKey: 'customerId' });
+Customer.hasMany(PortalSubscription, { as: 'portalSubscriptions', foreignKey: 'customerId' });
+
+// P3-2 预算关联（Budget 按小组隔离由 scopedWhere 处理；部门仅作预算归属维度）
+Budget.hasMany(BudgetLine, { as: 'lines', foreignKey: 'budgetId', onDelete: 'CASCADE' });
+BudgetLine.belongsTo(Budget, { as: 'budget', foreignKey: 'budgetId' });
+Budget.hasMany(BudgetAdjustment, { as: 'adjustments', foreignKey: 'budgetId', onDelete: 'CASCADE' });
+BudgetAdjustment.belongsTo(Budget, { as: 'budget', foreignKey: 'budgetId' });
+Budget.belongsTo(Department, { as: 'department', foreignKey: 'departmentId' });
+Department.hasMany(Budget, { as: 'budgets', foreignKey: 'departmentId' });
 
 Booking.belongsTo(Order, { as: 'order', foreignKey: 'orderId' });
 Booking.belongsTo(Supplier, { as: 'supplier', foreignKey: 'supplierId' });
@@ -159,6 +179,20 @@ User.hasMany(ApiKey, { as: 'apiKeys', foreignKey: 'userId' });
 Session.belongsTo(User, { as: 'user', foreignKey: 'userId' });
 User.hasMany(Session, { as: 'sessions', foreignKey: 'userId' });
 
+// P0 借记通知单关联
+DebitNote.belongsTo(Order, { as: 'order', foreignKey: 'orderId' });
+Order.hasMany(DebitNote, { foreignKey: 'orderId' });
+DebitNote.belongsTo(Supplier, { as: 'supplier', foreignKey: 'supplierId' });
+DebitNote.belongsTo(BillOfLading, { as: 'bl', foreignKey: 'blId' });
+
+// P0 提单关联
+BillOfLading.belongsTo(Order, { as: 'order', foreignKey: 'orderId' });
+Order.hasMany(BillOfLading, { as: 'billsOfLading', foreignKey: 'orderId' });
+BillOfLading.belongsTo(Supplier, { as: 'carrier', foreignKey: 'carrierId' });
+BillOfLading.belongsTo(BillOfLading, { as: 'masterBl', foreignKey: 'masterBlId' });
+BillOfLading.hasMany(BillOfLading, { as: 'houseBls', foreignKey: 'masterBlId' });
+BillOfLading.hasMany(DebitNote, { as: 'debitNotes', foreignKey: 'blId' });
+
 module.exports = {
   sequelize,
   User,
@@ -215,4 +249,12 @@ module.exports = {
   Session,
   NumberSegment,
   CustomerAttachment,
+  DebitNote,
+  BillOfLading,
+  QuotationTemplate,
+  HsCode,
+  PortalSubscription,
+  Budget,
+  BudgetLine,
+  BudgetAdjustment,
 };

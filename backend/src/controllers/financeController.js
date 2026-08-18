@@ -28,6 +28,7 @@ const {
   assertBodyEditable,
   assertOrderEditable,
 } = require('../services/periodGuard');
+const reconciliation = require('../domains/finance/reconciliationService');
 
 // beforeWrite 钩子：锁账拦截（落入已锁账期则拒绝写操作）
 async function beforeWrite(req, item, body) {
@@ -869,9 +870,52 @@ const exportDigitalTax = asyncHandler(async (req, res) => {
   res.send(Buffer.from(buf));
 });
 
+// P0 应收对账：Invoice ↔ House BL ↔ FinanceRecord(应收)
+const reconcileReceivable = asyncHandler(async (req, res) => {
+  const where = await scopedWhere(req, {});
+  const data = await reconciliation.reconcileReceivable(where);
+  ok(res, data);
+});
+
+// P0 应付对账：DebitNote ↔ Master BL ↔ FinanceRecord(应付)
+const reconcilePayable = asyncHandler(async (req, res) => {
+  const where = await scopedWhere(req, {});
+  const data = await reconciliation.reconcilePayable(where);
+  ok(res, data);
+});
+
+// P0 单票对账：按订单维度，主单费用 vs 分单收入 → 单票毛利
+const reconcilePerShipment = asyncHandler(async (req, res) => {
+  const where = await scopedWhere(req, {});
+  const data = await reconciliation.reconcilePerShipment(where);
+  ok(res, data);
+});
+
+// P0 对账导出 Excel
+const exportReconciliation = asyncHandler(async (req, res) => {
+  const { type } = req.query;
+  const where = await scopedWhere(req, {});
+  const buf = await reconciliation.exportExcel(type, where);
+  const label = { ar: '应收对账', ap: '应付对账', shipment: '单票对账' }[type] || '对账';
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const filename = encodeURIComponent(`${label}_${dateStr}.xlsx`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
+  res.send(Buffer.from(buf));
+});
+
+// P0 自动匹配：将费用与发票/借记通知单自动关联
+const autoMatchReconcile = asyncHandler(async (req, res) => {
+  const where = await scopedWhere(req, {});
+  const result = await reconciliation.autoMatch(where);
+  ok(res, result);
+});
+
 module.exports = {
   ...base, summary, monthlyTrend, profitCompare, exportExcel, reconcile, invoiceList, createInvoice, issueInvoice, batchIssueInvoice, createInvoiceFromFees,
   cancelInvoice, writeoff, batchWriteoff, currencySummary, currencyReconcile, creditCheck, createPayment, paymentList,
   periods, ensurePeriods, closePeriod, lockPeriod, unlockPeriod, periodStatement, batchCreate, aging,
   reverse, getReversals, digitalTaxPreview, exportDigitalTax,
+  reconcileReceivable, reconcilePayable, reconcilePerShipment,
+  exportReconciliation, autoMatchReconcile,
 };

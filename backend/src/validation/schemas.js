@@ -251,7 +251,24 @@ const assignRoles = Joi.object({
   roleIds: Joi.array().items(id).required(),
 }).unknown(true);
 
-// 客户门户在线补料（SI）（E3）
+// 集装箱（C6 一单多箱）
+	const containerItem = Joi.object({
+	  id: id,
+	  containerNo: Joi.string().trim().max(20).required(),
+	  sealNo: str(20),
+	  sizeType: enumVal(['20', '40', '40HQ', '45', '20RF', '40RF']),
+	  cargoDesc: str(255),
+	  weight: Joi.number().min(0).allow(null),
+	  volume: Joi.number().min(0).allow(null),
+	  packageCount: Joi.number().integer().min(0).allow(null),
+	  status: enumVal(['planned', 'gate_in', 'loaded', 'arrived', 'delivered']),
+	  remark: str(255),
+	}).unknown(true);
+	const containerSave = Joi.object({
+	  items: Joi.array().items(containerItem).required(),
+	}).unknown(true);
+
+	// 客户门户在线补料（SI）（E3）
 // 白名单校验：仅允许提单相关字段，拒绝未知键，防止越权改写订单其它字段
 // 契约字段（门户前端按此对接）：shipper/consignee/notifyParty/marksNumbers/cargoDesc/remark；
 // 同时兼容细分字段（shipperName/shipperAddress/consigneeName/...）供精确补料
@@ -277,6 +294,56 @@ const portalSi = Joi.object({
   remark: text,
 }).or('shipper', 'consignee', 'shipperName', 'shipperAddress', 'consigneeName', 'consigneeAddress', 'notifyParty', 'marksNumbers', 'placeOfReceipt', 'placeOfDelivery', 'cargoDesc', 'containerNo');
 
+// P0 借记通知单
+const debitNoteBase = Joi.object({
+  supplierId: id,
+  orderId: id,
+  blId: id,
+  amount: dec,
+  currency: str(10),
+  taxRate: dec,
+  taxAmount: dec,
+  totalAmount: dec,
+  items: text,
+  status: enumVal(['draft', 'issued', 'paid', 'cancelled']),
+  issuedAt: date,
+  remark: text,
+}).unknown(true);
+const debitNoteCreate = debitNoteBase.keys({ amount: Joi.number().required() });
+const debitNoteUpdate = debitNoteBase;
+
+// P0 提单
+const blBase = Joi.object({
+  blNo: str(50),
+  blType: enumVal(['master', 'house']),
+  orderId: id,
+  carrierId: id,
+  masterBlId: id,
+  vessel: str(100),
+  voyage: str(50),
+  containerNo: str(200),
+  packageCount: Joi.number().integer().min(0).allow(null),
+  grossWeight: Joi.number().min(0).allow(null),
+  volume: Joi.number().min(0).allow(null),
+  shipperName: str(200),
+  shipperAddress: str(500),
+  consigneeName: str(200),
+  consigneeAddress: str(500),
+  notifyParty: str(500),
+  placeOfReceipt: str(100),
+  portOfLoading: str(100),
+  portOfDischarge: str(100),
+  placeOfDelivery: str(100),
+  freightClause: str(50),
+  originalCount: Joi.number().integer().min(1).max(20).allow(null),
+  telexRelease: Joi.boolean().allow(null),
+  issueDate: dateOnly,
+  status: enumVal(['draft', 'issued', 'surrendered', 'voided']),
+  remark: text,
+}).unknown(true);
+const blCreate = blBase.keys({ blNo: Joi.string().trim().max(50).required(), blType: Joi.string().valid('master', 'house').required() });
+const blUpdate = blBase;
+
 module.exports = {
   login, changePassword, refresh, twoFactorSend, twoFactorVerify,
   customerCreate, customerUpdate,
@@ -291,4 +358,7 @@ module.exports = {
   userCreate, userUpdate,
   roleCreate, assignPermissions, assignRoles,
   portalSi,
+  containerSave,
+  debitNoteCreate, debitNoteUpdate,
+  blCreate, blUpdate,
 };
