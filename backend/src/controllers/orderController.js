@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { exportBuffer } = require('../services/exportService');
-const { buildOrderScopeWhere } = require('../middleware/dataScope');
+const { buildOrderScopeWhere, attachOwnership } = require('../middleware/dataScope');
 const { checkCustomerCredit } = require('../services/currencyService');
 const events = require('../services/eventBus');
 const { ORDER_NODES, computeReached, deriveOrderStatus, statusMapText, dict } = require('../domains/order/orderDomain');
@@ -191,13 +191,32 @@ const list = asyncHandler(async (req, res) => {
   ok(res, { list: rows, total: count, page, pageSize });
 });
 
+// ── 越权防护：订单字段白名单 ──
+// 受保护字段一律禁止客户端直接赋值（归属/Audit 字段、状态机字段、系统派生字段）。
+// 仅保留存在于 Order 模型列、且非受保护字段，避免大规模属性赋值（Mass Assignment）。
+const PROTECTED_CREATE = new Set([
+  'id', 'groupId', 'ownerId', 'version', 'isDemo', 'releaseStatus', 'siStatus',
+  'siSubmittedAt', 'siSubmittedBy', 'siSubmittedByName', 'createdAt', 'updatedAt', 'deletedAt',
+]);
+const PROTECTED_UPDATE = new Set([
+  'id', 'orderNo', 'customerId', 'type', 'status', 'releaseStatus', 'groupId', 'ownerId', 'version', 'isDemo',
+  'siStatus', 'siSubmittedAt', 'siSubmittedBy', 'siSubmittedByName', 'createdAt', 'updatedAt', 'deletedAt',
+]);
+function pickOrderFields(body, protectedSet) {
+  const cols = Order.rawAttributes || {};
+  const out = {};
+  for (const k of Object.keys(body || {})) {
+    if (protectedSet.has(k)) continue;
+    if (!(k in cols)) continue;
+    out[k] = body[k];
+  }
+  return out;
+}
+
 const create = asyncHandler(async (req, res) => {
-  const body = { ...req.body };
-  delete body.id;
-  // B2 自动归属：未指定则取用户默认组/本人
-  const me = await require('../services/dataAccess').User.findByPk(req.user.id);
-  if (!body.groupId) body.groupId = me?.groupId || null;
-  if (!body.ownerId) body.ownerId = req.user.id;
+  const body = pickOrderFields(req.body, PROTECTED_CREATE);
+  // 归属以服务端解析的用户默认组/本人为准，不信任客户端传入的 groupId/ownerId
+  await attachOwnership(req, body);
   body.orderNo = body.orderNo || require('../utils/response').genCode('SO');
   if (body.customFields && typeof body.customFields !== 'string') body.customFields = JSON.stringify(body.customFields);
   // B6 信用额度校验：客户未收已超限时拦截（除非显式 forceCredit=1）
@@ -215,12 +234,12 @@ const create = asyncHandler(async (req, res) => {
 const update = asyncHandler(async (req, res) => {
   const item = await findVisibleOrder(req, req.params.id);
   if (!item) return fail(res, '订单不存在', 1, 404);
-  const body = { ...req.body };
-  delete body.id;
+  // 受保护字段（归属/状态机/单号/客户归属等）不允许在此直接修改，交由专门流程/接口处理
+  const body = pickOrderFields(req.body || {}, PROTECTED_UPDATE);
   if (body.customFields && typeof body.customFields !== 'string') body.customFields = JSON.stringify(body.customFields);
   // P3.7 乐观锁：携带 version 时校验，冲突返回 409；不带则兼容旧前端
-  if (body.version !== undefined) {
-    const clientVersion = Number(body.version);
+  if (req.body.version !== undefined) {
+    const clientVersion = Number(req.body.version);
     const currentVersion = Number(item.version || 0);
     if (clientVersion !== currentVersion) {
       return fail(res, '数据已被他人修改，请刷新后重试', 409, 409);
