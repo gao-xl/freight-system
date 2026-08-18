@@ -18,6 +18,7 @@
 
 const uuid = require('uuid');
 const { logger } = require('../utils/logger');
+const { assertSafeUrl } = require('../utils/ssrf');
 const cache = require('./cacheService');
 const { EdiMessage, IntegrationConfig } = require('../services/dataAccess');
 
@@ -40,6 +41,8 @@ function readPolicy(cfg) {
     retryAttempts: Math.min(Math.max(parseInt(g.retryAttempts) || DEFAULTS.retryAttempts, 1), 6),
     backoffMs: Math.max(parseInt(g.backoffMs) || DEFAULTS.backoffMs, 100),
     timeoutMs: Math.max(parseInt(g.timeoutMs) || DEFAULTS.timeoutMs, 1000),
+    // 内部/局域网对接可选：置 true 时放行内网目标（需管理员显式配置，默认关闭）
+    allowPrivateTargets: !!g.allowPrivateTargets,
   };
 }
 
@@ -84,6 +87,14 @@ async function fetchOAuthToken(cfg, meta) {
   const clientSecret = oauth.clientSecret || oauth.pass || cfg.apiKey;
   if (!tokenUrl || !clientId || !clientSecret) {
     logger.warn(`[GW:${cfg.code}] oauth2 缺少 tokenUrl/clientId/clientSecret，跳过 Bearer 认证`);
+    return null;
+  }
+  // SSRF 防护：oauth tokenUrl 为出站目标，默认拒绝内网（除非对接显式放行内部）
+  try {
+    const metaPolicy = readPolicy(cfg);
+    await assertSafeUrl(tokenUrl, { allowPrivate: metaPolicy.allowPrivateTargets });
+  } catch (e) {
+    logger.warn(`[GW:${cfg.code}] oauth tokenUrl 命中 SSRF 拦截，已跳过 Bearer 认证`, { message: e.message });
     return null;
   }
   const cacheKey = `gw:oauth:${cfg.code}`;
@@ -148,6 +159,14 @@ async function request(code, direction, payload = {}, opts = {}) {
   if (!cfg.enabled) throw new Error(`对接 ${code} 未启用（可在系统管理-集成配置开启）`);
 
   const policy = readPolicy(cfg);
+  // SSRF 防护：业务出站目标默认校验，内部对接需显式 allowPrivateTargets 放行
+  if (cfg.baseUrl) {
+    try {
+      await assertSafeUrl(cfg.baseUrl, { allowPrivate: policy.allowPrivateTargets });
+    } catch (e) {
+      throw new Error(`对接 ${code} 目标地址未通过安全校验：${e.message}`);
+    }
+  }
   if (!(await allowRate(code, policy.rps))) {
     throw new Error(`对接 ${code} 触发限流（≤${policy.rps}/s），请稍后重试`);
   }

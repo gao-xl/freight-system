@@ -6,6 +6,7 @@ const { ok, fail, asyncHandler } = require('../utils/response');
 const { getScope } = require('../middleware/dataScope');
 const svc = require('../services/aiService');
 const { IntegrationConfig } = require('../services/dataAccess');
+const ssrf = require('../utils/ssrf');
 
 // POST /api/ai/chat  智能问答 / 业务助手
 const chat = asyncHandler(async (req, res) => {
@@ -94,6 +95,12 @@ const saveSettings = asyncHandler(async (req, res) => {
   const { baseUrl = '', apiKey = '', model = '', temperature, maxTokens, enabled = false } = req.body || {};
   if (!baseUrl) return fail(res, '请填写 Base URL');
   if (!model) return fail(res, '请填写模型名');
+  // SSRF 防护：Base URL 由用户配置且服务端会主动外发，保存前必须通过私有网段校验
+  try {
+    await ssrf.assertSafeUrl(baseUrl);
+  } catch (e) {
+    return fail(res, `Base URL 校验失败：${e.message}`, 1, 400);
+  }
   const cfg = await IntegrationConfig.findOne({ where: { code: 'ai_chat' } });
   const nextApiKey = apiKey ? apiKey : (cfg ? cfg.apiKey : '');
   const config = JSON.stringify({
@@ -116,6 +123,12 @@ const saveSettings = asyncHandler(async (req, res) => {
 const test = asyncHandler(async (req, res) => {
   const { baseUrl, apiKey, model, temperature, maxTokens } = req.body || {};
   if (!apiKey) return fail(res, '请先填写 API Key 再测试');
+  // SSRF 防护：测试接口天然是服务端外发探测点，目标 URL 必须通过私有网段校验
+  try {
+    if (baseUrl) await ssrf.assertSafeUrl(baseUrl);
+  } catch (e) {
+    return fail(res, `Base URL 校验失败：${e.message}`, 1, 400);
+  }
   try {
     const data = await svc.testSettings({ baseUrl, apiKey, model, temperature, maxTokens });
     ok(res, data, '连接成功');
