@@ -53,6 +53,7 @@ const hsCode = require('../controllers/hsCodeController'); // P1-3 HS编码知�
 const batch = require('../controllers/batchController'); // P1-2 批量操作
 const ai = require('../controllers/aiController'); // 第三方 AI 能力
 const gateway = require('../controllers/gatewayController'); // P2-1 API 集成网关
+const gatewayClient = require('../controllers/integrationClientController'); // P2-1 外部调用方注册
 const voucher = require('../controllers/voucherController'); // P2-3 财务凭证/数电发票推送
 const customsSync = require('../controllers/customsSyncController'); // P2-2 报关单申报/查询
 const portalSubscription = require('../controllers/portalSubscriptionController'); // P2-4 客户通知订阅偏好
@@ -498,6 +499,12 @@ router.post('/integrations/trigger', guard('integration', 'trigger'), integratio
 router.post('/integrations/gateway/send', guard('integration', 'trigger'), gateway.invoke);
 router.get('/integrations/gateway/logs', guard('integration', 'read'), gateway.logs);
 router.get('/integrations/gateway/status', guard('integration', 'read'), gateway.status);
+
+// P2-1 外部调用方（入站回调渠道）注册管理
+router.get('/integrations/clients', guard('integration', 'read'), gatewayClient.list);
+router.post('/integrations/clients', guard('integration', 'update'), gatewayClient.create);
+router.put('/integrations/clients/:id', guard('integration', 'update'), gatewayClient.update);
+router.delete('/integrations/clients/:id', guard('integration', 'update'), gatewayClient.remove);
 
 // P2-2 报关单申报/状态查询（海关单一窗口）
 router.post('/customs-declarations/:id/submit', guard('customs', 'update'), customsSync.submit);

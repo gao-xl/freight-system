@@ -11,6 +11,7 @@ const Document = require('./Document');
 const ShipmentTrack = require('./ShipmentTrack');
 const FinanceRecord = require('./FinanceRecord');
 const IntegrationConfig = require('./IntegrationConfig');
+const IntegrationClient = require('./IntegrationClient'); // P2-1 外部调用方（入站回调渠道）
 const Quotation = require('./Quotation');
 const QuotationItem = require('./QuotationItem');
 const Role = require('./Role');
@@ -207,6 +208,7 @@ module.exports = {
   ShipmentTrack,
   FinanceRecord,
   IntegrationConfig,
+  IntegrationClient,
   Quotation,
   QuotationItem,
   Role,

@@ -1,7 +1,25 @@
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const gateway = require('../services/integrationGateway');
-const { EdiMessage, IntegrationConfig } = require('../services/dataAccess');
+const { EdiMessage, IntegrationConfig, IntegrationClient } = require('../services/dataAccess');
 const { logger } = require('../utils/logger');
+
+// 解析入站回调的 HMAC 签名密钥：优先取已注册的 IntegrationClient（按 client 维度管理），
+// 未注册时回退 IntegrationConfig 旧配置，保证存量回调不中断。
+async function resolveCallbackSecret(clientCode, fallbackCfgCode) {
+  try {
+    const cli = await IntegrationClient.findOne({ where: { code: clientCode, enabled: true } });
+    if (cli && cli.apiKey) return { secret: cli.apiKey, clientId: cli.id };
+  } catch (e) {
+    logger.warn(`[CALLBACK] 读取 IntegrationClient(${clientCode}) 失败`, { message: e.message });
+  }
+  try {
+    const cfg = await IntegrationConfig.findOne({ where: { code: fallbackCfgCode } });
+    if (cfg && cfg.enabled && cfg.apiKey) return { secret: cfg.apiKey, clientId: null };
+  } catch (e) {
+    logger.warn(`[CALLBACK] 读取 IntegrationConfig(${fallbackCfgCode}) 失败`, { message: e.message });
+  }
+  return { secret: null, clientId: null };
+}
 
 // P2-1 API 集成网关控制器：管理手动调用、日志查询、对接状态概览
 
@@ -55,19 +73,15 @@ const status = asyncHandler(async (req, res) => {
 // ── P2-2 海关单一窗口入站回调 ──
 // POST /api/v1/callbacks/customs
 // body: { declNo, status, customsNo, inspectionResult, releaseDate, messageTime, raw }
-// 鉴权：请求头 X-GW-Sign = HMAC-SHA256(secret, rawBody)；secret = 对应 IntegrationConfig.apiKey。
+// 鉴权：请求头 X-GW-Sign = HMAC-SHA256(secret, rawBody)；secret 优先取 IntegrationClient(customs).apiKey，
+// 未注册时回退 IntegrationConfig(customs).apiKey。
 // 若未启用/未配置 customs 对接或签名不匹配，报文仍落库标记 unverified，不更新业务状态（防伪造）。
 const customsCallback = asyncHandler(async (req, res) => {
   const crypto = require('crypto');
   const rawBody = JSON.stringify(req.body || {});
   const signature = req.headers['x-gw-sign'] || '';
-  let secret = null;
-  try {
-    const cfg = await IntegrationConfig.findOne({ where: { code: 'customs' } });
-    secret = (cfg && cfg.enabled && cfg.apiKey) || null;
-  } catch (e) {
-    logger.warn('[CALLBACK:customs] 读取 customs 配置失败', { message: e.message });
-  }
+  // 密钥优先来自 IntegrationClient（client 维度），未注册时回退 IntegrationConfig，防伪造且兼容存量
+  const { secret, clientId } = await resolveCallbackSecret('customs', 'customs');
   const expected = secret ? crypto.createHmac('sha256', secret).update(rawBody).digest('hex') : null;
   const verified = !!expected && !!signature && signature.length === expected.length
     && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
@@ -88,6 +102,14 @@ const customsCallback = asyncHandler(async (req, res) => {
     ediId = edi.id;
   } catch (e) {
     logger.error('[CALLBACK:customs] 回调报文落库失败', { message: e.message });
+  }
+
+  // 有注册的 client 时，无论校验是否通过都累计调用量（审计维度）
+  if (clientId != null) {
+    IntegrationClient.increment('callCount', { where: { id: clientId } }).catch((e) =>
+      logger.warn('[CALLBACK:customs] 更新调用计数失败', { message: e.message }));
+    IntegrationClient.update({ lastCallAt: new Date() }, { where: { id: clientId } }).catch((e) =>
+      logger.warn('[CALLBACK:customs] 更新调用时间失败', { message: e.message }));
   }
 
   if (!verified) {
