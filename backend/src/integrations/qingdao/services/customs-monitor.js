@@ -2,7 +2,7 @@
 
 const browserPool = require("../browser/pool");
 const ygtLogin = require("../scrapers/yungangtong/login");
-const customsScraper = require("../scrapers/yungangtong/customs-status");
+const vipOceantally = require("../scrapers/yungangtong/vip-oceantally");
 const normalizer = require("../adapters/data-normalizer");
 const changeDetector = require("../adapters/change-detector");
 const cacheAdapter = require("../adapters/cache-adapter");
@@ -10,12 +10,12 @@ const config = require("../config");
 
 /**
  * 通关状态监控服务
- * 定时轮询云港通，批量查询所有在途报关单的通关状态
+ * 定时轮询云港通 VIP API，批量查询所有在途报关单的通关状态
  */
 class CustomsMonitor {
   /**
    * 执行一轮通关状态查询
-   * @param {Array<{blNo: string, containerNo?: string}>} items - 待查询项
+   * @param {Array<{blNo: string, containerNo?: string, ieFlag?: string}>} items - 待查询项
    * @returns {Promise<{results: Array, changes: Array}>}
    */
   async run(items) {
@@ -33,27 +33,50 @@ class CustomsMonitor {
 
     try {
       page = await ygtLogin.ensureLoggedIn(context);
-      const rawResults = await customsScraper.batchQuery(page, items);
-      const results = rawResults.map((r) => normalizer.normalizeCustomsStatus(r));
 
-      // 缓存结果
-      for (const result of results) {
-        const cacheKey = `customs:${result.blNo}`;
-        const previous = await cacheAdapter.get(cacheKey);
-        const prevData = previous ? JSON.parse(previous) : null;
+      // 建立模块 session（VIP API 需要模块上下文）
+      await page.goto(config.yungangtong.vipQueryUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: config.browser.navigationTimeout,
+      }).catch(() => {});
+      await this._sleep(3000);
 
-        const { changed, changes: itemChanges } = changeDetector.detectCustomsChanges(
-          prevData, result
-        );
+      const results = [];
+      for (const item of items) {
+        try {
+          const raw = await vipOceantally.queryByBillNo(page, item.blNo, {
+            ieFlag: item.ieFlag || "I",
+          });
+          const result = normalizer.normalizeCustomsStatus(raw);
+          results.push(result);
 
-        if (changed) {
-          changes.push({ blNo: result.blNo, changes: itemChanges });
-          if (config.notify.onStatusChange) {
-            this._notifyChange(result.blNo, itemChanges);
+          // 缓存结果 + 变更检测
+          const cacheKey = `customs:${result.blNo}:${result.ieFlag}`;
+          const previous = await cacheAdapter.get(cacheKey);
+          const prevData = previous ? JSON.parse(previous) : null;
+
+          const { changed, changes: itemChanges } = changeDetector.detectCustomsChanges(
+            prevData, result
+          );
+
+          if (changed) {
+            changes.push({ blNo: result.blNo, ieFlag: result.ieFlag, changes: itemChanges });
+            if (config.notify.onStatusChange) {
+              this._notifyChange(result.blNo, itemChanges);
+            }
           }
-        }
 
-        await cacheAdapter.set(cacheKey, JSON.stringify(result), config.redis.ttl.customsStatus);
+          await cacheAdapter.set(cacheKey, JSON.stringify(result), config.redis.ttl.customsStatus);
+          await this._sleep(1000, 2000); // 请求间隔，避免频率限制
+        } catch (err) {
+          this._log("warn", `查询 ${item.blNo} 失败: ${err.message}`);
+          results.push({
+            blNo: item.blNo,
+            ieFlag: item.ieFlag || "I",
+            status: "query_failed",
+            error: err.message,
+          });
+        }
       }
 
       const elapsed = Date.now() - startTime;
@@ -73,6 +96,11 @@ class CustomsMonitor {
       if (page) await page.close().catch(() => {});
       release();
     }
+  }
+
+  _sleep(min = 1000, max = 2000) {
+    const delay = Math.floor(Math.random() * (max - min) + min);
+    return new Promise((r) => setTimeout(r, delay));
   }
 
   _notifyChange(blNo, changes) {

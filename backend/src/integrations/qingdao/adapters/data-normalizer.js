@@ -9,13 +9,35 @@ const config = require("../config");
 class DataNormalizer {
   /**
    * 标准化通关状态
+   * 支持两种输入：
+   *  1. VIP API 抓取器输出（nodes 结构）
+   *  2. 旧版 UI 抓取器输出（cargoArrived/loadingReleased 结构）
    * @param {object} raw - 云港通抓取的原始通关状态
    * @returns {object} 标准化结果
    */
   normalizeCustomsStatus(raw) {
     const mapping = config.statusMapping.customs;
+
+    // VIP API 格式（新）
+    if (raw.nodes) {
+      return {
+        blNo: raw.blNo,
+        ieFlag: raw.ieFlag || "I",
+        containerNo: raw.containerNo || null,
+        queriedAt: raw.queriedAt,
+        source: "yungangtong",
+        status: this._mapStatus(raw.status, mapping),
+        vessel: raw.vessel || {},
+        containers: raw.containers || [],
+        nodes: raw.nodes,
+        lastCompletedNode: this._lastCompletedCustomsNode(raw.nodes),
+      };
+    }
+
+    // 旧版 UI 格式（兼容）
     return {
       blNo: raw.blNo,
+      ieFlag: raw.ieFlag || "I",
       containerNo: raw.containerNo,
       queriedAt: raw.queriedAt,
       source: "yungangtong",
@@ -26,6 +48,12 @@ class DataNormalizer {
         customsInspecting: raw.customsInspecting,
       },
     };
+  }
+
+  _lastCompletedCustomsNode(nodes) {
+    const completed = Object.values(nodes || {}).filter((n) => n && n.completed && n.time);
+    if (completed.length === 0) return null;
+    return completed.reduce((latest, n) => (n.time > latest.time ? n : latest), completed[0]);
   }
 
   /**

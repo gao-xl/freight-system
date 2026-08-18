@@ -8,6 +8,13 @@ module.exports = {
     baseUrl: process.env.YGT_BASE_URL || "https://www.qingdao-port.net",
     loginUrl: process.env.YGT_LOGIN_URL || "https://www.qingdao-port.net/page/login.html",
     queryUrl: process.env.YGT_QUERY_URL || "https://www.qingdao-port.net/page/query.html",
+    // VIP 全程追踪模块（信息统一查询）
+    vipQueryUrl: process.env.YGT_VIP_QUERY_URL || "https://www.qingdao-port.net/web/tycxtrack/index.html?201911081",
+    // VIP 通关状态 API
+    vipApi: {
+      customsStatus: "/api/web/vip/vipOceantally/queryByBillNo",
+      usage: "/api/web/vip/vipUsage/querySingleUsage",
+    },
     username: process.env.YGT_USERNAME || "",
     password: process.env.YGT_PASSWORD || "",
     // 查询页面端点

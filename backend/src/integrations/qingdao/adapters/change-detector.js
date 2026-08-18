@@ -50,13 +50,46 @@ class ChangeDetector {
 
   /**
    * 检测通关状态变更
+   * 支持新旧两种格式：
+   *  新：nodes 结构（VIP API）
+   *  旧：cargoArrived/loadingReleased 结构（UI 抓取）
    */
   detectCustomsChanges(previous, current) {
     if (!previous) return { changed: true, changes: [{ field: "all", from: null, to: current }] };
 
     const changes = [];
-    const fields = ["cargoArrived", "loadingReleased", "customsInspecting", "status"];
 
+    // 状态变更
+    if (previous.status !== current.status) {
+      changes.push({ field: "status", from: previous.status, to: current.status });
+    }
+
+    // 新格式：对比完成节点
+    if (current.nodes && previous.nodes) {
+      for (const [key, node] of Object.entries(current.nodes)) {
+        const prevNode = previous.nodes[key];
+        const nowCompleted = !!(node && node.completed);
+        const wasCompleted = !!(prevNode && prevNode.completed);
+
+        if (nowCompleted && !wasCompleted) {
+          changes.push({
+            field: `node.${key}`,
+            from: null,
+            to: { label: node.name, time: node.time },
+          });
+        } else if (nowCompleted && wasCompleted && node.time !== prevNode.time) {
+          changes.push({
+            field: `node.${key}.time`,
+            from: prevNode.time,
+            to: node.time,
+          });
+        }
+      }
+      return { changed: changes.length > 0, changes };
+    }
+
+    // 旧格式：对比状态字段
+    const fields = ["cargoArrived", "loadingReleased", "customsInspecting", "status"];
     for (const field of fields) {
       if (previous[field] !== current[field]) {
         changes.push({ field, from: previous[field], to: current[field] });
