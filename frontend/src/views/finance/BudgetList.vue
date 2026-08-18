@@ -160,9 +160,9 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete } from '@element-plus/icons-vue';
 import { budgetAPI, BUDGET_CATEGORIES, budgetCategoryLabel } from '@/api/budget';
 import { companyAPI } from '@/api';
-import { useAuth } from '@/store/auth';
+import { useAuthStore } from '@/stores/auth';
 
-const auth = useAuth();
+const auth = useAuthStore();
 const hasBudgetPower = auth.hasPermission('budget:update') || auth.hasPermission('budget:approve');
 
 const loading = ref(false);

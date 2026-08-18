@@ -1,5 +1,5 @@
 // P3-2 预算管理 API
-import request from '@/utils/request';
+import request from '@/api/request';
 
 export const budgetAPI = {
   list: (params) => request.get('/budgets', { params }),
