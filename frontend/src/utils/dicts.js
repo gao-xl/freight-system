@@ -88,3 +88,20 @@ export const money = (v, currency = '') => {
   const text = n.toLocaleString('en-US', { maximumFractionDigits: 2 });
   return currency ? `${text} ${currency}` : text;
 };
+
+// P0 借记通知单
+export const DEBIT_NOTE_STATUS = {
+  draft: { text: '草稿', type: 'info' },
+  issued: { text: '已签发', type: 'primary' },
+  paid: { text: '已支付', type: 'success' },
+  cancelled: { text: '已取消', type: 'danger' },
+};
+
+// P0 提单
+export const BL_TYPE = { master: '主单(MBL)', house: '分单(HBL)' };
+export const BL_STATUS = {
+  draft: { text: '草稿', type: 'info' },
+  issued: { text: '已签发', type: 'primary' },
+  surrendered: { text: '已电放', type: 'warning' },
+  voided: { text: '已作废', type: 'danger' },
+};
