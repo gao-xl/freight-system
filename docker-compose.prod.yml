@@ -20,6 +20,8 @@ services:
     image: ${IMAGE_REGISTRY:-}freight-system-backend:${IMAGE_TAG:-latest}
     container_name: freight-backend
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file: .env
     environment:
       NODE_ENV: production
