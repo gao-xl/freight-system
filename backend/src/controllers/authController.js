@@ -7,10 +7,16 @@ const { ok, fail, asyncHandler } = require('../utils/response');
 const { getPermissions } = require('../services/permissionService');
 const sessionService = require('../services/sessionService');
 const twoFactorService = require('../services/twoFactorService');
+const apiKeyService = require('../services/apiKeyService');
+const auditService = require('../core/auditService');
 
 // P0-2 token 安全：refresh token（30 天长期凭证）经 httpOnly Cookie 承载，
 // 前端 JS 无法读取，阻断 XSS 窃取长期会话。access token 保持短效 header。
 const REFRESH_COOKIE = 'ft_refresh';
+
+// P1 加固：与 middleware/auth.js 校验对齐的 issuer/audience，固定 HS256 防算法混淆
+const JWT_ISSUER = 'freight-system';
+const JWT_AUDIENCE = 'freight-web';
 const COOKIE_MAX_AGE = sessionService.exprToMs(config.jwtRefreshExpiresIn);
 
 // 解析请求 Cookie 头（不引入 cookie-parser 依赖，仅需读取一个名值对）
@@ -60,7 +66,7 @@ function signAccessToken(user, sessionId) {
       jti: crypto.randomUUID(),
     },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
+    { expiresIn: config.jwtExpiresIn, algorithm: 'HS256', issuer: JWT_ISSUER, audience: JWT_AUDIENCE }
   );
 }
 
@@ -117,11 +123,11 @@ const login = asyncHandler(async (req, res) => {
   const session = await sessionService.createSession(user, deviceInfo(req));
   const token = signAccessToken(user, session.sessionId);
   const permissions = await getPermissions(user.id);
-  // P0-2：refresh token 同时经 httpOnly cookie 下发（body 仍返回，兼容存量调用方/测试）
+  // P0-2 / P1 加固：refresh token 仅经 httpOnly cookie 下发，不在响应体暴露，
+  // 防止被 JS（XSS）读取长期会话；前端刷新走 cookie。
   setRefreshCookie(res, session.refreshToken);
   ok(res, {
     token,
-    refreshToken: session.refreshToken,
     expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
     user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: !!user.mustChangePassword },
   }, '登录成功');
@@ -155,10 +161,10 @@ const refresh = asyncHandler(async (req, res) => {
   });
   const token = signAccessToken(user, newSession.sessionId);
   const permissions = await getPermissions(user.id);
+  // P1 加固：新 refresh 仅经 httpOnly cookie 下发，不在响应体暴露
   setRefreshCookie(res, newSession.refreshToken);
   ok(res, {
     token,
-    refreshToken: newSession.refreshToken,
     expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
     user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: !!user.mustChangePassword },
   }, '刷新成功');
@@ -217,6 +223,8 @@ const changePassword = asyncHandler(async (req, res) => {
   await user.save();
   // M3：改密即全局下线所有会话
   await sessionService.revokeAllForUser(user.id);
+  // P1 修复：改密后吊销该用户全部接口密钥（长期无失效交互的凭据不应在密码重置后继续有效）
+  await apiKeyService.revokeAllForUser(user.id);
   ok(res, null, '密码修改成功，其他设备需重新登录');
 });
 
@@ -262,8 +270,12 @@ const post2faVerify = asyncHandler(async (req, res) => {
 });
 
 // TOTP 绑定（登录态）：返回 secret / otpauth URI / 二维码 + 备份码
+// P1 修复：绑定/重绑 TOTP 前校验当前密码，防止会话劫持者无复核地重绑二次因子接管 2FA；
+// 与 disable2fa 口径一致（敏感启停均需当前密码或重认证）。
 const setupTotp = asyncHandler(async (req, res) => {
+  const { password } = req.body || {};
   const user = await User.findByPk(req.user.id);
+  if (!await bcrypt.compare(password || '', user.password)) return fail(res, '密码校验失败', 1, 403);
   const { secret, otpauthUri, qrDataURL } = await twoFactorService.setupTotp(user);
   const { codes, hashes } = twoFactorService.generateBackupCodes();
   await twoFactorService.storeBackupHashes(user, hashes);
@@ -302,7 +314,24 @@ const reauthVerify = asyncHandler(async (req, res) => {
   ok(res, { reauthToken: twoFactorService.signReauthToken(user) }, '验证通过');
 });
 
+// B1 加固：管理员手动解锁被登录锁定冻结的账号
+const unlockAccount = asyncHandler(async (req, res) => {
+  const { username } = req.params;
+  const user = await User.findOne({ where: { username } });
+  if (!user) return fail(res, '用户不存在', 1, 404);
+  await user.update({ loginFails: 0, lockedUntil: null });
+  await auditService.record({
+    userId: req.user?.id,
+    username: req.user?.username,
+    module: 'auth',
+    action: 'unlock_account',
+    targetId: user.id,
+    summary: `管理员解锁被锁定账号 ${username}`,
+  });
+  ok(res, null, '账号已解锁，可重新登录');
+});
+
 module.exports = {
   login, refresh, logout, logoutAll, sessions, me, changePassword,
-  post2faSend, post2faVerify, setupTotp, disable2fa, reauthSend, reauthVerify,
+  post2faSend, post2faVerify, setupTotp, disable2fa, reauthSend, reauthVerify, unlockAccount,
 };

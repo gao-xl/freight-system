@@ -31,6 +31,7 @@ const {
 const reconciliation = require('../domains/finance/reconciliationService');
 const { nextNumber } = require('../services/numberingService');
 const events = require('../services/eventBus');
+const auditService = require('../core/auditService'); // A1/A2 加固：财务合规操作审计留痕
 
 // ===== 本地辅助函数（纯逻辑，便于复用与单测） =====
 
@@ -227,8 +228,11 @@ const reconcile = asyncHandler(async (req, res) => {
 });
 
 // 开票记录列表
+// V4 加固：分页参数钳制到安全区间，防止客户端以极大 pageSize 拉取全表/耗尽内存
 const invoiceList = asyncHandler(async (req, res) => {
   const { page = 1, pageSize = 10, orderId, status, invoiceType } = req.query;
+  const pageNum = Math.max(parseInt(page) || 1, 1);
+  const pageLimit = Math.min(parseInt(pageSize) || 10, 500);
   let where = {};
   if (orderId) where.orderId = orderId;
   if (status) where.status = status;
@@ -242,9 +246,9 @@ const invoiceList = asyncHandler(async (req, res) => {
       { model: Supplier, as: 'supplier', attributes: ['id', 'name'] },
     ],
     order: [['id', 'DESC']],
-    limit: parseInt(pageSize), offset: (page - 1) * pageSize,
+    limit: pageLimit, offset: (pageNum - 1) * pageLimit,
   });
-  ok(res, { list: rows, total: count, page: parseInt(page), pageSize: parseInt(pageSize) });
+  ok(res, { list: rows, total: count, page: pageNum, pageSize: pageLimit });
 });
 
 // 创建开票记录（含税率计算）
@@ -490,6 +494,8 @@ async function syncInvoiceStatusByNo(invoiceNo, t) {
 // 收款/付款单列表
 const paymentList = asyncHandler(async (req, res) => {
   const { page = 1, pageSize = 10, direction, customerId } = req.query;
+  const pageNum = Math.max(parseInt(page) || 1, 1);
+  const pageLimit = Math.min(parseInt(pageSize) || 10, 500);
   const where = {};
   if (direction) where.direction = direction;
   if (customerId) where.customerId = customerId;
@@ -500,9 +506,9 @@ const paymentList = asyncHandler(async (req, res) => {
       { model: Customer, as: 'customer', attributes: ['id', 'name'] },
       { model: Supplier, as: 'supplier', attributes: ['id', 'name'] },
     ],
-    order: [['id', 'DESC']], limit: parseInt(pageSize), offset: (page - 1) * pageSize,
+    order: [['id', 'DESC']], limit: pageLimit, offset: (pageNum - 1) * pageLimit,
   });
-  ok(res, { list: rows, total: count, page: parseInt(page), pageSize: parseInt(pageSize) });
+  ok(res, { list: rows, total: count, page: pageNum, pageSize: pageLimit });
 });
 
 // B6 多币种汇总：按币种分组并换算为基准币种
@@ -565,6 +571,8 @@ const closePeriod = asyncHandler(async (req, res) => {
   if (period.status === 'locked') return fail(res, `账期 ${code} 已锁帐，请先解锁`, 1, 400);
   const summary = await computePeriodSummary(code);
   await period.update({ ...summary, status: 'closed', closedBy: req.user?.id || null, closedAt: new Date(), closeNote: note });
+  // A1 审计：结账为财务合规关键操作，须留痕（失败不抛错，不阻断主流程）
+  await auditService.record({ userId: req.user?.id, username: req.user?.username, module: 'finance', action: 'close_period', targetId: code, summary: `账期 ${code} 已结账（扎帐）` });
   ok(res, period, '结账（扎帐）完成');
 });
 
@@ -575,6 +583,7 @@ const lockPeriod = asyncHandler(async (req, res) => {
   const period = await getOrCreatePeriod(code);
   if (period.status === 'locked') return fail(res, `账期 ${code} 已锁帐`, 1, 400);
   await period.update({ status: 'locked', lockedBy: req.user?.id || null, lockedAt: new Date(), lockNote: note });
+  await auditService.record({ userId: req.user?.id, username: req.user?.username, module: 'finance', action: 'lock_period', targetId: code, summary: `账期 ${code} 已锁帐` });
   ok(res, period, '已锁帐');
 });
 
@@ -586,6 +595,7 @@ const unlockPeriod = asyncHandler(async (req, res) => {
   const period = await getOrCreatePeriod(code);
   if (period.status !== 'locked') return fail(res, '仅已锁帐账期可解锁', 1, 400);
   await period.update({ status: 'open', unlockedBy: req.user?.id || null, unlockedAt: new Date(), unlockReason: reason });
+  await auditService.record({ userId: req.user?.id, username: req.user?.username, module: 'finance', action: 'unlock_period', targetId: code, summary: `账期 ${code} 已解锁（${reason}）` });
   ok(res, period, '已解锁，账期回到未结账状态');
 });
 
@@ -695,6 +705,11 @@ const reverse = asyncHandler(async (req, res) => {
     await t.commit();
     events.emit('finance.created', { id: reverseRecord.id, data: reverseRecord.toJSON(), user: req.user });
     events.emit('finance.updated', { id: rec.id, data: rec.toJSON(), user: req.user });
+    // A2 审计：红字冲销直接影响账务，事务提交后留痕
+    await auditService.record({
+      userId: req.user?.id, username: req.user?.username, module: 'finance', action: 'red_letter_reversal',
+      targetId: rec.id, summary: `红字冲销原记录 #${rec.id}，金额 ${Number(rec.amount)} ${rec.currency}，原因：${reason}`,
+    });
     ok(res, { original: rec.toJSON(), reversed: reverseRecord.toJSON() }, '红字冲销成功');
   } catch (e) {
     await t.rollback();

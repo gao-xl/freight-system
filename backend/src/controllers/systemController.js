@@ -4,8 +4,10 @@ const { Op } = require('sequelize');
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const { validatePassword } = require('../utils/passwordPolicy');
 const { invalidate, hasPermission } = require('../services/permissionService');
+const apiKeyService = require('../services/apiKeyService');
 const { collectHealth } = require('../services/healthCheck');
 const { collectSecurity } = require('../services/securityCheck');
+const auditService = require('../core/auditService'); // A3 加固：权限变更审计留痕
 
 // M4 修复：管理操作提权约束辅助函数
 // 只有「系统管理员」可授予/撤销 admin 角色或把用户设为 admin；普通持有 system:user 的运维不可提权。
@@ -137,6 +139,10 @@ const updateUser = asyncHandler(async (req, res) => {
   if (needsTokenReset) {
     await user.update({ tokenVersion: (user.tokenVersion || 0) + 1 });
   }
+  // P1 修复：账号被禁用或密码被重置时，吊销其全部接口密钥，使长期凭据随之失效
+  if (status === 'disabled' || password) {
+    await apiKeyService.revokeAllForUser(user.id);
+  }
   invalidate(user.id);
   ok(res, user, '更新成功');
 });
@@ -179,6 +185,11 @@ const assignRoles = asyncHandler(async (req, res) => {
   // L6 修复：角色变更递增 tokenVersion，使旧 token 立即失效
   await user.update({ tokenVersion: (user.tokenVersion || 0) + 1 });
   invalidate(user.id);
+  // A3 审计：用户角色分配是权限体系关键操作，须留痕
+  await auditService.record({
+    userId: req.user?.id, username: req.user?.username, module: 'system', action: 'assign_roles',
+    targetId: user.id, summary: `为用户 #${user.id}(${user.username}) 分配角色: [${roleIds.join(',')}]`,
+  });
   ok(res, null, '角色已分配');
 });
 

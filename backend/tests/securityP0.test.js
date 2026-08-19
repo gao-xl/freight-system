@@ -77,6 +77,12 @@ describe('P0 资金与凭据类修复回归测试', () => {
     serverProc.stdout.on('data', () => {});
     serverProc.stderr.on('data', (d) => { serverStderr += d.toString(); });
     await waitForHealth();
+    // 种子账号 mustChangePassword=true 会触发 forcePasswordChange 拦截业务路由；测试用原密码清除全部测试账号该标记后重登
+    const { User } = require('../src/models');
+    for (const uname of ['admin', 'operator', 'finance']) {
+      const u = await User.findOne({ where: { username: uname } });
+      if (u && u.mustChangePassword) await u.update({ mustChangePassword: false });
+    }
     adminToken = await login('admin');
     operatorToken = await login('operator');
     financeToken = await login('finance');

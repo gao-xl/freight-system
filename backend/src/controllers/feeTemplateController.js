@@ -2,7 +2,7 @@
 const { FeeTemplate } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler } = require('../utils/response');
-const { scopedWhere } = require('../middleware/dataScope');
+const { scopedWhere, scopedFindOne, attachOwnership } = require('../middleware/dataScope');
 
 const base = crudController({
   name: 'fee-template',
@@ -38,13 +38,15 @@ async function beforeWrite(req, item, body) {
 const create = asyncHandler(async (req, res) => {
   const body = { ...req.body };
   await beforeWrite(req, null, body);
+  // P1 修复：创建归属由服务端解析，不信任客户端传入的 groupId
+  await attachOwnership(req, body);
   const item = await FeeTemplate.create(body);
   ok(res, item, '费用模板已创建');
 });
 
 const update = asyncHandler(async (req, res) => {
-  const tpl = await FeeTemplate.findByPk(req.params.id);
-  if (!tpl) return fail(res, '模板不存在', 1, 404);
+  const tpl = await scopedFindOne(req, FeeTemplate, { id: req.params.id });
+  if (!tpl) return fail(res, '模板不存在或无权访问', 1, 404);
   const body = { ...req.body };
   await beforeWrite(req, tpl, body);
   await tpl.update(body);

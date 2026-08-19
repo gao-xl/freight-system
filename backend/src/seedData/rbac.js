@@ -29,7 +29,7 @@ function buildPermissions() {
   PERMS.push(...addPerms('qingdao', ['read', 'update'], (a) => `${({ read: '查看', update: '更新' })[a]}青岛港节点`));
   PERMS.push(...addPerms('alert', ['read', 'update'], (a) => `${({ read: '查看', update: '处理' })[a]}预警`));
   PERMS.push(...addPerms('yard', ['read', 'update'], (a) => `${({ read: '查看', update: '查询/维护' })[a]}场站信息`));
-  PERMS.push(...addPerms('print', ['read', 'write'], (a) => `${({ read: '查看/打印', write: '设计模板' })[a]}`));
+  PERMS.push(...addPerms('print', ['read', 'create', 'update', 'delete'], (a) => `${({ read: '查看/打印', create: '新建模板', update: '编辑模板', delete: '删除模板' })[a]}`));
   PERMS.push(...addPerms('release', ['read', 'create', 'approve'], (a) => `${({ read: '查看', create: '申请', approve: '审批' })[a]}放单`));
   // L5 修复：补齐 system:apikey 权限点（接口密钥管理路由引用它，此前未定义导致配置不一致）
   PERMS.push(...addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company', 'finance', 'apikey'], (a) => `${({ user: '用户', role: '角色', permission: '权限', audit: '审计', group: '小组', custom: '自定义字段', company: '公司设置', finance: '发票号段', apikey: '接口密钥' })[a]}管理`));
@@ -67,7 +67,7 @@ function buildRolePermissionMap(PERMS) {
       ...actionGroup('qingdao', ['read', 'update']),
       ...actionGroup('alert', ['read', 'update']),
       ...actionGroup('yard', ['read', 'update']),
-      ...actionGroup('print', ['read', 'write']),
+      ...actionGroup('print', ['read', 'create', 'update', 'delete']),
       ...actionGroup('release', ['read', 'create', 'approve']),
       ...aiUse(),
       ...actionGroup('budget', ['create', 'read', 'update', 'delete', 'approve']),

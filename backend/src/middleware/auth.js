@@ -6,6 +6,10 @@ const { verifyPlainKey, touchLastUsed } = require('../services/apiKeyService');
 const twoFactorService = require('../services/twoFactorService');
 const { logger } = require('../utils/logger');
 
+// P1 加固：固定 JWT 算法并声明 issuer/audience，杜绝算法混淆注入
+const JWT_ISSUER = 'freight-system';
+const JWT_AUDIENCE = 'freight-web';
+
 // 支持两种认证方式，优先级固定：
 //   1. Authorization: Bearer <jwt>   交互式会话（前端登录）
 //   2. X-API-Key: <key>              非交互式调用（脚本 / 定时任务 / 第三方系统）
@@ -17,7 +21,7 @@ async function authRequired(req, res, next) {
 
   if (token) {
     try {
-      const decoded = jwt.verify(token, config.jwtSecret);
+      const decoded = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'], issuer: JWT_ISSUER, audience: JWT_AUDIENCE });
       // D8：每次请求校验用户存在/启用 + tokenVersion 匹配（改密/禁用后旧 token 即刻失效）
       const userQuery = User.findByPk(decoded.id, { attributes: ['id', 'status', 'tokenVersion', 'customerId', 'mustChangePassword'] });
       // M3：access token 携带 sid，校验对应会话未被端线下线撤销/过期（无 sid 的存量 token 跳过此检查，平滑过渡）
@@ -84,12 +88,13 @@ function requireRole(...roles) {
 }
 
 // P0-1 纵深防御：用户 mustChangePassword=true（默认账号首登强制改密）时，
-// 除白名单端点（改密/登出/本人信息/会话/刷新）外一律 403，防止绕过前端直接调用接口。
-// 默认不全局挂载（避免破坏无头测试/脚本式调用），由路由在敏感端点按需启用：
-//   router.use(authRequired); router.use(forcePasswordChange); ...
+// 除白名单端点（改密/登出/本人信息/会话/刷新/引导流程）外一律 403，防止绕过前端直接调用接口。
+// V3 加固：本条现已在业务路由层 router.use(authRequired, dataScope, forcePasswordChange) 全局启用，
+// 服务端强制首登改密（API Key 认证的 req.user 不带 mustChangePassword，不受影响）。
 function forcePasswordChange(req, res, next) {
   if (req.user && req.user.mustChangePassword) {
-    const whitelist = ['change-password', 'logout', 'logout-all', 'me', 'sessions', 'refresh'];
+    // 白名单：改密/登出/本人信息/会话/刷新，外加 onboarding 引导与能力探测（首登初始化所需）
+    const whitelist = ['change-password', 'logout', 'logout-all', 'me', 'sessions', 'refresh', 'status', 'wizard/done', 'demo-data', 'capabilities'];
     const requestPath = req.path.split('?')[0];
     const allowed = whitelist.some((w) => requestPath.endsWith(w));
     if (!allowed) {

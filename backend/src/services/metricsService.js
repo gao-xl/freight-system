@@ -42,6 +42,13 @@ const businessEvents = new client.Counter({
   labelNames: ['event'],
 });
 
+// ── 安全事件埋点（A4 加固）──
+const securityEvents = new client.Counter({
+  name: 'security_events_total',
+  help: '安全事件计数（auth_fail=401 鉴权失败 / permission_denied=403 权限拒绝）',
+  labelNames: ['type'],
+});
+
 // ── 缓存指标 ──
 const cacheHits = new client.Counter({ name: 'cache_hits_total', help: '缓存命中次数' });
 const cacheMisses = new client.Counter({ name: 'cache_misses_total', help: '缓存未命中次数' });
@@ -174,6 +181,11 @@ function recordEvent(eventName) {
   try { businessEvents.inc({ event: eventName || 'unknown' }, 1); } catch (e) { /* 容错 */ }
 }
 
+// 安全事件计数（A4 加固：auth_fail / permission_denied）
+function recordSecurityEvent(type) {
+  try { securityEvents.inc({ type: type || 'unknown' }, 1); } catch (e) { /* 容错 */ }
+}
+
 // 同步缓存指标（从 cacheService 读取增量）
 let lastCacheStats = { hits: 0, misses: 0, writes: 0, fallbacks: 0 };
 function sampleCache(cacheService) {
@@ -241,6 +253,6 @@ async function registry() {
 const contentType = client.register.contentType;
 
 module.exports = {
-  recordHttp, recordSlow, recordEvent, sampleCache, sampleDbPool, startSampler, stopSampler, registry, contentType,
+  recordHttp, recordSlow, recordEvent, recordSecurityEvent, sampleCache, sampleDbPool, startSampler, stopSampler, registry, contentType,
   qps, errorRate5xx, windowCounts, snapshot, latencyQuantiles,
 };

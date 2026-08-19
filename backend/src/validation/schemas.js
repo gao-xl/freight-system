@@ -251,6 +251,24 @@ const assignRoles = Joi.object({
   roleIds: Joi.array().items(id).required(),
 }).unknown(true);
 
+// V 类加固：批量操作参数校验（限制数量上限 + 元素正整数，兼容旧版逗号串入参）
+const batchIdList = (max) => Joi.alternatives().try(
+  Joi.array().items(id).min(1).max(max),
+  Joi.string().trim().min(1).max(max * 5).pattern(/^[0-9,\s]+$/)
+);
+// V1 批量核销：ids 必填（1..1000），amount 可选且必须为正数（≤0 由 schema 拒绝）
+const batchWriteoff = Joi.object({
+  ids: batchIdList(1000),
+  amount: Joi.number().precision(2).positive().optional(),
+  remark: str(255),
+}).unknown(true);
+// V2 放单批量审批：ids 必填（1..500），approve 可选布尔
+const batchReleaseApprove = Joi.object({
+  ids: batchIdList(500),
+  approve: Joi.boolean().optional(),
+  remark: str(255),
+}).unknown(true);
+
 // 集装箱（C6 一单多箱）
 	const containerItem = Joi.object({
 	  id: id,
@@ -361,4 +379,5 @@ module.exports = {
   containerSave,
   debitNoteCreate, debitNoteUpdate,
   blCreate, blUpdate,
+  batchWriteoff, batchReleaseApprove,
 };

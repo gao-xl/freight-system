@@ -251,7 +251,7 @@ async function seed() {
   addPerms('qingdao', ['read', 'update'], (a) => `${({ read: '查看', update: '更新' })[a]}青岛港节点`);
   addPerms('alert', ['read', 'update'], (a) => `${({ read: '查看', update: '处理' })[a]}预警`);
   addPerms('yard', ['read', 'update'], (a) => `${({ read: '查看', update: '查询/维护' })[a]}场站信息`);
-  addPerms('print', ['read', 'write'], (a) => `${({ read: '查看/打印', write: '设计模板' })[a]}`);
+  addPerms('print', ['read', 'create', 'update', 'delete'], (a) => `${({ read: '查看/打印', create: '新建模板', update: '编辑模板', delete: '删除模板' })[a]}`);
   addPerms('release', ['read', 'create', 'approve'], (a) => `${({ read: '查看', create: '申请', approve: '审批' })[a]}放单`);
   addPerms('system', ['user', 'role', 'permission', 'audit', 'group', 'custom', 'company', '*'], (a) => a === '*'
     ? '系统运维（备份/恢复/健康检查/自动化）'
@@ -283,7 +283,7 @@ async function seed() {
       ...actionGroup('qingdao', ['read', 'update']),
       ...actionGroup('alert', ['read', 'update']),
       ...actionGroup('yard', ['read', 'update']),
-      ...actionGroup('print', ['read', 'write']),
+      ...actionGroup('print', ['read', 'create', 'update', 'delete']),
       ...actionGroup('release', ['read', 'create', 'approve']),
       ...actionGroup('ai', ['use']),
       ...actionGroup('budget', ['create', 'read', 'update', 'delete', 'approve']),

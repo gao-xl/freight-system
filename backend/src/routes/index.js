@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
-const { authRequired, requirePermission, requireRole, guard, requireReauthIfEnabled } = require('../middleware/auth');
+const path = require('path');
+const { authRequired, requirePermission, requireRole, guard, requireReauthIfEnabled, denyApiKeyAuth, forcePasswordChange } = require('../middleware/auth');
 const { dataScope } = require('../middleware/dataScope');
 const { validate } = require('../middleware/validate');
 const S = require('../validation/schemas');
@@ -63,7 +64,16 @@ const monitor = require('../controllers/monitorController'); // P3-3 运维监�
 const router = express.Router();
 
 // 批量导入用内存存储（xlsx 直接读 buffer）
-const uploadMemory = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// V3 加固：导入仅接受电子表格扩展名，拒绝任意文件上传
+const IMPORT_EXT = new Set(['.xlsx', '.xls', '.csv']);
+function importFileFilter(req, file, cb) {
+  const ext = path.extname((file && file.originalname) || '').toLowerCase();
+  if (IMPORT_EXT.has(ext)) return cb(null, true);
+  const e = new Error('不支持的文件类型，导入仅允许 xlsx/xls/csv');
+  e.status = 400;
+  cb(e);
+}
+const uploadMemory = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: importFileFilter });
 
 // 自动化（仅管理员可手动触发；定时任务由 alertScheduler 自动执行）
 router.post('/automation/run', guard('system', '*'), automation.run);
@@ -117,18 +127,21 @@ router.post('/auth/login', validate(S.login), auth.login);
 // M3 会话增强：公开刷新；登录用户端线下线 / 全局下线 / 会话列表
 router.post('/auth/refresh', validate(S.refresh), auth.refresh);
 router.post('/auth/logout', authRequired, auth.logout);
-router.post('/auth/logout-all', authRequired, auth.logoutAll);
-router.get('/auth/sessions', authRequired, auth.sessions);
+router.post('/auth/logout-all', authRequired, denyApiKeyAuth, auth.logoutAll);
+router.get('/auth/sessions', authRequired, denyApiKeyAuth, auth.sessions);
 router.get('/auth/me', authRequired, auth.me);
-router.post('/auth/change-password', authRequired, requireReauthIfEnabled, validate(S.changePassword), auth.changePassword);
+router.post('/auth/change-password', authRequired, denyApiKeyAuth, requireReauthIfEnabled, validate(S.changePassword), auth.changePassword);
 
 // S4 二次认证：登录暂态（pendingToken 在体内校验）与登录态 TOTP 绑定/解绑、敏感操作复核
+// V4 加固：密钥自/会话/2FA 生命周期端点禁用 API Key 认证，避免一把密钥接管他人认证生命周期
 router.post('/auth/2fa/send', validate(S.twoFactorSend), auth.post2faSend);
 router.post('/auth/2fa/verify', validate(S.twoFactorVerify), auth.post2faVerify);
-router.post('/auth/2fa/setup', authRequired, auth.setupTotp);
-router.post('/auth/2fa/disable', authRequired, auth.disable2fa);
-router.post('/auth/2fa/reauth/send', authRequired, auth.reauthSend);
-router.post('/auth/2fa/reauth/verify', authRequired, validate(S.twoFactorVerify), auth.reauthVerify);
+router.post('/auth/2fa/setup', authRequired, denyApiKeyAuth, auth.setupTotp);
+router.post('/auth/2fa/disable', authRequired, denyApiKeyAuth, auth.disable2fa);
+router.post('/auth/2fa/reauth/send', authRequired, denyApiKeyAuth, auth.reauthSend);
+router.post('/auth/2fa/reauth/verify', authRequired, denyApiKeyAuth, validate(S.twoFactorVerify), auth.reauthVerify);
+// B1 加固：管理员手动解锁被登录锁定冻结的账号（清空失败计数 + 锁定到期时间）
+router.post('/auth/unlock/:username', authRequired, requirePermission('system', '*'), denyApiKeyAuth, auth.unlockAccount);
 
 // Onboarding 引导系统：初始化状态/创建首账号为公开端点（无管理员时前端引导创建）
 const onboarding = require('../controllers/onboardingController');
@@ -161,12 +174,24 @@ router.post('/system/smtp-test', authRequired, requirePermission('system', '*'),
 // 备份/恢复（AC-22，admin；复用 scripts/backup.js + scripts/restore.js 逻辑）
 const backupCtrl = require('../controllers/backupController');
 const os = require('os');
+// V3 加固：恢复备份仅接受 pg_dump tar 与 SQL 格式，拒绝任意文件
+const RESTORE_EXT = new Set(['.tar.gz', '.sql', '.gz', '.pg']);
+function restoreFileFilter(req, file, cb) {
+  const name = (file && file.originalname) || '';
+  const lower = name.toLowerCase();
+  if (RESTORE_EXT.has(lower.slice(lower.lastIndexOf('.')))) return cb(null, true);
+  if (lower.endsWith('.tar.gz')) return cb(null, true);
+  const e = new Error('不支持的文件类型，恢复备份仅允许 .tar.gz/.sql');
+  e.status = 400;
+  cb(e);
+}
 const restoreUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, os.tmpdir()),
     filename: (req, file, cb) => cb(null, `freight-restore-${Date.now()}-${file.originalname}`),
   }),
   limits: { fileSize: 512 * 1024 * 1024 },
+  fileFilter: restoreFileFilter,
 });
 router.post('/system/backup', authRequired, requirePermission('system', '*'), backupCtrl.backup);
 router.get('/system/backup/list', authRequired, requirePermission('system', '*'), backupCtrl.list);
@@ -181,7 +206,8 @@ router.post('/callbacks/customs', gateway.customsCallback);
 
 // 数据隔离：所有业务路由统一注入 req.dataScope（范围：all/group/self）
 // 控制器通过 scopedWhere/scopedFindOne 等辅助函数消费该范围，实现行级数据隔离
-router.use(authRequired, dataScope);
+// V3 加固：业务路由层同时全局启用 forcePasswordChange，服务端强制首登改密
+router.use(authRequired, dataScope, forcePasswordChange);
 
 // F5 实时推送：SSE 长连接（fetch 携带 Bearer，鉴权已过 authRequired）
 const realtime = require('../services/realtimeService');
@@ -363,7 +389,7 @@ router.delete('/containers/:id', guard('order', 'delete'), container.remove);
 router.get('/release', guard('release', 'read'), release.list);
 router.get('/release/orders/:id', guard('release', 'read'), release.records);
 router.post('/orders/:id/release', guard('release', 'create'), release.apply);
-router.post('/release/batch-approve', guard('release', 'approve'), release.batchApprove);
+router.post('/release/batch-approve', guard('release', 'approve'), validate(S.batchReleaseApprove), release.batchApprove);
 router.post('/release/:id/approve', guard('release', 'approve'), release.approve);
 
 // 待办任务中心（A4）——聚合各业务模块，登录用户即可访问
@@ -428,7 +454,7 @@ router.get('/finance/reconcile', guard('finance', 'read'), finance.reconcile);
 router.get('/finance/statement', guard('finance', 'read'), financeStatement.statement); // P2.4 对账单
 // 结账/扎帐/锁帐（须在 /finance/:id 之前注册，避免 periods 被 :id 捕获）
 router.get('/finance/periods', guard('finance', 'read'), finance.periods);
-router.post('/finance/periods/ensure', guard('finance', 'read'), finance.ensurePeriods);
+router.post('/finance/periods/ensure', guard('finance', 'create'), finance.ensurePeriods);
 router.get('/finance/periods/:code/statement', guard('finance', 'read'), finance.periodStatement);
 router.post('/finance/periods/:code/close', guard('finance', 'close'), requireReauthIfEnabled, finance.closePeriod);
 router.post('/finance/periods/:code/lock', guard('finance', 'lock'), finance.lockPeriod);
@@ -444,7 +470,7 @@ router.post('/finance/invoices/:id/issue', guard('finance', 'update'), finance.i
 router.post('/finance/invoices/:id/cancel', guard('finance', 'update'), finance.cancelInvoice);
 router.post('/finance/batch-delete', guard('finance', 'delete'), requireReauthIfEnabled, finance.batchRemove);
 router.post('/finance/batch-update', guard('finance', 'update'), finance.batchUpdate);
-router.post('/finance/batch-writeoff', guard('finance', 'update'), finance.batchWriteoff);
+router.post('/finance/batch-writeoff', guard('finance', 'update'), validate(S.batchWriteoff), finance.batchWriteoff);
 router.post('/finance/batch', guard('finance', 'create'), finance.batchCreate); // N1 批量建费（多行快录）
 router.get('/finance/payments', guard('finance', 'read'), finance.paymentList); // N3 收款/付款单
 router.post('/finance/payments', guard('finance', 'create'), finance.createPayment); // N3 收款核销
@@ -652,13 +678,13 @@ router.delete('/yards/:id', guard('yard', 'update'), yard.remove);
 
 // 打印模板
 router.get('/print-templates', guard('print', 'read'), print.list);router.get('/print-templates/fields/:docType', guard('print', 'read'), print.fields);
-router.post('/print-templates', guard('print', 'write'), print.create);
-router.post('/print-templates/:id/copy', guard('print', 'write'), print.copy);
-router.put('/print-templates/:id/default', guard('print', 'write'), print.setDefault);
+router.post('/print-templates', guard('print', 'create'), print.create);
+router.post('/print-templates/:id/copy', guard('print', 'create'), print.copy);
+router.put('/print-templates/:id/default', guard('print', 'update'), print.setDefault);
 router.post('/print-templates/:id/preview', guard('print', 'read'), print.preview);
 router.get('/print-templates/:id', guard('print', 'read'), print.get);
-router.put('/print-templates/:id', guard('print', 'write'), print.update);
-router.delete('/print-templates/:id', guard('print', 'write'), print.remove);
+router.put('/print-templates/:id', guard('print', 'update'), print.update);
+router.delete('/print-templates/:id', guard('print', 'delete'), print.remove);
 // 打印渲染（PDF/HTML）
 router.get('/print/:docType/:bizId', guard('print', 'read'), print.print);
 

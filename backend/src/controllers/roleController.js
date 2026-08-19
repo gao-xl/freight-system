@@ -1,6 +1,7 @@
 const { Role, Permission, UserRole, RolePermission, User } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { invalidate, hasPermission } = require('../services/permissionService');
+const auditService = require('../core/auditService'); // A3 加固：角色权限变更审计留痕
 
 // M4/L6 修复辅助：角色权限/数据范围变更后，立即作废持有该角色用户的旧 token
 async function bumpRoleUsersTokenVersion(roleId) {
@@ -77,6 +78,12 @@ const assignPermissions = asyncHandler(async (req, res) => {
   });
   // L6 修复：权限变更立即作废该角色下所有用户的旧 token，防止旧权限延续
   await bumpRoleUsersTokenVersion(role.id);
+  // A3 审计：角色权限绑定是权限体系关键操作，须留痕
+  const permIds = ids.join(',');
+  await auditService.record({
+    userId: req.user?.id, username: req.user?.username, module: 'system', action: 'assign_permissions',
+    targetId: role.id, summary: `角色 #${role.id}(${role.name}) 权限已更新: [${permIds || '清空'}]`,
+  });
   const updated = await Role.findByPk(role.id, { include: [{ model: Permission, as: 'permissions' }] });
   ok(res, updated, '权限已更新');
 });

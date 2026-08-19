@@ -19,7 +19,10 @@ function observability(req, res, next) {
   res.setHeader('X-Request-Id', req.id);
 
   const start = process.hrtime.bigint();
-  const routePath = req.route ? req.route.path : req.path;
+  // 注意：在 app.use('/api', routes) 的挂载上下文里 req.url/req.path 被剥离了 /api 前缀（如 /orders），
+  // 故用 req.originalUrl 还原完整路径判断是否 API 路由，否则 API 类指标/安全事件将全部漏记。
+  const urlPath = (req.originalUrl || req.url || '').split('?')[0];
+  const routePath = req.route ? req.route.path : urlPath;
 
   res.on('finish', () => {
     const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
@@ -37,9 +40,12 @@ function observability(req, res, next) {
     });
 
     // F8 指标埋点：RED 计数 + 耗时直方图（只对 API 路由埋点，健康检查除外避免噪音）
-    if (req.path.startsWith('/api') && req.path !== '/api/health') {
+    if (urlPath.startsWith('/api') && urlPath !== '/api/health') {
       metricsService.recordHttp({ method: req.method, route: routePath, status, durationMs });
       if (durationMs >= SLOW_THRESHOLD) metricsService.recordSlow({ method: req.method, route: routePath });
+      // A4 加固：区分 401 鉴权失败与 403 权限拒绝，供告警与趋势观察
+      if (status === 401) metricsService.recordSecurityEvent('auth_fail');
+      else if (status === 403) metricsService.recordSecurityEvent('permission_denied');
     }
   });
 

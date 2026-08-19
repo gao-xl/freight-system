@@ -1,5 +1,6 @@
 const { FlowNode, OrderNode, Order } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
+const { scopedFindOne, scopedWhere } = require('../middleware/dataScope');
 
 // 进出口默认流程模板
 const DEFAULT_FLOW = {
@@ -54,8 +55,8 @@ const updateFlowNode = asyncHandler(async (req, res) => {
 
 // 订单节点进度：按 order.type 返回对应模板 + 实例状态
 const orderNodes = asyncHandler(async (req, res) => {
-  const order = await Order.findByPk(req.params.id);
-  if (!order) return fail(res, '订单不存在', 1, 404);
+  const order = await scopedFindOne(req, Order, { id: req.params.id });
+  if (!order) return fail(res, '订单不存在或无权访问', 1, 404);
   const bizType = order.type === 'import' ? 'import' : 'export';
   await ensureFlow(bizType);
   const template = await FlowNode.findAll({ where: { bizType, enabled: true }, order: [['sort', 'ASC'], ['id', 'ASC']] });
@@ -84,8 +85,8 @@ const updateOrderNode = asyncHandler(async (req, res) => {
   const { nodeCode } = req.params;
   const { status = 'done', remark } = req.body;
   if (!['done', 'blocked', 'pending'].includes(status)) return fail(res, '非法节点状态');
-  const order = await Order.findByPk(req.params.id);
-  if (!order) return fail(res, '订单不存在', 1, 404);
+  const order = await scopedFindOne(req, Order, { id: req.params.id });
+  if (!order) return fail(res, '订单不存在或无权访问', 1, 404);
   let inst = await OrderNode.findOne({ where: { orderId: order.id, nodeCode } });
   if (!inst) {
     inst = await OrderNode.create({ orderId: order.id, nodeCode, status, doneAt: status === 'done' ? new Date() : null, remark });
@@ -98,10 +99,10 @@ const updateOrderNode = asyncHandler(async (req, res) => {
 // 流程统计（进出口维度分布）
 const flowStats = asyncHandler(async (req, res) => {
   const [exp, imp] = await Promise.all([
-    Order.count({ where: { type: 'export' } }),
-    Order.count({ where: { type: 'import' } }),
+    Order.count({ where: await scopedWhere(req, { type: 'export' }) }),
+    Order.count({ where: await scopedWhere(req, { type: 'import' }) }),
   ]);
-  ok(res, { export: exp, import: imp, transit: await Order.count({ where: { type: 'transit' } }) });
+  ok(res, { export: exp, import: imp, transit: await Order.count({ where: await scopedWhere(req, { type: 'transit' }) }) });
 });
 
 module.exports = { listFlowNodes, updateFlowNode, orderNodes, updateOrderNode, flowStats, DEFAULT_FLOW, ensureFlow };

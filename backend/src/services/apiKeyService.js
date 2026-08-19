@@ -10,7 +10,7 @@
 //   - 权限上限锁死在绑定用户身上，密钥角色只能在此基础上继续收窄
 
 const crypto = require('crypto');
-const { ApiKey } = require('../models');
+const { ApiKey, User } = require('../models');
 
 // 24 字节 -> 48 个十六进制字符
 const KEY_BYTES = 24;
@@ -75,6 +75,13 @@ async function verifyPlainKey(plainKey) {
   if (!timingSafeEqualHex(record.keyHash, hash)) return null;
   if (!record.active) return null;
   if (record.expiresAt && new Date(record.expiresAt).getTime() <= Date.now()) return null;
+  // P1 修复：密钥所属账号被禁用/离职后，密钥必须随之失效（与 P0「禁用即失效」一致）。
+  // 密钥是没有失效交互的长期凭据，这里回载绑定用户，非 active 一律拒绝，
+  // 避免离职/禁用账号通过遗留密钥继续以原权限运行定时任务/脚本。
+  if (record.userId != null) {
+    const owner = await User.findByPk(record.userId, { attributes: ['status'] });
+    if (!owner || owner.status !== 'active') return null;
+  }
   return record;
 }
 
@@ -122,6 +129,14 @@ async function revokeKey(id) {
   return toSafeJson(record);
 }
 
+/**
+ * P1 修复：账号生命周期事件（改密/禁用/重置密码）后，吊销该用户全部接口密钥。
+ * 密钥是没有失效交互的长期凭据，密码都被重置了，旧密钥继续生效属于安全漏洞。
+ */
+async function revokeAllForUser(userId) {
+  await ApiKey.update({ active: false }, { where: { userId, active: true } });
+}
+
 module.exports = {
   generatePlainKey,
   hashKey,
@@ -133,4 +148,5 @@ module.exports = {
   createKey,
   listKeys,
   revokeKey,
+  revokeAllForUser,
 };

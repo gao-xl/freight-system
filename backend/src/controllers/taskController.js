@@ -1,6 +1,7 @@
 const { Order, Booking, CustomsDeclaration, FinanceRecord, Customer, AlertRecord, QingdaoNode } = require('../services/dataAccess');
 const { ok, asyncHandler } = require('../utils/response');
 const { Op } = require('sequelize');
+const { scopedWhere, getScope } = require('../middleware/dataScope');
 
 // 隔离单个数据源：任一查询失败仅跳过该来源，不影响整体待办聚合
 async function safe(fn) {
@@ -15,13 +16,22 @@ const todo = asyncHandler(async (req, res) => {
   const soon7 = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
   const items = [];
 
+  // P1 修复：待办聚合必须受数据隔离约束，否则低权/小组用户可跨作用域读到全量应收/订单/客户。
+  // scope 非 all 时，order 关联的预警/青岛卡点（这两张表仅 orderId、无 groupId 列）通过
+  // required 联单限定到可见订单；scope=all 保留 null 订单的全局项。
+  const { scope } = await getScope(req);
+  const orderScope = await scopedWhere(req, {});
+  const orderInclude = scope === 'all'
+    ? { model: Order, as: 'order', attributes: ['id', 'orderNo'] }
+    : { model: Order, as: 'order', attributes: ['id', 'orderNo'], required: true, where: orderScope };
+
   // 通用：活跃预警（级别高优先）
   const alerts = await safe(async () => {
     return AlertRecord.findAll({
       where: { status: 'active' },
       order: [['level', 'DESC']],
       limit: 20,
-      include: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],
+      include: [orderInclude],
     });
   });
   for (const a of alerts) {
@@ -35,10 +45,10 @@ const todo = asyncHandler(async (req, res) => {
 
   // 待订舱订单（已确认但无订舱）
   const unbooked = await safe(async () => {
-    const orderWithBooking = await Booking.findAll({ attributes: ['orderId'] });
+    const orderWithBooking = await Booking.findAll({ where: await scopedWhere(req, {}), attributes: ['orderId'] });
     const bookedOrderIds = new Set(orderWithBooking.map((b) => b.orderId));
     return Order.findAll({
-      where: { status: { [Op.in]: ['confirmed', 'in_progress'] }, id: { [Op.notIn]: [...bookedOrderIds] } },
+      where: await scopedWhere(req, { status: { [Op.in]: ['confirmed', 'in_progress'] }, id: { [Op.notIn]: [...bookedOrderIds] } }),
       attributes: ['id', 'orderNo', 'etd', 'cargoDesc'],
       limit: 10,
     });
@@ -49,10 +59,10 @@ const todo = asyncHandler(async (req, res) => {
 
   // 待报关（已订舱但无报关）
   const unCustoms = await safe(async () => {
-    const orderWithCustoms = await CustomsDeclaration.findAll({ attributes: ['orderId'] });
+    const orderWithCustoms = await CustomsDeclaration.findAll({ where: await scopedWhere(req, {}), attributes: ['orderId'] });
     const customsOrderIds = new Set(orderWithCustoms.map((c) => c.orderId));
     return Order.findAll({
-      where: { status: { [Op.in]: ['confirmed', 'in_progress'] }, id: { [Op.notIn]: [...customsOrderIds] } },
+      where: await scopedWhere(req, { status: { [Op.in]: ['confirmed', 'in_progress'] }, id: { [Op.notIn]: [...customsOrderIds] } }),
       attributes: ['id', 'orderNo', 'etd'],
       limit: 10,
     });
@@ -64,7 +74,7 @@ const todo = asyncHandler(async (req, res) => {
   // 超期应收（危险）
   const overdue = await safe(async () => {
     return FinanceRecord.findAll({
-      where: { direction: 'receivable', status: { [Op.in]: ['unpaid', 'partial'] }, dueDate: { [Op.lt]: now } },
+      where: await scopedWhere(req, { direction: 'receivable', status: { [Op.in]: ['unpaid', 'partial'] }, dueDate: { [Op.lt]: now } }),
       attributes: ['id', 'orderId', 'amount', 'paidAmount', 'dueDate', 'description'],
       include: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],
       limit: 15,
@@ -82,7 +92,7 @@ const todo = asyncHandler(async (req, res) => {
   if (!['finance', 'viewer'].includes(role)) {
     const cutoff = await safe(async () => {
       return Order.findAll({
-        where: { cutoffTime: { [Op.between]: [now, soon7] }, status: { [Op.in]: ['confirmed', 'in_progress'] } },
+        where: await scopedWhere(req, { cutoffTime: { [Op.between]: [now, soon7] }, status: { [Op.in]: ['confirmed', 'in_progress'] } }),
         attributes: ['id', 'orderNo', 'cutoffTime', 'containerNo'],
         limit: 10,
       });
@@ -97,7 +107,7 @@ const todo = asyncHandler(async (req, res) => {
     const follow = await safe(async () => {
       const todays = new Date(now); todays.setHours(23, 59, 59, 999);
       return Customer.findAll({
-        where: { nextFollowAt: { [Op.lte]: todays } },
+        where: await scopedWhere(req, { nextFollowAt: { [Op.lte]: todays } }),
         attributes: ['id', 'name', 'nextFollowAt', 'contact', 'phone'],
         limit: 10,
       });
@@ -112,7 +122,7 @@ const todo = asyncHandler(async (req, res) => {
     return QingdaoNode.findAll({
       where: { status: 'blocked' },
       attributes: ['id', 'orderId', 'node', 'detail'],
-      include: [{ model: Order, as: 'order', attributes: ['id', 'orderNo'] }],
+      include: [orderInclude],
       limit: 10,
     });
   });
