@@ -1,4 +1,4 @@
-const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod, PaymentRecord, CompanyProfile, CompanyAccount, InvoiceTitle } = require('../services/dataAccess');
+const { FinanceRecord, Order, Customer, Supplier, Invoice, AccountingPeriod, PaymentRecord, CompanyProfile, CompanyAccount, InvoiceTitle, User } = require('../services/dataAccess');
 const { crudController } = require('./baseController');
 const { ok, fail, asyncHandler, genCode } = require('../utils/response');
 const { Op } = require('sequelize');
@@ -29,6 +29,87 @@ const {
   assertOrderEditable,
 } = require('../services/periodGuard');
 const reconciliation = require('../domains/finance/reconciliationService');
+const { nextNumber } = require('../services/numberingService');
+const events = require('../services/eventBus');
+
+// ===== 本地辅助函数（纯逻辑，便于复用与单测） =====
+
+// 安全解析 JSON 数组（缺失/非法 JSON 回退为空数组）
+function parseJsonArray(str) {
+  try {
+    const v = JSON.parse(str || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+// 发票号：优先按配置号段顺序发号，未配置则回退随机号（AR/AP 前缀）
+async function issueInvoiceNo(invoiceType, groupId, transaction) {
+  const bizType = invoiceType === 'receivable' ? 'invoice_ar' : 'invoice_ap';
+  const prefix = invoiceType === 'receivable' ? 'AR' : 'AP';
+  const no = await nextNumber({ bizType, groupId: groupId || null, transaction });
+  if (no) return no;
+  return `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
+}
+
+// 从订单自定义字段提取车牌号（缺失/非法 JSON 时返回空串）
+function extractVehiclePlate(order) {
+  if (!order?.customFields) return '';
+  try {
+    const cf = JSON.parse(order.customFields);
+    return cf.vehiclePlate || cf.车牌号 || '';
+  } catch {
+    return '';
+  }
+}
+
+// 构建数电票 CNY 明细行：原币 CNY 直接取，非 CNY 取费用本币折算；无明细时用发票金额兜底
+function enrichInvoiceItems(inv, rawItems, fees) {
+  const feeMap = {};
+  for (const f of fees) feeMap[f.id] = f;
+
+  const items = rawItems.map((item) => {
+    const fee = feeMap[item.financeId];
+    const cnyAmount = inv.currency === 'CNY'
+      ? Number(item.amount || 0)
+      : (fee ? Number(fee.localAmount || 0) : Number(item.amount || 0));
+    const category = fee?.category || 'other';
+    const taxInfo = getTaxInfo(category);
+    return {
+      financeId: item.financeId || null,
+      description: item.description || '',
+      amount: Number(cnyAmount.toFixed(2)),
+      currency: 'CNY',
+      originalAmount: Number(item.amount || 0),
+      originalCurrency: item.currency || inv.currency || 'CNY',
+      category,
+      spmc: taxInfo.name,
+      spbm: taxInfo.code,
+      spsl: 1,
+      dw: '次',
+      ggxh: '',
+    };
+  });
+
+  // 无明细时用发票金额兜底（仅 CNY 发票）
+  if (!items.length && inv.currency === 'CNY') {
+    const taxInfo = getTaxInfo('transport_fee');
+    items.push({
+      financeId: null,
+      description: '货物运输服务',
+      amount: Number(inv.amount) || 0,
+      currency: 'CNY',
+      category: 'transport_fee',
+      spmc: taxInfo.name,
+      spbm: taxInfo.code,
+      spsl: 1,
+      dw: '次',
+      ggxh: '',
+    });
+  }
+  return items;
+}
 
 // beforeWrite 钩子：锁账拦截（落入已锁账期则拒绝写操作）
 async function beforeWrite(req, item, body) {
@@ -173,7 +254,6 @@ const createInvoice = asyncHandler(async (req, res) => {
   if (!invoiceType) return fail(res, '请选择开票类型', 1, 400);
   const amt = Number(amount || 0);
   const tax = taxRate ? (amt * Number(taxRate)) / 100 : 0;
-  const prefix = invoiceType === 'receivable' ? 'AR' : 'AP';
   // 有订单时自动填充收付对象（不可见订单视为不存在）
   let cid = customerId, sid = supplierId;
   if (orderId && !cid && !sid) {
@@ -182,18 +262,10 @@ const createInvoice = asyncHandler(async (req, res) => {
     cid = order.customerId;
   }
   await assertOrderEditable(orderId);
-  const DataAccess = require('../services/dataAccess');
-  const me = await DataAccess.User.findByPk(req.user.id);
-  const { nextNumber } = require('../services/numberingService');
-  // P1 发票号段：配置号段则按顺序自动发号；未配置则回退旧随机号
-  const t = await DataAccess.sequelize.transaction();
+  const me = await User.findByPk(req.user.id);
+  const t = await sequelize.transaction();
   try {
-    let invoiceNo = await nextNumber({
-      bizType: invoiceType === 'receivable' ? 'invoice_ar' : 'invoice_ap',
-      groupId: me?.groupId || null,
-      transaction: t,
-    });
-    if (!invoiceNo) invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
+    const invoiceNo = await issueInvoiceNo(invoiceType, me?.groupId, t);
     const inv = await Invoice.create({
       invoiceNo, invoiceType, orderId, customerId: cid, supplierId: sid,
       amount: amt, currency: currency || 'USD', taxRate: taxRate || 0, taxAmount: tax, totalAmount: amt + tax,
@@ -263,22 +335,14 @@ const createInvoiceFromFees = asyncHandler(async (req, res) => {
     const cur = f.currency || 'USD';
     (byCurrency[cur] = byCurrency[cur] || []).push(f);
   }
-  const me = await require('../services/dataAccess').User.findByPk(req.user.id);
-  const prefix = invoiceType === 'receivable' ? 'AR' : 'AP';
-  const { nextNumber } = require('../services/numberingService');
+  const me = await User.findByPk(req.user.id);
   const created = [];
   const t = await sequelize.transaction();
   try {
     for (const [currency, list] of Object.entries(byCurrency)) {
       const amt = Number(list.reduce((s, f) => s + Number(f.amount), 0).toFixed(2));
       const tax = Number(taxRate) ? Number((amt * Number(taxRate) / 100).toFixed(2)) : 0;
-      // P1 发票号段：配置号段则顺序发号，未配置回退随机号
-      let invoiceNo = await nextNumber({
-        bizType: invoiceType === 'receivable' ? 'invoice_ar' : 'invoice_ap',
-        groupId: me?.groupId || null,
-        transaction: t,
-      });
-      if (!invoiceNo) invoiceNo = `${prefix}-${genCode('').slice(-8)}-${Math.floor(Math.random() * 9000) + 1000}`;
+      const invoiceNo = await issueInvoiceNo(invoiceType, me?.groupId, t);
       const inv = await Invoice.create({
         invoiceNo, invoiceType, orderId,
         customerId: invoiceType === 'receivable' ? order.customerId : null,
@@ -400,7 +464,6 @@ const createPayment = asyncHandler(async (req, res) => {
       appliedCount, appliedAmount: Number(appliedAmount.toFixed(2)), remark,
       groupId: req.user?.groupId || null, ownerId: req.user?.id || null,
     }, { transaction: t });
-    const events = require('../services/eventBus');
     for (const f of updated) events.emit('finance.updated', { id: f.id, data: f.toJSON(), user: req.user });
     await t.commit();
     ok(res, { payment: rec.toJSON(), appliedCount, appliedAmount: Number(appliedAmount.toFixed(2)), leftover: remaining },
@@ -415,8 +478,7 @@ const createPayment = asyncHandler(async (req, res) => {
 async function syncInvoiceStatusByNo(invoiceNo, t) {
   const inv = await Invoice.findOne({ where: { invoiceNo }, transaction: t });
   if (!inv || inv.status !== 'issued') return;
-  let items = [];
-  try { items = JSON.parse(inv.items || '[]'); } catch { items = []; }
+  const items = parseJsonArray(inv.items);
   if (!items.length) return;
   const feeIds = items.map((i) => i.financeId).filter(Boolean);
   const fees = await FinanceRecord.findAll({ where: { id: { [Op.in]: feeIds } }, transaction: t });
@@ -564,7 +626,6 @@ const batchCreate = asyncHandler(async (req, res) => {
     groupId: req.user?.groupId || null,
     ownerId: req.user?.id || null,
   })), { validate: true, individualHooks: true }); // individualHooks 触发每条 beforeCreate 汇率折算
-  const events = require('../services/eventBus');
   for (const r of rows) events.emit('finance.created', { id: r.id, data: r.toJSON(), user: req.user });
   ok(res, { count: rows.length }, `已创建 ${rows.length} 条费用`);
 });
@@ -632,7 +693,6 @@ const reverse = asyncHandler(async (req, res) => {
     }, { transaction: t });
 
     await t.commit();
-    const events = require('../services/eventBus');
     events.emit('finance.created', { id: reverseRecord.id, data: reverseRecord.toJSON(), user: req.user });
     events.emit('finance.updated', { id: rec.id, data: rec.toJSON(), user: req.user });
     ok(res, { original: rec.toJSON(), reversed: reverseRecord.toJSON() }, '红字冲销成功');
@@ -701,70 +761,19 @@ async function loadInvoiceForDigitalTax(req, invoiceId) {
   if (inv.orderId) order = await Order.findByPk(inv.orderId);
 
   // 明细行：从 Invoice.items(JSON) 解析 + 补全 FinanceRecord
-  let rawItems = [];
-  try { rawItems = JSON.parse(inv.items || '[]'); } catch { rawItems = []; }
-
+  const rawItems = parseJsonArray(inv.items);
   const feeIds = rawItems.map((i) => i.financeId).filter(Boolean);
   const fees = feeIds.length
     ? await FinanceRecord.findAll({ where: { id: { [Op.in]: feeIds } } })
     : [];
-  const feeMap = {};
-  for (const f of fees) feeMap[f.id] = f;
-
-  // 构建 CNY 明细行
-  let enrichedItems = rawItems.map((item) => {
-    const fee = feeMap[item.financeId];
-    // 数电票必须人民币：原币 CNY 直接取，非 CNY 取 localAmount（本币折算）
-    const cnyAmount = inv.currency === 'CNY'
-      ? Number(item.amount || 0)
-      : (fee ? Number(fee.localAmount || 0) : Number(item.amount || 0));
-    const category = fee?.category || 'other';
-    const taxInfo = getTaxInfo(category);
-    return {
-      financeId: item.financeId || null,
-      description: item.description || '',
-      amount: Number(cnyAmount.toFixed(2)),
-      currency: 'CNY',
-      originalAmount: Number(item.amount || 0),
-      originalCurrency: item.currency || inv.currency || 'CNY',
-      category,
-      spmc: taxInfo.name,
-      spbm: taxInfo.code,
-      spsl: 1,
-      dw: '次',
-      ggxh: '',
-    };
-  });
-
-  // 无明细时用发票金额兜底（仅 CNY 发票）
-  if (!enrichedItems.length && inv.currency === 'CNY') {
-    const taxInfo = getTaxInfo('transport_fee');
-    enrichedItems.push({
-      financeId: null,
-      description: '货物运输服务',
-      amount: Number(inv.amount) || 0,
-      currency: 'CNY',
-      category: 'transport_fee',
-      spmc: taxInfo.name,
-      spbm: taxInfo.code,
-      spsl: 1,
-      dw: '次',
-      ggxh: '',
-    });
-  }
+  const enrichedItems = enrichInvoiceItems(inv, rawItems, fees);
 
   // 判断是否货物运输（有订单且运输方式为 sea/air/land/rail）
   const isFreight = !!order && ['sea', 'air', 'land', 'rail'].includes(order.mode);
   const transportMode = order ? TRANSPORT_MODE_MAP[order.mode] : null;
 
   // 车牌号：从 customFields JSON 读取
-  let vehiclePlate = '';
-  if (order?.customFields) {
-    try {
-      const cf = JSON.parse(order.customFields);
-      vehiclePlate = cf.vehiclePlate || cf.车牌号 || '';
-    } catch { /* customFields 非 JSON 忽略 */ }
-  }
+  const vehiclePlate = extractVehiclePlate(order);
 
   // 购方银行信息（Customer 无银行字段，留空由用户在对话框填写）
   const buyer = {
