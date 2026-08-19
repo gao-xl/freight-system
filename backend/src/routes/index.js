@@ -9,14 +9,14 @@ const auth = require('../controllers/authController');
 
 
 const order = require('../controllers/orderController');
-const booking = require('../controllers/bookingController');
-const customs = require('../controllers/customsController');
-const document = require('../controllers/documentController');
+
+
+
 const finance = require('../controllers/financeController');
 const financeStatement = require('../controllers/financeStatementController');
 const integration = require('../controllers/integrationController');
 const dashboard = require('../controllers/dashboardController');
-const quotation = require('../controllers/quotationController');
+
 const role = require('../controllers/roleController');
 const system = require('../controllers/systemController');
 const alert = require('../controllers/alertController');
@@ -40,7 +40,7 @@ const automation = require('../controllers/automationController');
 const importCtrl = require('../controllers/importController');
 const debitNote = require('../controllers/debitNoteController'); // P0 借记通知单
 const billOfLading = require('../controllers/billOfLadingController'); // P0 提单
-const freightRate = require('../controllers/freightRateController');
+
 const businessRule = require('../controllers/businessRuleController');
 const workflow = require('../controllers/workflowController');
 const report = require('../controllers/reportController');
@@ -48,7 +48,7 @@ const exchangeRate = require('../controllers/exchangeRateController'); // 汇率
 const searchCtrl = require('../controllers/searchController');
 const numberSegment = require('../controllers/numberSegmentController'); // P1 发票号段
 
-const quotationTemplate = require('../controllers/quotationTemplateController'); // P1-1 报价模板
+
 const hsCode = require('../controllers/hsCodeController'); // P1-3 HS编码知识库
 const batch = require('../controllers/batchController'); // P1-2 批量操作
 const ai = require('../controllers/aiController'); // 第三方 AI 能力
@@ -346,38 +346,15 @@ router.post('/release/:id/approve', guard('release', 'approve'), release.approve
 // 待办任务中心（A4）——聚合各业务模块，登录用户即可访问
 router.get('/tasks/todo', authRequired, task.todo);
 
-// 订舱
-router.get('/bookings', guard('booking', 'read'), booking.list);
-router.get('/bookings/:id', guard('booking', 'read'), booking.get);
-router.post('/bookings', guard('booking', 'create'), validate(S.bookingCreate), booking.create);
-router.put('/bookings/:id', guard('booking', 'update'), validate(S.bookingUpdate), booking.update);
-router.post('/bookings/:id/restore', guard('booking', 'update'), booking.restore); // U5 回收站恢复
-router.post('/bookings/:id/copy', guard('booking', 'create'), booking.copy); // P0-3 订舱复制
-router.delete('/bookings/:id', guard('booking', 'delete'), booking.remove);
+// 订舱域已迁至 modules/booking，由 ModuleRegistry 自动挂载
 
-// 报关
-router.get('/customs', guard('customs', 'read'), customs.list);
-router.get('/customs/:id', guard('customs', 'read'), customs.get);
-router.post('/customs', guard('customs', 'create'), validate(S.customsCreate), customs.create);
-router.put('/customs/:id', guard('customs', 'update'), validate(S.customsUpdate), customs.update);
-router.delete('/customs/:id', guard('customs', 'delete'), customs.remove);
+// 报关域已迁至 modules/customs，由 ModuleRegistry 自动挂载
 
 // P1-3 HS编码知识库
 router.get('/hs-codes/search', guard('customs', 'read'), hsCode.search);
 router.get('/hs-codes/chapters', guard('customs', 'read'), hsCode.chapters);
 
-// 单证
-router.get('/documents', guard('document', 'read'), document.list);
-router.get('/documents/search', guard('document', 'read'), document.searchContent); // 全文搜索
-router.get('/documents/generate', guard('document', 'create'), document.generate); // 一键生成（须在 :id 之前）
-router.get('/documents/:id', guard('document', 'read'), document.get);
-router.post('/documents/:id/status', guard('document', 'update'), document.changeStatus); // 状态流转
-router.post('/documents', guard('document', 'create'), validate(S.documentCreate), document.create);
-router.put('/documents/:id', guard('document', 'update'), validate(S.documentUpdate), document.update);
-router.delete('/documents/:id', guard('document', 'delete'), document.remove);
-router.post('/documents/:id/upload', guard('document', 'update'), document.upload.single('file'), document.uploadFile);
-router.get('/documents/:id/download', guard('document', 'read'), document.download);
-router.get('/documents/:id/file', guard('document', 'read'), document.preview);
+// 单证域已迁至 modules/document，由 ModuleRegistry 自动挂载
 
 // 财务
 router.get('/finance', guard('finance', 'read'), finance.list);
@@ -510,38 +487,7 @@ router.get('/ops/monitor/rules', authRequired, requirePermission('system', '*'),
 router.put('/ops/monitor/rules', authRequired, requirePermission('system', '*'), monitor.putRules);
 router.post('/ops/monitor/escalate/run', authRequired, requirePermission('system', '*'), monitor.runEscalate);
 
-// 报价/询价
-router.get('/quotations', authRequired, requirePermission('quotation', 'read'), quotation.list);
-router.get('/quotations/stats', authRequired, requirePermission('quotation', 'read'), quotation.stats);
-router.get('/quotations/:id', authRequired, requirePermission('quotation', 'read'), quotation.get);
-router.post('/quotations', authRequired, requirePermission('quotation', 'create'), quotation.create);
-router.put('/quotations/:id', authRequired, requirePermission('quotation', 'update'), quotation.update);
-router.delete('/quotations/:id', authRequired, requirePermission('quotation', 'delete'), quotation.remove);
-router.post('/quotations/:id/send', authRequired, requirePermission('quotation', 'update'), quotation.send);
-router.post('/quotations/:id/confirm', authRequired, requirePermission('quotation', 'update'), quotation.confirm);
-router.post('/quotations/:id/convert-order', authRequired, requirePermission('quotation', 'convert'), quotation.convertOrder);
-
-// P1-1 报价模板
-router.get('/quotation-templates', authRequired, requirePermission('quotation', 'read'), quotationTemplate.list);
-router.get('/quotation-templates/match', authRequired, requirePermission('quotation', 'read'), quotationTemplate.match);
-router.get('/quotation-templates/:id', authRequired, requirePermission('quotation', 'read'), quotationTemplate.get);
-router.post('/quotation-templates', authRequired, requirePermission('quotation', 'create'), quotationTemplate.create);
-router.put('/quotation-templates/:id', authRequired, requirePermission('quotation', 'update'), quotationTemplate.update);
-router.delete('/quotation-templates/:id', authRequired, requirePermission('quotation', 'delete'), quotationTemplate.remove);
-
-// P2.7 本地运价小库（服务报价；权限沿用 quotation 模块）
-router.get('/freight-rates/search', guard('quotation', 'read'), freightRate.search); // 检索需在 :id 之前
-router.get('/freight-rates/compare', guard('quotation', 'read'), freightRate.compare); // P1 运价比价：按承运商分组取最优
-router.get('/freight-rates/recommend', guard('quotation', 'read'), freightRate.recommend); // P2 运价智能推荐：历史成交基准 + 最优建议
-router.get('/freight-rates', guard('quotation', 'read'), freightRate.list);
-router.get('/freight-rates/:id', guard('quotation', 'read'), freightRate.get);
-router.post('/freight-rates/batch-delete', guard('quotation', 'delete'), freightRate.batchRemove);
-router.post('/freight-rates/batch-update', guard('quotation', 'update'), freightRate.batchUpdate);
-router.post('/freight-rates/:id/restore', guard('quotation', 'update'), freightRate.restore); // U5 回收站恢复
-router.post('/freight-rates', guard('quotation', 'create'), validate(S.freightRateCreate), freightRate.create);
-router.put('/freight-rates/:id', guard('quotation', 'update'), validate(S.freightRateUpdate), freightRate.update);
-router.delete('/freight-rates/:id', guard('quotation', 'delete'), freightRate.remove);
-
+// 报价域（报价/模板/运价）已迁至 modules/quotation，由 ModuleRegistry 自动挂载
 // 青岛港专项（P3.5 已迁为官方示例插件 src/modules/qingdao-port，由 mountRoutes 挂载）
 // 端点：GET /qingdao/nodes、POST /qingdao/nodes、GET /qingdao/checklist、GET /qingdao/alerts、GET /qingdao/manifest/check
 
