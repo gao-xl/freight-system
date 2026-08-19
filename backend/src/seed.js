@@ -13,14 +13,15 @@ async function seed() {
   console.log('数据库已重建');
 
   // 用户
-  // 安全加固：预置账号统一 mustChangePassword=true，首次登录即强制改密，
-  // 消除 admin/123456 等弱口令裸奔（与 bootstrap 生产路径口径一致）。
+  // 安全加固：预置账号统一首登强制改密，消除 admin/123456 等弱口令裸奔。
+  // 集成测试可显式关闭，仅用于覆盖旧业务链路；生产/开发默认始终开启。
+  const mustChangePassword = !(process.env.NODE_ENV === 'test' && process.env.TEST_SEED_MUST_CHANGE_PASSWORD === 'false');
   const pwd = await bcrypt.hash('123456', 10);
   const users = [
-    { username: 'admin', name: '系统管理员', role: 'admin', password: pwd, mustChangePassword: true },
-    { username: 'manager', name: '张经理', role: 'manager', password: pwd, mustChangePassword: true },
-    { username: 'operator', name: '李操作', role: 'operator', password: pwd, mustChangePassword: true },
-    { username: 'finance', name: '王财务', role: 'finance', password: pwd, mustChangePassword: true },
+    { username: 'admin', name: '系统管理员', role: 'admin', password: pwd, mustChangePassword },
+    { username: 'manager', name: '张经理', role: 'manager', password: pwd, mustChangePassword },
+    { username: 'operator', name: '李操作', role: 'operator', password: pwd, mustChangePassword },
+    { username: 'finance', name: '王财务', role: 'finance', password: pwd, mustChangePassword },
   ];
   await User.bulkCreate(users);
 
@@ -349,7 +350,7 @@ async function seed() {
   await UserRole.bulkCreate(userRoles);
 
   console.log('演示数据初始化完成');
-  console.log('预置账号: admin / manager / operator / finance，初始密码 123456，首次登录须改密');
+  console.log(`预置账号: admin / manager / operator / finance，初始密码 123456，${mustChangePassword ? '首次登录须改密' : '测试模式已关闭首次改密'}`);
   process.exit(0);
 }
 

@@ -86,7 +86,10 @@ describe('通知推送（E2）', () => {
   let alertId;
   before(async () => {
     installMocks();
-    await sequelize.sync({ force: true });
+    // PostgreSQL ENUM 在 sequelize.sync({ force: true }) 中可能因跨表依赖无法按顺序删除。
+    // 本测试已经固定到 NODE_ENV=test；仅清空已注册模型的数据，再确保表结构存在。
+    await sequelize.truncate({ cascade: true, restartIdentity: true });
+    await sequelize.sync();
     const customer = await Customer.create({ code: 'E2CUST', name: 'E2测试客户' });
     const order = await Order.create({
       orderNo: 'SO-E2-001',

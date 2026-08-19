@@ -10,8 +10,9 @@ const Sequelize = require('sequelize');
 const sequelize = require('../db');
 const { logger } = require('../utils/logger');
 
-// 返回本次新执行的迁移文件名数组
-async function runMigrations() {
+// 在持有迁移锁时执行实际工作。迁移文件历史上没有统一接收 transaction，
+// 因此这里的锁用于进程间串行，而不改变现有迁移的执行契约。
+async function runMigrationsUnlocked() {
   const q = sequelize.getQueryInterface();
   // 确保 SequelizeMeta 存在（与 sequelize-cli 同构），不存在则建
   await q.createTable(
@@ -57,6 +58,19 @@ async function runMigrations() {
     logger.info(`[MIGRATE] 已执行 ${file}`);
   }
   return applied;
+}
+
+// 返回本次新执行的迁移文件名数组。
+// 多副本/测试进程同时启动时，原先会同时读到同一份 SequelizeMeta，随后重复
+// INSERT 产生唯一键冲突。PostgreSQL 事务级 advisory lock 会在当前事务结束时自动释放。
+async function runMigrations() {
+  if (sequelize.getDialect() !== 'postgres') return runMigrationsUnlocked();
+  return sequelize.transaction(async (transaction) => {
+    await sequelize.query('SELECT pg_advisory_xact_lock(:lockKey)', {
+      replacements: { lockKey: 18741002 }, transaction,
+    });
+    return runMigrationsUnlocked();
+  });
 }
 
 module.exports = { runMigrations };
