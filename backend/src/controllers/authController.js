@@ -28,7 +28,11 @@ function parseCookies(header) {
     if (idx === -1) continue;
     const k = part.slice(0, idx).trim();
     const v = part.slice(idx + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
+    if (k) {
+      // 恶意或损坏的 Cookie 编码不应导致刷新接口 500；把原始值交给后续
+      // 会话校验统一按无效 token 处理。
+      try { out[k] = decodeURIComponent(v); } catch { out[k] = v; }
+    }
   }
   return out;
 }
@@ -263,7 +267,6 @@ const post2faVerify = asyncHandler(async (req, res) => {
   setRefreshCookie(res, session.refreshToken);
   ok(res, {
     token,
-    refreshToken: session.refreshToken,
     expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
     user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: !!user.mustChangePassword },
   }, '二次验证通过');

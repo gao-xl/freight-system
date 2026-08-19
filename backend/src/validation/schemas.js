@@ -23,9 +23,10 @@ const changePassword = Joi.object({
   newPassword: joiPassword(true),
 }).unknown(true);
 
-// M3 刷新会话：校验 refresh token 存在
+// M3 刷新会话：refresh token 优先由 HttpOnly Cookie 承载；
+// 保留 body 字段仅用于非浏览器客户端兼容，不能标记为必填。
 const refresh = Joi.object({
-  refreshToken: Joi.string().max(512).required(),
+  refreshToken: Joi.string().max(512).optional(),
 }).unknown(true);
 
 // S4 二次认证：暂态凭证 + 验证码

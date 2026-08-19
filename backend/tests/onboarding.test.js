@@ -28,6 +28,7 @@ const env = {
 let serverProc;
 let serverStderr = '';
 let token;
+let refreshCookie;
 
 async function waitForHealth(timeoutMs = 60000) {
   const start = Date.now();
@@ -91,6 +92,9 @@ describe('Onboarding 引导系统', () => {
     assert.equal(j.code, 0);
     token = j.data.token;
     assert.ok(token && token.length > 20, 'token 应为非空长串');
+    assert.equal(j.data.refreshToken, undefined, 'refresh token 不得出现在 JSON 响应体');
+    refreshCookie = r.headers.get('set-cookie')?.split(';')[0];
+    assert.match(refreshCookie || '', /^ft_refresh=/, '初始化应通过 HttpOnly Cookie 下发 refresh token');
   });
 
   after(async () => {
@@ -102,6 +106,25 @@ describe('Onboarding 引导系统', () => {
   test('未登录访问系统健康返回 401', async () => {
     const r = await api('GET', '/api/system/health');
     assert.equal(r.status, 401);
+  });
+
+  test('初始化令牌可访问受保护接口，且 Cookie-only 刷新可用', async () => {
+    const me = await api('GET', '/api/auth/me', null, token);
+    assert.equal(me.status, 200, 'setup-admin 颁发的 JWT 应通过 issuer/audience 校验');
+
+    const r = await fetch(`${BASE}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: refreshCookie },
+      body: JSON.stringify({}),
+    });
+    const j = await r.json();
+    assert.equal(r.status, 200, `仅 Cookie 刷新应成功：${JSON.stringify(j)}`);
+    assert.ok(j.data.token, '刷新应返回新的 access token');
+    assert.equal(j.data.refreshToken, undefined, '刷新响应不得泄露 refresh token');
+    assert.match(r.headers.get('set-cookie') || '', /ft_refresh=/, '刷新应轮换 HttpOnly Cookie');
+    // 刷新属于会话轮换，旧 access token 对应的 session 已撤销；后续用新 token 继续断言。
+    token = j.data.token;
+    refreshCookie = r.headers.get('set-cookie')?.split(';')[0] || refreshCookie;
   });
 
   test('空态判定：全新系统各资源为 0 且公司未配置', async () => {

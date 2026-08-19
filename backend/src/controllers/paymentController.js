@@ -8,25 +8,35 @@ const { scopedFindOne, scopedWhere, getScope } = require('../middleware/dataScop
 // P0 资金越权修复：支付交易无隔离列，须先校验其关联业务对象（订单/费用记录）对当前用户可见，
 // 防止持 finance 权限的用户提交/查看其它小组订单的支付草稿，进而触发真实资金汇出。
 async function assertPayableVisible(req, tx) {
+  let related = false;
   if (tx.orderId != null) {
     const order = await scopedFindOne(req, Order, { id: tx.orderId });
     if (!order) return false;
-  } else if (tx.financeId != null) {
+    related = true;
+  }
+  if (tx.financeId != null) {
     const rec = await scopedFindOne(req, FinanceRecord, { id: tx.financeId });
     if (!rec) return false;
+    // 同时关联订单和费用时必须是同一业务链，防止拼接两个不同小组的对象绕过校验。
+    if (tx.orderId != null && Number(rec.orderId) !== Number(tx.orderId)) return false;
+    related = true;
   }
-  return true;
+  return related;
 }
 
 // 创建支付/汇出交易
 const create = asyncHandler(async (req, res) => {
-  const { financeId, orderId, amount, currency, beneficiary, beneficiaryBank, type } = req.body || {};
+  let { financeId, orderId, amount, currency, beneficiary, beneficiaryBank, type } = req.body || {};
   if (!amount || Number(amount) <= 0) return fail(res, '交易金额必须大于0');
+  if (financeId == null && orderId == null) return fail(res, '支付交易必须关联订单或费用记录', 1, 400);
   // P0 资金越权修复：创建前必须确认关联订单/费用记录对当前用户可见，防止跨组建单
   if (financeId) {
     const rec = await scopedFindOne(req, FinanceRecord, { id: financeId });
     if (!rec) return fail(res, '费用记录不存在或无权访问', 1, 404);
     await assertRecordEditable(rec);
+    if (orderId != null && Number(orderId) !== Number(rec.orderId)) return fail(res, '订单与费用记录不匹配', 1, 400);
+    // 以服务端费用归属订单为准，不接受客户端可篡改的关联关系。
+    orderId = rec.orderId;
   } else if (orderId != null) {
     const order = await scopedFindOne(req, Order, { id: orderId });
     if (!order) return fail(res, '订单不存在或无权访问', 1, 404);

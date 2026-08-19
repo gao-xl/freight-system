@@ -179,7 +179,12 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import * as echarts from 'echarts';
+// ECharts 按需引入（B1 性能优化）：仅注册用到的图表与组件，替代全量 import
+import * as echarts from 'echarts/core';
+import { BarChart, PieChart } from 'echarts/charts';
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+echarts.use([BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 import { useRouter } from 'vue-router';
 import { dashboardAPI, orderStatusDistAPI, modeDistAPI, recentOrdersAPI, dashboardMetricsAPI, dashboardAgingAPI, salesPerformanceAPI, teamWorkloadAPI, todoAPI } from '@/api';
 import OnboardingChecklist from '@/components/OnboardingChecklist.vue';

@@ -11,6 +11,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { Transaction } = require('sequelize');
 const { User, Role, UserRole } = require('../services/dataAccess');
 const config = require('../config');
 const { ok, fail, asyncHandler } = require('../utils/response');
@@ -19,6 +20,22 @@ const { getInitStatus } = require('../services/bootstrapService');
 const { generateDemoData, clearDemoData, getOnboardingStatus } = require('../services/demoDataService');
 const { getPermissions, invalidate } = require('../services/permissionService');
 const sessionService = require('../services/sessionService');
+
+// 与 authController / auth middleware 保持完全一致，避免首个管理员拿到的
+// access token 因 issuer / audience 缺失而被后续受保护接口拒绝。
+const JWT_ISSUER = 'freight-system';
+const JWT_AUDIENCE = 'freight-web';
+const REFRESH_COOKIE = 'ft_refresh';
+
+function setRefreshCookie(res, refreshToken) {
+  res.cookie(REFRESH_COOKIE, refreshToken, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.isProd,
+    path: '/',
+    maxAge: sessionService.exprToMs(config.jwtRefreshExpiresIn),
+  });
+}
 
 // 初始化状态（公开）：前端据此决定跳 /setup-admin（无管理员）或 /login
 const initStatus = asyncHandler(async (req, res) => {
@@ -38,8 +55,14 @@ const setupAdmin = asyncHandler(async (req, res) => {
   const status = await getInitStatus();
   if (!status.needsSetup) return fail(res, '系统已完成初始化，请直接登录', 1, 409);
 
-  // 事务内二次校验，防并发重复创建
-  const user = await User.sequelize.transaction(async (t) => {
+  // 串行化首个管理员初始化：普通的 count + create 在并发请求下会产生写偏差。
+  // PostgreSQL advisory lock 随事务自动释放；其他方言使用 SERIALIZABLE 隔离级别。
+  const user = await User.sequelize.transaction({ isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE }, async (t) => {
+    if (User.sequelize.getDialect() === 'postgres') {
+      await User.sequelize.query('SELECT pg_advisory_xact_lock(:lockKey)', {
+        replacements: { lockKey: 18741001 }, transaction: t,
+      });
+    }
     const count = await User.count({ transaction: t });
     if (count > 0) throw Object.assign(new Error('系统已完成初始化'), { status: 409 });
     const adminRole = await Role.findOne({ where: { code: 'admin' } });
@@ -68,12 +91,13 @@ const setupAdmin = asyncHandler(async (req, res) => {
   const token = jwt.sign(
     { id: user.id, username: user.username, name: user.name, role: user.role, ver: user.tokenVersion || 0, sid: session.sessionId, jti: crypto.randomUUID() },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
+    { expiresIn: config.jwtExpiresIn, algorithm: 'HS256', issuer: JWT_ISSUER, audience: JWT_AUDIENCE }
   );
   const permissions = await getPermissions(user.id);
+  // refresh token 只允许通过 HttpOnly Cookie 下发，避免被前端脚本或响应日志长期保存。
+  setRefreshCookie(res, session.refreshToken);
   ok(res, {
     token,
-    refreshToken: session.refreshToken,
     expiresIn: Math.floor(sessionService.exprToMs(config.jwtExpiresIn) / 1000),
     user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email, permissions, mustChangePassword: false },
   }, '初始化完成，欢迎使用');

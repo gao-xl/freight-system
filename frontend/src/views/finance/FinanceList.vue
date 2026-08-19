@@ -468,7 +468,12 @@
 import { reactive, ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import * as echarts from 'echarts';
+// ECharts 按需引入（B1 性能优化）：仅注册用到的图表与组件，替代全量 import
+import * as echarts from 'echarts/core';
+import { BarChart } from 'echarts/charts';
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 import { financeAPI, financeSummaryAPI, financeTrendAPI, orderAPI, financeExportAPI, financeBatchWriteoffAPI,
   financePeriodsAPI, financeEnsurePeriodsAPI, financeClosePeriodAPI, financeLockPeriodAPI, financeUnlockPeriodAPI, financePeriodStatementAPI, feeTemplateAPI, financeAgingAPI, financePaymentAPI, customerAPI,
   financeReverseAPI, exchangeRateAPI, systemDefaultsAPI } from '@/api';

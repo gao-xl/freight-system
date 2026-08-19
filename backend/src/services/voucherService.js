@@ -36,40 +36,59 @@ function feeAccount(category, direction) {
   return { code: def.costCode, name: def.costName, kind: 'cost' };
 }
 
+// Sequelize 对 DATEONLY 通常返回字符串、对 DATETIME 返回 Date。不能直接对 Date
+// 调用 toString().slice()，否则会得到 "Wed Aug" 之类的本地化文本，破坏会计期间与凭证号。
+function toIsoDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  const raw = String(value || '');
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
+}
+
 // 查询区间内费用流水（默认按 settleMonth 过滤，否则按 createdAt）
-async function queryFinance({ from, to, customerId, supplierId, direction }) {
-  const where = {};
+async function queryFinance({ from, to, customerId, supplierId, direction, scopeWhere = {}, orderScopeWhere }) {
+  // scopeWhere 由控制器根据当前用户生成；必须在服务层真正合并，不能只依赖路由权限。
+  const where = { ...scopeWhere };
   if (from || to) {
     where[Op.or] = [
       { settleMonth: { [Op.ne]: null } },
       { settleMonth: { [Op.eq]: null } },
     ];
     if (from) {
-      where[Op.and] = [{ [Op.or]: [
+      const dateClause = { [Op.or]: [
         { settleMonth: { [Op.gte]: from, [Op.lte]: to || '9999-12-31' } },
         { [Op.and]: [{ settleMonth: null }, { createdAt: { [Op.gte]: new Date(`${from}T00:00:00Z`), [Op.lte]: to ? new Date(`${to}T23:59:59Z`) : new Date() } }] },
-      ] }];
+      ] };
+      const existingAnd = where[Op.and];
+      where[Op.and] = [...(existingAnd ? (Array.isArray(existingAnd) ? existingAnd : [existingAnd]) : []), dateClause];
     }
   }
   if (customerId) where.counterpartyId = customerId;
   if (supplierId) where.counterpartyId = supplierId;
   if (direction) where.direction = direction;
-  const rows = await FinanceRecord.findAll({ where, order: [['settleMonth', 'ASC'], ['id', 'ASC']] });
+  // 历史/自动生成费用可能尚未写入 groupId；再以关联订单的可见性作硬约束，
+  // 防止这类记录绕过 FinanceRecord 自身的数据范围字段。
+  const include = orderScopeWhere
+    ? [{ model: Order, as: 'order', attributes: [], required: true, where: orderScopeWhere }]
+    : undefined;
+  const rows = await FinanceRecord.findAll({ where, include, order: [['settleMonth', 'ASC'], ['id', 'ASC']] });
   return rows;
 }
 
 // 按 会计期间 + 方向 聚合成一张张凭证
-async function buildVouchers({ from, to, customerId, supplierId, direction } = {}) {
-  const rows = await queryFinance({ from, to, customerId, supplierId, direction });
+async function buildVouchers({ from, to, customerId, supplierId, direction, scopeWhere, orderScopeWhere } = {}) {
+  const rows = await queryFinance({ from, to, customerId, supplierId, direction, scopeWhere, orderScopeWhere });
   const vouchers = new Map(); // key: `${settleMonth}|${direction}`
   for (const r of rows) {
-    const period = (r.settleMonth || r.createdAt).toString().slice(0, 7);
+    const accountingDate = toIsoDate(r.settleMonth || r.createdAt);
+    const period = accountingDate.slice(0, 7);
     const key = `${period}|${r.direction}`;
     if (!vouchers.has(key)) {
       vouchers.set(key, {
         period, direction: r.direction,
         no: `V${period.replace('-', '')}${r.direction === 'receivable' ? 'R' : 'P'}`,
-        date: (r.settleMonth || r.createdAt).toString().slice(0, 10),
+        date: accountingDate,
         summary: r.direction === 'receivable' ? '确认应收收入' : '确认应付款',
         lines: [], total: 0,
       });

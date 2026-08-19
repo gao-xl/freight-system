@@ -1,7 +1,8 @@
 const { Order, ReleaseRecord, FinanceRecord } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { withTransaction } = require('../services/transaction');
-const { scopedFindOne } = require('../middleware/dataScope');
+const { Op } = require('sequelize');
+const { scopedFindOne, scopedWhere } = require('../middleware/dataScope');
 
 // P0 放单越权修复：ReleaseRecord 无隔离列，全部以关联 Order 的可见性作为归属判定，
 // 防止持 release 权限的用户对其它小组订单申请放单或在审批中放行他组单证。
@@ -27,7 +28,16 @@ const list = asyncHandler(async (req, res) => {
   const { orderId } = req.query;
   // P0 越权修复：传入 orderId 时必须确认该订单对当前用户可见
   if (orderId && !(await assertOrderVisible(req, orderId))) return fail(res, '订单不存在或无权访问', 1, 404);
-  const where = orderId ? { orderId } : {};
+  let where;
+  if (orderId) {
+    where = { orderId };
+  } else {
+    // ReleaseRecord 本身没有 groupId/ownerId，必须通过可见订单集合收敛。
+    const visibleOrderIds = await Order.findAll({
+      where: await scopedWhere(req, {}), attributes: ['id'], raw: true,
+    }).then((rows) => rows.map((row) => row.id));
+    where = { orderId: { [Op.in]: visibleOrderIds.length ? visibleOrderIds : [0] } };
+  }
   const rows = await ReleaseRecord.findAll({ where, order: [['id', 'DESC']] });
   ok(res, rows);
 });

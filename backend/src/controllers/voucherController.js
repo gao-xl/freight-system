@@ -1,6 +1,8 @@
 const { ok, fail, asyncHandler, getPagination } = require('../utils/response');
 const voucherService = require('../services/voucherService');
 const gateway = require('../services/integrationGateway');
+const { Op } = require('sequelize');
+const { scopedWhere } = require('../middleware/dataScope');
 
 // P2-3a 财务凭证导出/推送控制器
 // 支持三种动作：preview（预览凭证+统计） / export（下载 JSON/XML） / push（经网关推送 ERP）
@@ -15,9 +17,14 @@ function parseFilters(query) {
   };
 }
 
+async function buildScopedVouchers(req, filters) {
+  const scopeWhere = await scopedWhere(req, {});
+  return voucherService.buildVouchers({ ...filters, scopeWhere, orderScopeWhere: scopeWhere });
+}
+
 // GET /finance/vouchers/preview
 const preview = asyncHandler(async (req, res) => {
-  const vouchers = await voucherService.buildVouchers(parseFilters(req.query));
+  const vouchers = await buildScopedVouchers(req, parseFilters(req.query));
   ok(res, {
     vouchers: vouchers.map((v) => ({ no: v.no, period: v.period, direction: v.direction, date: v.date, lineCount: v.lines.length, total: v.total, summary: v.summary })),
     stats: voucherService.summarize(vouchers),
@@ -28,7 +35,7 @@ const preview = asyncHandler(async (req, res) => {
 const exportVoucher = asyncHandler(async (req, res) => {
   const format = String(req.query.format || 'json').toLowerCase();
   if (!['json', 'xml'].includes(format)) return fail(res, 'format 仅支持 json/xml', 1, 400);
-  const vouchers = await voucherService.buildVouchers(parseFilters(req.query));
+  const vouchers = await buildScopedVouchers(req, parseFilters(req.query));
   const filename = `vouchers-${new Date().toISOString().slice(0, 10)}.${format}`;
   if (format === 'xml') {
     const xml = voucherService.toYonyouXML(vouchers);
@@ -44,7 +51,7 @@ const exportVoucher = asyncHandler(async (req, res) => {
 
 // POST /finance/vouchers/push  经网关推送凭证至金蝶/用友（finance 对接）
 const pushVoucher = asyncHandler(async (req, res) => {
-  const vouchers = await voucherService.buildVouchers({ ...parseFilters(req.query), ...req.body });
+  const vouchers = await buildScopedVouchers(req, { ...parseFilters(req.query), ...req.body });
   if (vouchers.length === 0) return fail(res, '当前筛选条件下没有可推送的凭证', 1, 400);
   const format = String(req.body.format || 'json').toLowerCase();
   const payload = format === 'xml' ? { xml: voucherService.toYonyouXML(vouchers) } : voucherService.toKingdeeJSON(vouchers);
@@ -59,12 +66,20 @@ const pushVoucher = asyncHandler(async (req, res) => {
 // P2-3b 数电发票：推送已开票发票至税务平台（digitalTax 对接）
 // body: { invoiceIds: [] } — 从 invoice 状态为 issued 的发票推送
 const pushInvoice = asyncHandler(async (req, res) => {
-  const { invoiceIds } = req.body;
+  const { invoiceIds } = req.body || {};
   if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
     return fail(res, '请选择要推送的发票', 1, 400);
   }
+  const ids = [...new Set(invoiceIds.map(Number))].filter((id) => Number.isSafeInteger(id) && id > 0).sort((a, b) => a - b);
+  if (ids.length !== invoiceIds.length) return fail(res, '发票编号格式不正确', 1, 400);
   const { Invoice } = require('../services/dataAccess');
-  const invoices = await Invoice.findAll({ where: { id: invoiceIds } });
+  // 仅允许推送当前用户可见且已开具的发票；数量不一致时不允许部分推送，
+  // 避免调用方借响应差异枚举他组发票或误把草稿送往税务平台。
+  const invoices = await Invoice.findAll({
+    where: await scopedWhere(req, { id: { [Op.in]: ids }, status: 'issued' }),
+    order: [['id', 'ASC']],
+  });
+  if (invoices.length !== ids.length) return fail(res, '发票不存在、无权访问或尚未开具', 1, 404);
   const payload = {
     invoices: invoices.map((i) => ({
       id: i.id, invoiceNo: i.invoiceNo, invoiceType: i.invoiceType,
@@ -76,7 +91,7 @@ const pushInvoice = asyncHandler(async (req, res) => {
   const result = await gateway.send('digitalTax', payload, {
     messageType: 'INVOICE_ISSUE',
     refNo: `${invoices.length}张发票`,
-    idemKey: `inv-push-${invoices.map((i) => i.id).join('_')}`,
+    idemKey: `inv-push-${ids.join('_')}`,
   });
   ok(res, { ...result, pushed: invoices.length }, `已推送 ${invoices.length} 张数电发票`);
 });

@@ -68,6 +68,13 @@ dist-s02/
 backend/d1-poc.pdf
 backend/pa.tgz
 
+# unplugin 按需引入自动生成的类型声明（B1 前端优化）
+frontend/auto-imports.d.ts
+frontend/components.d.ts
+frontend/.npm-cache*/
+frontend/.npm-dl/
+frontend/dist-b1/
+
 # 代码审查工具产物（brooks-lint 本地运行历史，非项目交付物）
 .brooks-lint-history.json
 

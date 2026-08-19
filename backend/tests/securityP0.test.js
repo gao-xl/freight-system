@@ -83,6 +83,17 @@ describe('P0 资金与凭据类修复回归测试', () => {
       const u = await User.findOne({ where: { username: uname } });
       if (u && u.mustChangePassword) await u.update({ mustChangePassword: false });
     }
+    // 为 group 范围操作员追加财务读写权限，用于验证财务接口自身的数据隔离，
+    // 同时保持其 dataScope=group（不能直接赋予默认 finance 角色，因为该角色是 all）。
+    const { Role, Permission, RolePermission, UserRole } = require('../src/models');
+    const op = await User.findOne({ where: { username: 'operator' } });
+    const scopedFinanceRole = await Role.create({
+      code: 'p0_group_finance', name: 'P0 小组财务', dataScope: 'group', isSystem: false,
+    });
+    const financePerms = await Permission.findAll({ where: { code: ['finance:read', 'finance:update'] } });
+    await RolePermission.bulkCreate(financePerms.map((p) => ({ roleId: scopedFinanceRole.id, permissionId: p.id })));
+    await UserRole.create({ userId: op.id, roleId: scopedFinanceRole.id });
+    require('../src/services/permissionService').invalidate(op.id);
     adminToken = await login('admin');
     operatorToken = await login('operator');
     financeToken = await login('finance');
@@ -91,8 +102,13 @@ describe('P0 资金与凭据类修复回归测试', () => {
     const g = await api('POST', '/api/groups', adminToken, { name: 'P0隔离组', code: 'p0_iso' });
     assert.equal(g.status, 200, `创建小组失败: ${g.text}`);
     isoGroupId = g.j.data.id;
-    const { Order } = require('../src/models');
+    const { Order, FinanceRecord, Invoice } = require('../src/models');
     await Order.update({ groupId: isoGroupId }, { where: { id: 1 } });
+    await FinanceRecord.update({ groupId: isoGroupId }, { where: { id: 1 } });
+    await Invoice.create({
+      invoiceNo: 'P0-ISO-DRAFT', invoiceType: 'receivable', orderId: 1,
+      amount: 100, totalAmount: 100, status: 'draft', groupId: isoGroupId,
+    });
 
     // 给他组订单预置一条容器记录（模型直写，绕过客户端校验）
     const { OrderContainer } = require('../src/models');
@@ -190,6 +206,27 @@ describe('P0 资金与凭据类修复回归测试', () => {
     assert.equal(opApply.j.code, 1, '业务码 1 表示“订单不存在或无权访问”');
   });
 
+  test('P0-C2 放单列表：operator 不会看到他组订单的放单记录', async () => {
+    const list = await api('GET', '/api/release', operatorToken);
+    assert.equal(list.status, 200, `查询放单列表失败: ${list.text}`);
+    assert.ok(!list.j.data.some((row) => Number(row.orderId) === 1), '放单列表不得泄露他组订单记录');
+  });
+
+  test('P0-C3 凭证导出与数电发票推送：operator 不可读取或推送他组财务数据', async () => {
+    const adminExport = await api('GET', '/api/finance/vouchers/export?format=json', adminToken);
+    assert.equal(adminExport.status, 200, `管理员导出凭证失败: ${adminExport.text}`);
+    assert.match(adminExport.text, /"F_XX_OrderNo": "1"/, '管理员应能导出隔离订单凭证');
+
+    const opExport = await api('GET', '/api/finance/vouchers/export?format=json', operatorToken);
+    assert.equal(opExport.status, 200, `操作员导出凭证失败: ${opExport.text}`);
+    assert.doesNotMatch(opExport.text, /"F_XX_OrderNo": "1"/, '操作员导出不得包含他组订单凭证');
+
+    const { Invoice } = require('../src/models');
+    const invoice = await Invoice.findOne({ where: { invoiceNo: 'P0-ISO-DRAFT' } });
+    const push = await api('POST', '/api/finance/vouchers/invoices/push', operatorToken, { invoiceIds: [invoice.id] });
+    assert.equal(push.status, 404, '他组或未开具发票不得进入税务推送');
+  });
+
   // ---------------------------------------------------------------------------
   // P0-D 支付不误伤：all 范围财务仍可正常为他组订单创建支付交易
   // ---------------------------------------------------------------------------
@@ -201,5 +238,15 @@ describe('P0 资金与凭据类修复回归测试', () => {
     assert.equal(create.status, 200, `finance 创建支付应成功(不误伤): ${create.text}`);
     assert.equal(create.j.code, 0, 'finance 创建支付应返回 code 0');
     assert.equal(create.j.data.status, 'draft');
+  });
+
+  test('P0-D2 支付必须绑定同一条业务链', async () => {
+    const noRelation = await api('POST', '/api/payments', financeToken, { amount: 1, currency: 'USD' });
+    assert.equal(noRelation.status, 400, '无订单/费用归属的支付交易必须拒绝');
+
+    const mismatch = await api('POST', '/api/payments', financeToken, {
+      financeId: 1, orderId: 2, amount: 1, currency: 'USD', beneficiary: 'BENEF', beneficiaryBank: 'BBNK',
+    });
+    assert.equal(mismatch.status, 400, '费用记录与订单不匹配必须拒绝');
   });
 });
