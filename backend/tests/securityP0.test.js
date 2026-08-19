@@ -51,7 +51,7 @@ async function login(username) {
     body: JSON.stringify({ username, password: '123456' }),
   });
   const j = await r.json();
-  assert.equal(j.code, 0, `登录失败 ${username}: ${j.message}`);
+  assert.equal(j.code, 0, `登录失败 ${username}: ${j.message}\nserver stderr:\n${serverStderr.slice(-4000)}`);
   return j.data.token;
 }
 const authH = (t) => ({ Authorization: `Bearer ${t}` });
