@@ -6,13 +6,12 @@ const { dataScope } = require('../middleware/dataScope');
 const { validate } = require('../middleware/validate');
 const S = require('../validation/schemas');
 const auth = require('../controllers/authController');
-const customer = require('../controllers/customerController');
-const supplier = require('../controllers/supplierController');
+
+
 const order = require('../controllers/orderController');
 const booking = require('../controllers/bookingController');
 const customs = require('../controllers/customsController');
 const document = require('../controllers/documentController');
-const track = require('../controllers/trackController');
 const finance = require('../controllers/financeController');
 const financeStatement = require('../controllers/financeStatementController');
 const integration = require('../controllers/integrationController');
@@ -48,7 +47,7 @@ const report = require('../controllers/reportController');
 const exchangeRate = require('../controllers/exchangeRateController'); // 汇率管理
 const searchCtrl = require('../controllers/searchController');
 const numberSegment = require('../controllers/numberSegmentController'); // P1 发票号段
-const customerAttachment = require('../controllers/customerAttachmentController'); // P1 客户附件
+
 const quotationTemplate = require('../controllers/quotationTemplateController'); // P1-1 报价模板
 const hsCode = require('../controllers/hsCodeController'); // P1-3 HS编码知识库
 const batch = require('../controllers/batchController'); // P1-2 批量操作
@@ -63,17 +62,8 @@ const monitor = require('../controllers/monitorController'); // P3-3 运维监�
 
 const router = express.Router();
 
-// 批量导入用内存存储（xlsx 直接读 buffer）
-// V3 加固：导入仅接受电子表格扩展名，拒绝任意文件上传
-const IMPORT_EXT = new Set(['.xlsx', '.xls', '.csv']);
-function importFileFilter(req, file, cb) {
-  const ext = path.extname((file && file.originalname) || '').toLowerCase();
-  if (IMPORT_EXT.has(ext)) return cb(null, true);
-  const e = new Error('不支持的文件类型，导入仅允许 xlsx/xls/csv');
-  e.status = 400;
-  cb(e);
-}
-const uploadMemory = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: importFileFilter });
+// 批量导入用内存存储（xlsx 直接读 buffer），配置统一在共享中间件管理（V3 加固扩展名白名单）
+const { uploadMemory } = require('../middleware/upload');
 
 // 自动化（仅管理员可手动触发；定时任务由 alertScheduler 自动执行）
 router.post('/automation/run', guard('system', '*'), automation.run);
@@ -318,46 +308,7 @@ router.get('/dashboard/team-workload', guard('dashboard', 'read'), dashboard.tea
 router.get('/import/templates/:biz', authRequired, importCtrl.importGuard('read'), importCtrl.template);
 router.post('/import/:biz', authRequired, importCtrl.importGuard('create'), uploadMemory.single('file'), importCtrl.importFile);
 
-// 客户
-router.get('/customers', guard('customer', 'read'), customer.list);
-router.get('/customers/stats', guard('customer', 'read'), customer.stats);
-router.get('/customers/pending-follows', guard('customer', 'read'), customer.pendingFollows);
-router.get('/customers/import-template', guard('customer', 'read'), customer.importTemplate);
-router.post('/customers/import', guard('customer', 'create'), uploadMemory.single('file'), customer.importExcel);
-router.post('/customers/batch-delete', guard('customer', 'delete'), customer.batchRemove);
-router.post('/customers/batch-update', guard('customer', 'update'), customer.batchUpdate);
-router.post('/customers/:id/restore', guard('customer', 'update'), customer.restore); // U5 回收站恢复
-router.get('/customers/:id', guard('customer', 'read'), customer.get);
-router.get('/customers/:id/overview', guard('customer', 'read'), customer.overview); // N4 客户360°
-router.get('/customers/:id/contacts', guard('customer', 'read'), customer.listContacts); // P1 多联系人
-router.post('/customers/:id/contacts', guard('customer', 'update'), customer.createContact);
-router.put('/customers/contacts/:contactId', guard('customer', 'update'), customer.updateContact);
-router.delete('/customers/contacts/:contactId', guard('customer', 'delete'), customer.removeContact);
-
-// P1 客户附件
-router.get('/customers/:id/attachments', guard('customer', 'read'), customerAttachment.list);
-router.post('/customers/:id/attachments', guard('customer', 'update'), customerAttachment.upload.single('file'), customerAttachment.create);
-router.get('/customers/attachments/:id/download', guard('customer', 'read'), customerAttachment.download);
-router.delete('/customers/attachments/:id', guard('customer', 'delete'), customerAttachment.remove);
-router.get('/customers/:id/follows', guard('customer', 'read'), customer.listFollows);
-router.post('/customers/:id/follows', guard('customer', 'update'), validate(S.followCreate), customer.createFollow);
-router.put('/customers/follows/:followId', guard('customer', 'update'), validate(S.followUpdate), customer.updateFollow);
-router.delete('/customers/follows/:followId', guard('customer', 'delete'), customer.removeFollow);
-router.post('/customers', guard('customer', 'create'), validate(S.customerCreate), customer.create);
-router.put('/customers/:id', guard('customer', 'update'), validate(S.customerUpdate), customer.update);
-router.delete('/customers/:id', guard('customer', 'delete'), customer.remove);
-
-// 供应商
-router.get('/suppliers', guard('supplier', 'read'), supplier.list);
-router.get('/suppliers/import-template', guard('supplier', 'read'), supplier.importTemplate);
-router.post('/suppliers/import', guard('supplier', 'create'), uploadMemory.single('file'), supplier.importExcel);
-router.post('/suppliers/batch-delete', guard('supplier', 'delete'), supplier.batchRemove);
-router.post('/suppliers/batch-update', guard('supplier', 'update'), supplier.batchUpdate);
-router.post('/suppliers/:id/restore', guard('supplier', 'update'), supplier.restore); // U5 回收站恢复
-router.get('/suppliers/:id', guard('supplier', 'read'), supplier.get);
-router.post('/suppliers', guard('supplier', 'create'), validate(S.supplierCreate), supplier.create);
-router.put('/suppliers/:id', guard('supplier', 'update'), validate(S.supplierUpdate), supplier.update);
-router.delete('/suppliers/:id', guard('supplier', 'delete'), supplier.remove);
+// 客户域（CRUD/联系人/跟进/附件/回收站/导入）已迁至 modules/customer，由 ModuleRegistry 自动挂载
 
 // 订单
 router.get('/orders', guard('order', 'read'), order.list);
@@ -427,13 +378,6 @@ router.delete('/documents/:id', guard('document', 'delete'), document.remove);
 router.post('/documents/:id/upload', guard('document', 'update'), document.upload.single('file'), document.uploadFile);
 router.get('/documents/:id/download', guard('document', 'read'), document.download);
 router.get('/documents/:id/file', guard('document', 'read'), document.preview);
-
-// 运输跟踪
-router.get('/tracks', guard('track', 'read'), track.list);
-router.get('/tracks/:id', guard('track', 'read'), track.get);
-router.post('/tracks', guard('track', 'create'), track.create);
-router.put('/tracks/:id', guard('track', 'update'), track.update);
-router.delete('/tracks/:id', guard('track', 'delete'), track.remove);
 
 // 财务
 router.get('/finance', guard('finance', 'read'), finance.list);
