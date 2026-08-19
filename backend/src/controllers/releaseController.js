@@ -1,6 +1,18 @@
 const { Order, ReleaseRecord, FinanceRecord } = require('../services/dataAccess');
 const { ok, fail, asyncHandler } = require('../utils/response');
 const { withTransaction } = require('../services/transaction');
+const { scopedFindOne } = require('../middleware/dataScope');
+
+// P0 放单越权修复：ReleaseRecord 无隔离列，全部以关联 Order 的可见性作为归属判定，
+// 防止持 release 权限的用户对其它小组订单申请放单或在审批中放行他组单证。
+async function assertOrderVisible(req, orderId) {
+  if (orderId == null) return false;
+  const order = await scopedFindOne(req, Order, { id: orderId });
+  return !!order;
+}
+async function assertRecordVisible(req, rec) {
+  return assertOrderVisible(req, rec.orderId);
+}
 
 // 计算订单应收未收余额
 async function receivableBalance(orderId) {
@@ -13,6 +25,8 @@ async function receivableBalance(orderId) {
 // 放单申请列表（按订单）
 const list = asyncHandler(async (req, res) => {
   const { orderId } = req.query;
+  // P0 越权修复：传入 orderId 时必须确认该订单对当前用户可见
+  if (orderId && !(await assertOrderVisible(req, orderId))) return fail(res, '订单不存在或无权访问', 1, 404);
   const where = orderId ? { orderId } : {};
   const rows = await ReleaseRecord.findAll({ where, order: [['id', 'DESC']] });
   ok(res, rows);
@@ -21,8 +35,9 @@ const list = asyncHandler(async (req, res) => {
 // 申请放单：校验应收结清，未结清则进入审批（事务）
 const apply = asyncHandler(async (req, res) => {
   const { releaseType = 'original', releaseNo, remark } = req.body;
-  const order = await Order.findByPk(req.params.id);
-  if (!order) return fail(res, '订单不存在', 1, 404);
+  // P0 越权修复：必须确认订单对当前用户可见，阻止对他组订单发起放单
+  const order = await scopedFindOne(req, Order, { id: req.params.id });
+  if (!order) return fail(res, '订单不存在或无权访问', 1, 404);
   const bal = await receivableBalance(order.id);
 
   const { record, autoApproved } = await withTransaction(async (t) => {
@@ -55,6 +70,8 @@ const approve = asyncHandler(async (req, res) => {
   const { approve = true, remark } = req.body;
   const rec = await ReleaseRecord.findByPk(req.params.id);
   if (!rec) return fail(res, '放单记录不存在', 1, 404);
+  // P0 越权修复：不可审批其它小组订单的放单
+  if (!(await assertRecordVisible(req, rec))) return fail(res, '放单记录不存在或无权访问', 1, 404);
   if (rec.approvalStatus !== 'pending') return fail(res, '该记录已处理', 1, 400);
 
   const finalStatus = approve ? 'approved' : 'rejected';
@@ -86,6 +103,8 @@ const batchApprove = asyncHandler(async (req, res) => {
   for (const id of ids) {
     const rec = await ReleaseRecord.findByPk(id);
     if (!rec) { failed.push({ id, reason: '记录不存在' }); continue; }
+    // P0 越权修复：批量审批同样只允许本组可见订单的放单
+    if (!(await assertRecordVisible(req, rec))) { failed.push({ id, reason: '无权访问' }); continue; }
     if (rec.approvalStatus !== 'pending') { failed.push({ id, reason: `已处理(${rec.approvalStatus})` }); continue; }
     try {
       await withTransaction(async (t) => {
@@ -112,6 +131,8 @@ const batchApprove = asyncHandler(async (req, res) => {
 
 // 放单记录（含订单信息，用于详情）
 const records = asyncHandler(async (req, res) => {
+  // P0 越权修复：确认订单对当前用户可见后再返回其放单记录与应收结余
+  if (!(await assertOrderVisible(req, req.params.id))) return fail(res, '订单不存在或无权访问', 1, 404);
   const recs = await ReleaseRecord.findAll({
     where: { orderId: req.params.id },
     include: [{ model: Order, as: 'order', attributes: ['id', 'orderNo', 'releaseStatus'] }],

@@ -297,7 +297,9 @@ async function seed() {
       ...actionGroup('alert', ['read', 'update']),
       ...actionGroup('yard', ['read', 'update']),
       ...actionGroup('print', ['read']),
+      ...actionGroup('release', ['read', 'create']),
       ...actionGroup('ai', ['use']),
+      ...actionGroup('budget', ['read']),
       ...actionGroup('dashboard', ['read']),
     ],
     finance: [

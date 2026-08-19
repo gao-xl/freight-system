@@ -487,12 +487,10 @@ router.post('/bills-of-lading/:id/restore', guard('order', 'update'), billOfLadi
 router.get('/orders/:orderId/bills-of-lading', guard('order', 'read'), billOfLading.byOrder);
 
 // 外部系统对接
+// 注意：所有具体路径（registry/trigger/gateway*/clients*）必须先于 /integrations/:id 注册，
+// 否则 /integrations/clients 等会被 :id 段吞掉，导致按 'clients' 作整数 id 查库而抛错/崩溃。
 router.get('/integrations', guard('integration', 'read'), integration.list);
 router.get('/integrations/registry', guard('integration', 'read'), integration.registry);
-router.get('/integrations/:id', guard('integration', 'read'), integration.get);
-router.post('/integrations', guard('integration', 'update'), integration.create);
-router.put('/integrations/:id', guard('integration', 'update'), integration.update);
-router.delete('/integrations/:id', guard('integration', 'update'), integration.remove);
 router.post('/integrations/trigger', guard('integration', 'trigger'), integration.trigger);
 
 // P2-1 API 集成网关：手动调用 / 日志查询 / 运行态概览
@@ -505,6 +503,11 @@ router.get('/integrations/clients', guard('integration', 'read'), gatewayClient.
 router.post('/integrations/clients', guard('integration', 'update'), gatewayClient.create);
 router.put('/integrations/clients/:id', guard('integration', 'update'), gatewayClient.update);
 router.delete('/integrations/clients/:id', guard('integration', 'update'), gatewayClient.remove);
+
+router.get('/integrations/:id', guard('integration', 'read'), integration.get);
+router.post('/integrations', guard('integration', 'update'), integration.create);
+router.put('/integrations/:id', guard('integration', 'update'), integration.update);
+router.delete('/integrations/:id', guard('integration', 'update'), integration.remove);
 
 // P2-2 报关单申报/状态查询（海关单一窗口）
 router.post('/customs-declarations/:id/submit', guard('customs', 'update'), customsSync.submit);
